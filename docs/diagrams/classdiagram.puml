@@ -1,0 +1,164 @@
+@startuml class-domain
+title BrewLite – Class Diagram (Domain)
+skinparam classAttributeIconSize 0
+skinparam linetype ortho
+
+class User {
+  - id: UUID
+  - email: String {unique}
+  - passwordHash: String
+  - fullName: String
+  - role: Role
+  - loyaltyPoints: int
+  - createdAt: DateTime
+}
+
+class Product {
+  - id: UUID
+  - name: String
+  - category: Category
+  - basePrice: Decimal
+  - imageUrl: String
+  - stock: int
+  - isVisible: boolean
+}
+
+class Topping {
+  - id: UUID
+  - name: String
+  - price: Decimal
+}
+
+class Order {
+  - id: UUID
+  - status: OrderStatus
+  - receiveType: ReceiveType
+  - subtotal: Decimal
+  - discountAmount: Decimal
+  - totalAmount: Decimal
+  - note: String
+  - createdAt: DateTime
+  - expiresAt: DateTime
+}
+
+class OrderItem {
+  - id: UUID
+  - productName: String
+  - unitPrice: Decimal
+  - quantity: int
+  - size: Size
+  - sugarLevel: SugarLevel
+  - iceLevel: IceLevel
+  - note: String
+  - lineTotal: Decimal
+}
+
+class Payment {
+  - id: UUID
+  - amount: Decimal
+  - method: PaymentMethod
+  - status: PaymentStatus
+  - idempotencyKey: String {unique}
+  - gatewayRef: String
+  - createdAt: DateTime
+}
+
+class Promotion {
+  - id: UUID
+  - code: String {unique}
+  - discountType: DiscountType
+  - discountValue: Decimal
+  - minOrderAmount: Decimal
+  - validFrom: DateTime
+  - validTo: DateTime
+  - isActive: boolean
+}
+
+class LoyaltyTransaction {
+  - id: UUID
+  - points: int
+  - type: LoyaltyType
+  - createdAt: DateTime
+}
+
+' ===== Quan hệ =====
+User "1" -- "0..*" Order : places >
+Order "1" *-- "1..*" OrderItem : contains >
+OrderItem "0..*" --> "1" Product : refers to >
+OrderItem "0..*" -- "0..*" Topping : has >
+Order "1" *-- "0..*" Payment : paid by >
+Order "0..*" -- "0..1" Promotion : applies >
+User "1" -- "0..*" LoyaltyTransaction : owns >
+Order "1" -- "0..1" LoyaltyTransaction : generates >
+
+' ===== Enum trạng thái và phân loại =====
+enum Role {
+  CUSTOMER
+  STAFF
+  ADMIN
+}
+
+enum OrderStatus {
+  PENDING
+  PAYMENT_FAILED
+  PAID
+  PREPARING
+  READY
+  COMPLETED
+  CANCELLED
+}
+
+enum ReceiveType {
+  AT_COUNTER
+  TAKE_AWAY
+}
+
+enum PaymentMethod {
+  E_WALLET
+  BANK_CARD
+}
+
+enum PaymentStatus {
+  SUCCESS
+  FAILED
+}
+
+enum DiscountType {
+  PERCENT
+  FIXED
+}
+
+enum LoyaltyType {
+  EARN
+  REDEEM
+}
+
+enum Category {
+  TEA
+  COFFEE
+  MILK_TEA
+  CAKE
+}
+
+enum Size {
+  S
+  M
+  L
+}
+
+enum SugarLevel {
+  P0
+  P30
+  P50
+  P70
+  P100
+}
+
+enum IceLevel {
+  NONE
+  LOW
+  NORMAL
+  FULL
+}
+
+@enduml
