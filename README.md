@@ -66,6 +66,48 @@ Dữ liệu được giữ trong volume Docker `postgres_data`. Muốn xóa hẳ
 docker compose down -v
 ```
 
+## Chạy API (local)
+
+API NestJS nằm trong thư mục `apps/api`, chạy ở cổng mặc định 3001.
+
+> **Lưu ý cho Windows (PowerShell):**  
+> Nếu PowerShell báo lỗi `"running scripts is disabled"`, bạn chạy lệnh:  
+> ```powershell
+> Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
+> ```  
+> Hoặc có thể dùng `npm.cmd` thay cho `npm` (ví dụ: `npm.cmd install`, `npm.cmd run start:dev`).
+
+**1. Cài đặt thư viện**
+
+Mở PowerShell và chuyển vào thư mục `apps/api`:
+
+```powershell
+cd apps/api
+npm install
+```
+
+**2. Khởi động API**
+
+```powershell
+npm run start:dev
+```
+
+Khi màn hình hiện thông báo `Server đang chạy tại: http://localhost:3001` là API đã sẵn sàng.
+
+**3. Kiểm tra đã chạy**
+
+Mở trình duyệt hoặc gọi URL: [http://localhost:3001/health](http://localhost:3001/health)  
+(Hoặc chạy trong terminal: `curl http://localhost:3001/health`)
+
+Kết quả đúng:
+```json
+{"status":"ok"}
+```
+
+**4. Dừng API**
+
+Nhấn `Ctrl + C` tại cửa sổ terminal đang chạy API.
+
 ## Cấu trúc thư mục (Sprint 1)
 
 - `apps/web` — giao diện Next.js (sẽ thêm sau)
