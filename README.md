@@ -66,6 +66,51 @@ Dữ liệu được giữ trong volume Docker `postgres_data`. Muốn xóa hẳ
 docker compose down -v
 ```
 
+## Database: migration và seed
+
+Sau khi PostgreSQL đã khởi động, ta cần tạo bảng (migration) và nạp dữ liệu menu mẫu (seed).
+
+> **Lưu ý:** Nếu bạn vừa tải dự án về máy mới, hãy chắc chắn đã tạo file cấu hình `.env` ở thư mục gốc trước khi chạy:
+> ```powershell
+> Copy-Item .env.example .env
+> ```
+
+**1. Chạy Migration (tạo cấu trúc bảng)**
+
+Mở PowerShell và chuyển vào thư mục `apps/api`:
+
+```powershell
+cd apps/api
+npm.cmd run prisma -- migrate dev
+```
+*(Hoặc dùng lệnh tiện ích: `npm.cmd run migrate`)*
+
+Kết quả đúng: Prisma thông báo đồng bộ thành công (`Your database is now in sync with your schema`).
+
+**2. Chạy Seed (nạp dữ liệu món mẫu)**
+
+Vẫn ở thư mục `apps/api`, chạy lệnh:
+
+```powershell
+npm.cmd run seed
+```
+
+Kết quả đúng:
+```text
+Đang khởi tạo dữ liệu mẫu cho menu (seed)...
+Đã nạp thành công 12 sản phẩm vào bảng Product.
+```
+*(Lệnh seed có tính an toàn: dù chạy lại bao nhiêu lần thì danh sách vẫn duy trì đúng 12 sản phẩm, không bị nhân đôi dữ liệu).*
+
+**3. Xem dữ liệu đã nạp (tùy chọn)**
+
+Bạn có thể mở giao diện quản trị Prisma Studio để xem dữ liệu bảng `Product`:
+
+```powershell
+npm.cmd run prisma -- studio
+```
+Trình duyệt sẽ mở trang [http://localhost:5555](http://localhost:5555). Nhấn `Ctrl + C` tại terminal để tắt khi xem xong.
+
 ## Chạy API (local)
 
 API NestJS nằm trong thư mục `apps/api`, chạy ở cổng mặc định 3001.

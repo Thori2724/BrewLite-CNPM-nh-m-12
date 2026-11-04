@@ -7,3 +7,21 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum Category {
+  TEA
+  COFFEE
+  MILK_TEA
+  CAKE
+}
+
+model Product {
+  id        String   @id @default(uuid())
+  name      String
+  category  Category
+  basePrice Int
+  imageUrl  String
+  stock     Int      @default(0)
+  isVisible Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
