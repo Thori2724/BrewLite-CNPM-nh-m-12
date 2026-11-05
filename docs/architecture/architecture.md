@@ -70,7 +70,7 @@ flowchart LR
 
 | Container | Công nghệ | Trách nhiệm | Mã nguồn |
 |---|---|---|---|
-| Web client (PWA) | Next.js, React, TypeScript, TailwindCSS, Zustand | Giao diện mobile-first, giỏ hàng phía client, gọi REST API | `apps/web` |
+| Web client (PWA) | Next.js, React, TypeScript, TailwindCSS, Zustand | Giao diện desktop-first, giỏ hàng phía client, gọi REST API | `apps/web` |
 | API | NestJS, TypeScript, class-validator, Passport JWT, Prisma | Nghiệp vụ: sản phẩm, xác thực, đơn hàng, thanh toán, khuyến mãi, điểm thưởng | `apps/api` |
 | Database | PostgreSQL 16 | Lưu dữ liệu bền vững; không mở cổng ra Internet | `apps/api/prisma` (schema, migration, seed) |
 | Reverse proxy | nginx | Một điểm vào duy nhất: `/` → web, `/api/*` → api | `nginx/default.conf` |
@@ -80,7 +80,7 @@ Frontend và API cùng một tên miền (đường dẫn `/api`), nên không p
 
 ## 4. Kiến trúc frontend (Next.js / PWA)
 
-- **Mobile-first:** TailwindCSS, bố cục theo wireframe 5 màn hình (Menu, Chi tiết, Giỏ hàng, Thanh toán, Xác nhận).
+- **Desktop-first:** TailwindCSS, bố cục theo wireframe 5 màn hình (Menu, Chi tiết, Giỏ hàng, Thanh toán, Xác nhận).
 - **PWA:** có `manifest.webmanifest` và service worker cache phần vỏ ứng dụng; dữ liệu đơn hàng luôn lấy trực tuyến.
 - **Trạng thái:** giỏ hàng lưu bằng Zustand (kèm `localStorage`); dữ liệu từ API quản lý bằng React Query (loading/empty/error rõ ràng).
 - **Xác thực:** token JWT gắn vào header `Authorization: Bearer`; route đặt đơn và lịch sử đơn yêu cầu đăng nhập.
