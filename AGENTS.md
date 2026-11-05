@@ -3,6 +3,7 @@
 Đọc kỹ file này trước khi làm bất cứ việc gì trong repo.
 
 ## Nguồn sự thật (không tự ý thay đổi)
+- Đề bài gốc: `docs/de-bai/assignment-2.md`
 - Yêu cầu: `docs/requirements/`
 - Sơ đồ: `docs/diagrams/`
 - Kiến trúc và quyết định: `docs/architecture/architecture.md` và `docs/architecture/adr/`
