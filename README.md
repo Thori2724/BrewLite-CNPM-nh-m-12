@@ -108,6 +108,58 @@ Kết quả đúng:
 
 Nhấn `Ctrl + C` tại cửa sổ terminal đang chạy API.
 
+## Chạy ứng dụng web (apps/web)
+
+Mở PowerShell và chuyển vào thư mục `apps/web`:
+
+```powershell
+cd apps/web
+```
+
+**1. Khởi động giao diện phát triển (Development)**
+
+```powershell
+npm.cmd run dev
+```
+*(hoặc `npm run dev`)*
+
+Mở trình duyệt truy cập: [http://localhost:3000](http://localhost:3000)
+- **Trang Menu:** Xem danh sách đồ uống, lọc danh mục, tìm kiếm món.
+- **Trang Chi tiết món:** Bấm vào thẻ món bất kỳ (hoặc truy cập trực tiếp ví dụ [http://localhost:3000/menu/1](http://localhost:3000/menu/1)) để chọn Size, Lượng đá, Lượng đường, Topping, Ghi chú và xem Giá tạm tính.
+
+**2. Chạy kiểm thử tự động (Unit & Component Test)**
+
+```powershell
+npm.cmd test
+```
+*(hoặc `npm test`)*
+
+Kết quả đúng:
+```text
+✓ __tests__/price.test.ts (4 tests)
+✓ __tests__/product-detail.test.tsx (8 tests)
+✓ __tests__/menu.test.tsx (7 tests)
+Test Files  3 passed (3)
+Tests       19 passed (19)
+```
+
+**3. Chạy kiểm tra cú pháp (Lint)**
+
+```powershell
+npm.cmd run lint
+```
+*(hoặc `npm run lint`)*
+
+Kết quả đúng: Báo không có lỗi (0 errors).
+
+**4. Đóng gói kiểm tra (Build)**
+
+```powershell
+npx.cmd next build --webpack
+```
+
+Kết quả đúng: `Compiled successfully` và tạo xong các trang tĩnh mà không có lỗi.
+
 ## Cấu trúc thư mục (Sprint 1)
 
 - `apps/web` — giao diện Next.js (sẽ thêm sau)

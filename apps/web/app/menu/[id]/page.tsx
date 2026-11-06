@@ -16,6 +16,7 @@ import {
   Topping,
 } from '../../../services/api';
 import { calculatePrice } from '../../../utils/price';
+import { useCart } from '../../../context/CartContext';
 
 export interface OrderItemDraft {
   productId: string;
@@ -40,6 +41,7 @@ function ProductDetailContent() {
   const [product, setProduct] = useState<ProductDetail | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+  const { addToCart } = useCart();
 
   // Các lựa chọn tùy chỉnh
   const [selectedSize, setSelectedSize] = useState<SizeId>('M');
@@ -122,20 +124,26 @@ function ProductDetailContent() {
   const handleAddToCart = () => {
     if (!product || !product.isAvailable) return;
 
-    const draftItem: OrderItemDraft = {
+    // Đơn giá 1 ly = (giá món theo size + tổng giá topping)
+    const unitPrice = calculatePrice({
+      basePrice: product.price,
+      sizePriceDiff,
+      toppings: activeToppings,
+      quantity: 1,
+    });
+
+    addToCart({
       productId: product.id,
-      productName: product.name,
-      size: product.allowSize ? selectedSize : 'M',
+      name: product.name,
+      image: product.image,
+      size: product.allowSize ? selectedSize : undefined,
       sugarLevel: product.allowSugar ? selectedSugar : undefined,
       iceLevel: product.allowIce ? selectedIce : undefined,
-      toppings: product.allowTopping ? selectedToppings : [],
+      toppings: activeToppings,
       note: note.trim(),
+      unitPrice,
       quantity,
-      estimatedPrice,
-    };
-
-    // TODO (Task 15): Chuyển đối tượng draftItem này vào giỏ hàng (CartStore / localStorage)
-    console.log('Thêm vào giỏ hàng (Task 15 - Draft Order Item):', draftItem);
+    });
 
     setAddedSuccess(true);
     setTimeout(() => {
@@ -201,10 +209,10 @@ function ProductDetailContent() {
         </Link>
       </div>
 
-      {/* Thông báo thêm vào giỏ thành công tạm thời */}
+      {/* Thông báo thêm vào giỏ thành công */}
       {addedSuccess && (
         <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-xl text-sm font-medium text-center">
-          ✓ Đã thêm món vào danh sách lựa chọn! (Chờ Task 15 nối giỏ hàng)
+          ✓ Đã thêm vào giỏ hàng! Xem tại biểu tượng 🛒
         </div>
       )}
 
