@@ -126,6 +126,29 @@ npm.cmd run dev
 Mở trình duyệt truy cập: [http://localhost:3000](http://localhost:3000)
 - **Trang Menu:** Xem danh sách đồ uống, lọc danh mục, tìm kiếm món.
 - **Trang Chi tiết món:** Bấm vào thẻ món bất kỳ (hoặc truy cập trực tiếp ví dụ [http://localhost:3000/menu/1](http://localhost:3000/menu/1)) để chọn Size, Lượng đá, Lượng đường, Topping, Ghi chú và xem Giá tạm tính.
+- **Trang Đăng nhập / Đăng ký:** [http://localhost:3000/login](http://localhost:3000/login) và [http://localhost:3000/register](http://localhost:3000/register). Trên header: chưa đăng nhập thấy nút "Đăng nhập", "Đăng ký"; đã đăng nhập thấy tên và nút "Đăng xuất".
+
+### Đăng nhập, đăng ký và xử lý 401 (web)
+
+> **Hợp đồng API auth là TẠM.** Backend chưa có `POST /auth/register` và `POST /auth/login`, nên tên endpoint, tên field, dạng response và chuỗi lỗi hiện do frontend đề xuất. Tất cả gom trong một file `apps/web/services/auth-contract.ts`. Khi backend chốt khác thì chỉ sửa file này.
+
+- **Hợp đồng tạm:** đăng ký gửi `{ fullName, email, password }`, thành công thì chuyển sang `/login` kèm thông báo "Đăng ký thành công". Đăng nhập gửi `{ email, password }`, nhận `{ access_token, user: { id, email, fullName, role } }`. Mật khẩu tối thiểu 6 ký tự (tạm).
+- **Nơi lưu đăng nhập:** `localStorage`, khóa `brewlite_auth_v1`, chỉ chứa token và thông tin user cơ bản, **không bao giờ chứa mật khẩu**. Dữ liệu hỏng thì coi như chưa đăng nhập.
+- **Đăng xuất:** chỉ xóa `brewlite_auth_v1`, **giỏ hàng `brewlite_cart_v1` giữ nguyên**, rồi về Menu. Đăng xuất ở một tab thì các tab khác cũng tự đăng xuất.
+- **Khi server trả 401:** hàm chung `apiFetch` (`apps/web/services/auth.ts`) tự gắn header `Authorization: Bearer <token>`. Gặp 401 thì xóa phiên, chuyển về `/login?redirect=<trang hiện tại>&expired=true` (trang đăng nhập hiện "Phiên đăng nhập đã hết hạn..."), đăng nhập lại xong quay về đúng trang cũ. Nhiều request 401 cùng lúc chỉ chuyển trang một lần. Riêng lời gọi đăng nhập/đăng ký bị 401 (sai mật khẩu) thì **không** chuyển trang, chỉ báo lỗi trên form.
+- **Chống chuyển hướng ra ngoài:** tham số `redirect` chỉ nhận đường dẫn nội bộ bắt đầu bằng một dấu `/`. Giá trị như `//evil.com`, `https://...`, `javascript:...` sẽ bị bỏ, về Menu.
+- **Bảo vệ trang (cho Task 17/18):** hook `useRequireAuth` trong `apps/web/context/useRequireAuth.ts`. Hiện **chưa áp dụng** vào trang nào; Menu, chi tiết món, giỏ hàng vẫn xem được khi chưa đăng nhập.
+
+**Bật / tắt chế độ giả lập (mock) auth**
+
+Mặc định web gọi API thật tại `NEXT_PUBLIC_API_URL` (mẫu trong `.env.example` ở thư mục gốc). Vì backend chưa có API auth, muốn thử trên máy thì mở (hoặc tạo) file `apps/web/.env.local` và đặt:
+
+```text
+NEXT_PUBLIC_API_URL=http://localhost:3001
+NEXT_PUBLIC_USE_MOCK_AUTH=true
+```
+
+Sau khi sửa `.env.local` phải tắt `npm.cmd run dev` (Ctrl + C) rồi chạy lại. Tài khoản mẫu khi bật mock: `khachhang@brewlite.vn` / `password123`. Tài khoản đăng ký mới trong chế độ mock chỉ lưu trong bộ nhớ trình duyệt, **mất khi tải lại trang (F5)**. Khi backend xong, đổi `NEXT_PUBLIC_USE_MOCK_AUTH=false` (hoặc xóa dòng đó). File `.env.local` không đưa lên Git.
 
 **2. Chạy kiểm thử tự động (Unit & Component Test)**
 
