@@ -616,4 +616,222 @@ describe('Giao diện và luồng xử lý trang Checkout (/checkout)', () => {
       expect(mockPush).toHaveBeenCalledWith('/login?redirect=%2Fcheckout&expired=true');
     });
   });
+
+  // 13. Thanh toán gặp lỗi 404 (Không tìm thấy đơn): Xóa đơn chờ, quay về bước đặt đơn, hiện thông báo rõ ràng và giữ nguyên giỏ hàng
+  it('13. Thanh toán gặp 404: Xóa bản ghi đơn chờ, quay về bước đặt đơn, báo lỗi rõ ràng và giữ nguyên giỏ hàng', async () => {
+    const user = userEvent.setup();
+    localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(mockLoggedInUser));
+    localStorage.setItem(CART_STORAGE_KEY, JSON.stringify([mockCartItem]));
+
+    const pendingOrder: PendingOrderRecord = {
+      orderId: 'order-not-found-404',
+      orderNumber: '#BL-4044',
+      totalAmount: 90000,
+      receiveType: 'AT_COUNTER',
+      idempotencyKey: 'idemp-404-test',
+      expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+      createdAt: new Date().toISOString(),
+      itemCount: 1,
+    };
+    savePendingOrder(pendingOrder);
+
+    // Mock API thanh toán trả về lỗi 404
+    vi.mocked(ordersService.payOrderApi).mockRejectedValueOnce(
+      new ordersService.OrderApiError(404, 'Không tìm thấy thông tin đơn hàng')
+    );
+
+    renderCheckout();
+
+    // Thấy banner đơn chờ và bấm Tiếp tục thanh toán
+    await waitFor(() => {
+      expect(screen.getByText(/bạn có đơn hàng đang chờ thanh toán: #BL-4044/i)).toBeInTheDocument();
+    });
+
+    const resumeBtn = screen.getByRole('button', { name: /tiếp tục thanh toán/i });
+    await user.click(resumeBtn);
+
+    // Nhập số ví và bấm Xác nhận thanh toán
+    const accInput = await screen.findByPlaceholderText(/nhập số điện thoại ví điện tử/i);
+    await user.type(accInput, '0901234567');
+
+    const payBtn = screen.getByRole('button', { name: /xác nhận thanh toán/i });
+    await user.click(payBtn);
+
+    // KẾT QUẢ KỲ VỌNG:
+    // 1. Quay về bước 1 (đặt đơn hàng), hiện nút "Đặt đơn hàng"
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /đặt đơn hàng/i })).toBeInTheDocument();
+      expect(
+        screen.getByText(/đơn hàng trước đó không còn tồn tại trên hệ thống. vui lòng tiến hành đặt lại/i)
+      ).toBeInTheDocument();
+    });
+
+    // 2. Bản ghi đơn chờ đã bị xóa sạch khỏi localStorage
+    expect(localStorage.getItem(PENDING_ORDER_STORAGE_KEY)).toBeNull();
+
+    // 3. Giỏ hàng VẪN NGUYÊN VẸN, không bị xóa
+    expect(localStorage.getItem(CART_STORAGE_KEY)).not.toBeNull();
+    expect(screen.getByText('Cà phê muối')).toBeInTheDocument();
+  });
+
+  // 14. Mở lại trang và đơn chờ bị 404 qua tra cứu: Tự động xóa đơn chờ, báo lỗi và giữ nguyên giỏ hàng
+  it('14. Mở lại trang và đơn chờ bị 404 khi tra cứu: Tự động xóa đơn chờ, ở lại bước đặt đơn và giữ nguyên giỏ hàng', async () => {
+    localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(mockLoggedInUser));
+    localStorage.setItem(CART_STORAGE_KEY, JSON.stringify([mockCartItem]));
+
+    const pendingOrder: PendingOrderRecord = {
+      orderId: 'order-check-404',
+      orderNumber: '#BL-CHECK-404',
+      totalAmount: 90000,
+      receiveType: 'AT_COUNTER',
+      idempotencyKey: 'idemp-check-404',
+      expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+      createdAt: new Date().toISOString(),
+      itemCount: 1,
+    };
+    savePendingOrder(pendingOrder);
+
+    // Mock getOrderByIdApi trả về 404
+    vi.mocked(ordersService.getOrderByIdApi).mockRejectedValueOnce(
+      new ordersService.OrderApiError(404, 'Không tìm thấy đơn hàng')
+    );
+
+    renderCheckout();
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(/đơn hàng trước đó không còn tồn tại trên hệ thống. vui lòng tiến hành đặt lại/i)
+      ).toBeInTheDocument();
+    });
+
+    // Đơn chờ bị dọn dẹp, giỏ hàng giữ nguyên
+    expect(localStorage.getItem(PENDING_ORDER_STORAGE_KEY)).toBeNull();
+    expect(localStorage.getItem(CART_STORAGE_KEY)).not.toBeNull();
+  });
+
+  // 15. Gặp lỗi 500 khi thanh toán: BẮT BUỘC GIỮ NGUYÊN đơn chờ và Idempotency-Key
+  it('15. Lỗi máy chủ 500: BẮT BUỘC GIỮ NGUYÊN đơn chờ và Idempotency-Key để khách thử lại', async () => {
+    const user = userEvent.setup();
+    localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(mockLoggedInUser));
+    localStorage.setItem(CART_STORAGE_KEY, JSON.stringify([mockCartItem]));
+
+    const pendingOrder: PendingOrderRecord = {
+      orderId: 'order-server-500',
+      orderNumber: '#BL-500',
+      totalAmount: 90000,
+      receiveType: 'AT_COUNTER',
+      idempotencyKey: 'idemp-server-500-key',
+      expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+      createdAt: new Date().toISOString(),
+      itemCount: 1,
+    };
+    savePendingOrder(pendingOrder);
+
+    // Mock payOrderApi trả về lỗi 500
+    vi.mocked(ordersService.payOrderApi).mockRejectedValueOnce(
+      new ordersService.OrderApiError(500, 'Internal Server Error')
+    );
+
+    renderCheckout();
+
+    const resumeBtn = await screen.findByRole('button', { name: /tiếp tục thanh toán/i });
+    await user.click(resumeBtn);
+
+    const accInput = await screen.findByPlaceholderText(/nhập số điện thoại ví điện tử/i);
+    await user.type(accInput, '0901234567');
+
+    const payBtn = screen.getByRole('button', { name: /xác nhận thanh toán/i });
+    await user.click(payBtn);
+
+    await waitFor(() => {
+      expect(screen.getByText(/máy chủ đang gặp sự cố tạm thời/i)).toBeInTheDocument();
+    });
+
+    // Đơn chờ VẪN CÒN NGUYÊN trong storage với đúng key cũ
+    const stored = localStorage.getItem(PENDING_ORDER_STORAGE_KEY);
+    expect(stored).not.toBeNull();
+    const parsed = JSON.parse(stored!);
+    expect(parsed.orderId).toBe('order-server-500');
+    expect(parsed.idempotencyKey).toBe('idemp-server-500-key');
+  });
+
+  // 16. Kịch bản F5 rồi thanh toán tiếp thành công với CÙNG id đơn
+  it('16. Kịch bản F5: Mở lại trang và thanh toán tiếp thành công với CÙNG id đơn', async () => {
+    const user = userEvent.setup();
+    localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(mockLoggedInUser));
+    localStorage.setItem(CART_STORAGE_KEY, JSON.stringify([mockCartItem]));
+
+    const targetOrderId = 'order-f5-success-888';
+    const targetOrderNumber = '#BL-F5-888';
+
+    const pendingOrder: PendingOrderRecord = {
+      orderId: targetOrderId,
+      orderNumber: targetOrderNumber,
+      totalAmount: 90000,
+      receiveType: 'AT_COUNTER',
+      idempotencyKey: 'idemp-f5-success-key',
+      expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+      createdAt: new Date().toISOString(),
+      itemCount: 1,
+    };
+    savePendingOrder(pendingOrder);
+
+    // Mock getOrderByIdApi trả về đơn PENDING
+    vi.mocked(ordersService.getOrderByIdApi).mockResolvedValueOnce({
+      id: targetOrderId,
+      orderNumber: targetOrderNumber,
+      status: 'PENDING',
+      receiveType: 'AT_COUNTER',
+      totalAmount: 90000,
+      subtotal: 90000,
+      discountAmount: 0,
+      expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+      createdAt: new Date().toISOString(),
+      items: [],
+    });
+
+    // Mock payOrderApi thành công
+    vi.mocked(ordersService.payOrderApi).mockResolvedValueOnce({
+      id: 'pay-f5-success',
+      orderId: targetOrderId,
+      amount: 90000,
+      method: 'E_WALLET',
+      status: 'SUCCESS',
+      orderStatus: 'PAID',
+      idempotencyKey: 'idemp-f5-success-key',
+      gatewayRef: 'GW-F5-SUCCESS-888',
+      createdAt: new Date().toISOString(),
+    });
+
+    renderCheckout();
+
+    // Thấy banner đơn chờ sau khi F5
+    const resumeBtn = await screen.findByRole('button', { name: /tiếp tục thanh toán/i });
+    expect(screen.getByText(new RegExp(targetOrderNumber, 'i'))).toBeInTheDocument();
+    await user.click(resumeBtn);
+
+    // Nhập số ví và bấm Xác nhận thanh toán
+    const accInput = await screen.findByPlaceholderText(/nhập số điện thoại ví điện tử/i);
+    await user.type(accInput, '0901234567');
+
+    const payBtn = screen.getByRole('button', { name: /xác nhận thanh toán/i });
+    await user.click(payBtn);
+
+    // Chờ màn hình thành công
+    await waitFor(() => {
+      expect(screen.getByText(/thanh toán thành công!/i)).toBeInTheDocument();
+      expect(screen.getByText(targetOrderNumber)).toBeInTheDocument();
+      expect(screen.getByText('GW-F5-SUCCESS-888')).toBeInTheDocument();
+    });
+
+    // Đảm bảo API thanh toán được gọi với ĐÚNG CÙNG id đơn
+    expect(ordersService.payOrderApi).toHaveBeenCalledWith(
+      targetOrderId,
+      expect.objectContaining({ method: 'E_WALLET' }),
+      'idemp-f5-success-key'
+    );
+
+    // Đơn chờ và giỏ hàng được dọn sạch
+    expect(localStorage.getItem(PENDING_ORDER_STORAGE_KEY)).toBeNull();
+  });
 });

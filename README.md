@@ -158,6 +158,11 @@ NEXT_PUBLIC_USE_MOCK_ORDERS=true
 ```
 - Khi bật mock:
   - Giả lập tạo đơn PENDING (tự tính tổng tiền từ danh mục, hạn 15 phút).
+  - **Lưu trữ dữ liệu Mock sống qua F5 (`brewlite_mock_orders_db_v1`):**
+    - Nhằm mục đích demo và kiểm thử, khi bật `NEXT_PUBLIC_USE_MOCK_ORDERS=true`, các đơn hàng và giao dịch mock được lưu tạm vào `localStorage` dưới khóa `brewlite_mock_orders_db_v1` để không bị mất khi F5 hoặc mở lại trang.
+    - **Bảo mật:** Mock DB chỉ lưu 4 số cuối của số ví/thẻ để đối chiếu Idempotency mock, tuyệt đối không lưu trọn vẹn số thẻ/ví.
+    - Hệ thống tự động dọn dẹp các đơn mock quá thời hạn 15 phút.
+    - **Cách xóa Mock DB bằng tay:** Mở F12 > Thẻ **Application** > **Local Storage** > click chuột phải vào khóa `brewlite_mock_orders_db_v1` chọn **Delete** (hoặc vào tab **Console** gõ `localStorage.removeItem('brewlite_mock_orders_db_v1')`).
   - **Cách kích hoạt các kịch bản mock bằng tay trên trình duyệt:**
     - **Hết hàng (409):** Chọn món "Trà đào cam sả" (món số 3 đang hết hàng) hoặc nhập từ khóa `hethang` / `hết hàng` vào ô Ghi chú.
     - **Timeout (status 0):** Nhập số điện thoại nhận hàng hoặc số thẻ/ví là `0900000001` (thẻ: `9704000000000001`), hoặc nhập chữ `timeout` vào ô Ghi chú.

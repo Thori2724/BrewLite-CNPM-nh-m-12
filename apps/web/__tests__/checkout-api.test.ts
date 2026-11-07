@@ -1,7 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
+  clearMockMemoryOnlyForTesting,
   createOrderApi,
   getOrderByIdApi,
+  MOCK_ORDERS_STORAGE_KEY,
   OrderApiError,
   payOrderApi,
   resetMockOrdersDatabase,
@@ -226,6 +228,77 @@ describe('Lớp gọi API Đơn hàng và Thanh toán (services/orders.ts)', () 
           items: [{ productId: '1', quantity: 1 }],
         })
       ).rejects.toThrow(ORDER_ERROR_MESSAGES.NETWORK_ERROR);
+    });
+  });
+
+  // 4. Lưu trữ Mock DB sống qua F5 (Mô phỏng F5 bằng cách xóa bộ nhớ RAM nhưng giữ localStorage)
+  describe('Lưu trữ Mock DB qua localStorage', () => {
+    it('4.1. Mock giữ đơn sau khi tải lại: Tạo đơn, xóa bộ nhớ RAM, gọi API thì tự nạp từ localStorage và thanh toán thành công với CÙNG id đơn', async () => {
+      // 1. Tạo đơn mới
+      const order = await createOrderApi({
+        receiveType: 'AT_COUNTER',
+        items: [{ productId: '1', quantity: 1 }],
+        customerPhone: '0901234567',
+      });
+
+      expect(order.id).toBeDefined();
+      const storedRaw = localStorage.getItem(MOCK_ORDERS_STORAGE_KEY);
+      expect(storedRaw).not.toBeNull();
+      const parsedStored = JSON.parse(storedRaw!);
+      expect(parsedStored.orders[order.id]).toBeDefined();
+
+      // 2. Giả lập F5: XÓA SẠCH BỘ NHỚ RAM CỦA MOCK
+      clearMockMemoryOnlyForTesting();
+
+      // 3. Tra cứu lại đơn: Phải tự động nạp từ localStorage
+      const reloadedOrder = await getOrderByIdApi(order.id);
+      expect(reloadedOrder.id).toBe(order.id);
+      expect(reloadedOrder.orderNumber).toBe(order.orderNumber);
+      expect(reloadedOrder.status).toBe('PENDING');
+
+      // 4. Tiến hành thanh toán tiếp: Vẫn tìm thấy đơn và thanh toán thành công với CÙNG id đơn
+      const payRes = await payOrderApi(
+        order.id,
+        {
+          method: 'E_WALLET',
+          accountNumber: '0901234567',
+        },
+        'idemp-key-survives-f5'
+      );
+
+      expect(payRes.orderId).toBe(order.id);
+      expect(payRes.status).toBe('SUCCESS');
+      expect(payRes.orderStatus).toBe('PAID');
+
+      // 5. Kiểm tra localStorage: Trạng thái đơn đã được cập nhật thành PAID
+      const updatedRaw = localStorage.getItem(MOCK_ORDERS_STORAGE_KEY);
+      const updatedParsed = JSON.parse(updatedRaw!);
+      expect(updatedParsed.orders[order.id].status).toBe('PAID');
+    });
+
+    it('4.2. Tự dọn các bản ghi mock quá 15 phút: bản ghi quá hạn không được nạp lại', async () => {
+      // Giả lập lưu đơn mock đã quá hạn 20 phút trước vào localStorage
+      const expiredMockData = {
+        orders: {
+          'order-expired-1': {
+            id: 'order-expired-1',
+            orderNumber: '#BL-EXPIRED',
+            status: 'PENDING',
+            receiveType: 'AT_COUNTER',
+            totalAmount: 50000,
+            expiresAt: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
+            createdAt: new Date(Date.now() - 20 * 60 * 1000).toISOString(),
+            items: [],
+          },
+        },
+        payments: {},
+        payloads: {},
+      };
+      localStorage.setItem(MOCK_ORDERS_STORAGE_KEY, JSON.stringify(expiredMockData));
+      clearMockMemoryOnlyForTesting();
+
+      // Khi tra cứu đơn quá hạn -> không tìm thấy (404) vì đã bị dọn
+      await expect(getOrderByIdApi('order-expired-1')).rejects.toThrow('Không tìm thấy đơn hàng');
     });
   });
 });

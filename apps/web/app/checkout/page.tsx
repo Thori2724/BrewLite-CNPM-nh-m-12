@@ -89,6 +89,7 @@ function CheckoutContent() {
   const [isSubmittingPayment, setIsSubmittingPayment] = useState<boolean>(false);
   const [paymentError, setPaymentError] = useState<string | null>(null);
   const [paymentSuccessData, setPaymentSuccessData] = useState<PaymentResponse | null>(null);
+  const [successOrderNumber, setSuccessOrderNumber] = useState<string>('');
   const [lastSubmittedPayment, setLastSubmittedPayment] = useState<{
     method: PaymentMethod;
     accountNumber: string;
@@ -114,6 +115,7 @@ function CheckoutContent() {
         if (order.status === 'PAID') {
           clearPendingOrder();
           clearAll();
+          setSuccessOrderNumber(order.orderNumber);
           setCreatedOrder(order);
           setPendingOrder(null);
           setPaymentSuccessData({
@@ -130,8 +132,20 @@ function CheckoutContent() {
           setStep('success');
         }
       })
-      .catch(() => {
-        // Bỏ qua nếu backend chưa có endpoint hoặc gặp lỗi kết nối
+      .catch((err: unknown) => {
+        if (!isMounted) return;
+        // Nếu server trả đúng 404 (đơn không còn tồn tại trên server/mock):
+        // Xóa đơn chờ, quay về bước đặt đơn, thông báo rõ ràng và giữ nguyên giỏ hàng
+        if (err instanceof OrderApiError && err.statusCode === 404) {
+          clearPendingOrder();
+          setPendingOrder(null);
+          setCreatedOrder(null);
+          setStep('order');
+          setCreateOrderError(
+            'Đơn hàng trước đó không còn tồn tại trên hệ thống. Vui lòng tiến hành đặt lại.'
+          );
+        }
+        // Các trường hợp khác (lỗi mạng, timeout, 5xx): GIỮ NGUYÊN đơn chờ
       });
 
     return () => {
@@ -165,7 +179,7 @@ function CheckoutContent() {
           <div className="flex justify-between items-center pb-2 border-b border-gray-100">
             <span className="text-gray-500">Mã đơn hàng:</span>
             <span className="font-bold text-gray-900">
-              {createdOrder?.orderNumber || pendingOrder?.orderNumber || 'Đơn hàng'}
+              {successOrderNumber || createdOrder?.orderNumber || pendingOrder?.orderNumber || 'Đơn hàng'}
             </span>
           </div>
           <div className="flex justify-between items-center pb-2 border-b border-gray-100">
@@ -371,6 +385,9 @@ function CheckoutContent() {
       );
 
       // Thanh toán thành công: Dọn dẹp giỏ hàng và đơn chờ
+      const resolvedOrderNumber =
+        createdOrder?.orderNumber || pendingOrder?.orderNumber || 'Đơn hàng';
+      setSuccessOrderNumber(resolvedOrderNumber);
       clearAll();
       clearPendingOrder();
       setPendingOrder(null);
@@ -381,6 +398,19 @@ function CheckoutContent() {
       if (err instanceof OrderApiError) {
         if (err.statusCode === 401) {
           router.push(`/login?redirect=${encodeURIComponent('/checkout')}&expired=true`);
+          return;
+        }
+        if (err.statusCode === 404) {
+          // Server (hoặc mock) trả 404: không tìm thấy đơn
+          // Bắt buộc xóa bản ghi đơn chờ, quay về bước tạo đơn, hiển thị thông báo tiếng Việt rõ ràng, giữ nguyên giỏ hàng
+          clearPendingOrder();
+          setPendingOrder(null);
+          setCreatedOrder(null);
+          setLastSubmittedPayment(null);
+          setStep('order');
+          setCreateOrderError(
+            'Đơn hàng trước đó không còn tồn tại trên hệ thống. Vui lòng tiến hành đặt lại.'
+          );
           return;
         }
         if (err.statusCode === 410) {
@@ -426,8 +456,8 @@ function CheckoutContent() {
             ? 'Yêu cầu thanh toán không khớp với dữ liệu giao dịch trước đó. Vui lòng thử lại.'
             : rawErr;
           setPaymentError(cleanErr || 'Giao dịch bị từ chối. Vui lòng kiểm tra lại số thẻ/ví.');
-        } else if (err.statusCode === 0) {
-          // Lỗi mạng hoặc timeout (kết quả chưa rõ ràng): Bắt buộc giữ nguyên key cũ
+        } else if (err.statusCode === 0 || err.statusCode >= 500) {
+          // Lỗi mạng, timeout hoặc lỗi máy chủ 5xx (kết quả chưa rõ ràng): Bắt buộc giữ nguyên đơn chờ và key cũ
           setLastSubmittedPayment({
             method: paymentMethod,
             accountNumber: cleanAccount,
@@ -454,7 +484,11 @@ function CheckoutContent() {
             savePendingOrder(keepRecord);
             setPendingOrder(keepRecord);
           }
-          setPaymentError(err.message || 'Kết nối mạng bị gián đoạn. Vui lòng bấm Thử lại.');
+          setPaymentError(
+            err.statusCode >= 500
+              ? 'Máy chủ đang gặp sự cố tạm thời. Vui lòng bấm Thử lại.'
+              : err.message || 'Kết nối mạng bị gián đoạn. Vui lòng bấm Thử lại.'
+          );
         } else {
           const rawErr = err.message || '';
           const cleanErr = rawErr.toLowerCase().includes('idempotency')
