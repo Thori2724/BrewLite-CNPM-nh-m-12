@@ -3,6 +3,7 @@ import "./globals.css";
 import { CartProvider } from "../context/CartContext";
 import { AuthProvider } from "../context/AuthContext";
 import CartIcon from "./components/CartIcon";
+import AuthNav from "./components/AuthNav";
 
 export const metadata: Metadata = {
   title: "BrewLite - Đặt món tại quầy & Mang đi",
@@ -24,7 +25,10 @@ export default function RootLayout({
               {/* Header Top Bar */}
               <header className="sticky top-0 z-50 bg-amber-600 text-white px-4 py-3 flex justify-between items-center shadow-md">
                 <h1 className="text-xl font-bold tracking-wide">BrewLite ☕</h1>
-                <CartIcon />
+                <div className="flex items-center gap-3 min-w-0">
+                  <AuthNav />
+                  <CartIcon />
+                </div>
               </header>
 
               {/* Nội dung chính màn hình */}
