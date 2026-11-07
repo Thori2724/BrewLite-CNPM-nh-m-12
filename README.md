@@ -127,6 +127,43 @@ Mở trình duyệt truy cập: [http://localhost:3000](http://localhost:3000)
 - **Trang Menu:** Xem danh sách đồ uống, lọc danh mục, tìm kiếm món.
 - **Trang Chi tiết món:** Bấm vào thẻ món bất kỳ (hoặc truy cập trực tiếp ví dụ [http://localhost:3000/menu/1](http://localhost:3000/menu/1)) để chọn Size, Lượng đá, Lượng đường, Topping, Ghi chú và xem Giá tạm tính.
 - **Trang Đăng nhập / Đăng ký:** [http://localhost:3000/login](http://localhost:3000/login) và [http://localhost:3000/register](http://localhost:3000/register). Trên header: chưa đăng nhập thấy nút "Đăng nhập", "Đăng ký"; đã đăng nhập thấy tên và nút "Đăng xuất".
+- **Trang Đặt đơn & Thanh toán (Checkout):** [http://localhost:3000/checkout](http://localhost:3000/checkout). Bắt buộc đăng nhập (bảo vệ bởi `useRequireAuth`), chọn hình thức nhận (Tại quầy / Mang đi), nhập số điện thoại, đặt đơn PENDING và thanh toán (Ví điện tử / Thẻ ngân hàng).
+
+### Đặt đơn hàng, thanh toán và kiểm soát Idempotency (web)
+
+> **Hợp đồng API Đơn hàng & Thanh toán là TẠM.** Backend chưa hoàn thiện API tạo đơn và thanh toán, nên cấu trúc DTO, endpoint và mã lỗi do frontend đề xuất. Tất cả gom trong một file duy nhất: `apps/web/services/order-contract.ts`. Riêng endpoint `GET /orders/:id` và các trường `customerName`, `customerPhone` được đánh dấu là **[CHỜ XÁC NHẬN TỪ BACKEND]**.
+
+- **Quy tắc Idempotency-Key (UUID v4):**
+  - Mỗi giao dịch thanh toán sinh một khóa định danh duy nhất gửi qua header `Idempotency-Key`.
+  - **Kết quả chưa rõ ràng** (mất mạng, timeout, gửi lại): BẮT BUỘC **GIỮ NGUYÊN** key cũ để tránh trừ tiền 2 lần.
+  - **Thông tin thanh toán thay đổi** (đổi Ví/Thẻ, đổi số tài khoản) hoặc **bị từ chối rõ ràng** (`PAYMENT_FAILED`): BẮT BUỘC **ĐỔI SANG KEY MỚI** để thử lại.
+  - Phía server/mock: Nếu gửi lại cùng key nhưng body thanh toán khác, server sẽ từ chối bằng lỗi 409 Mismatch và không xử lý thanh toán lần hai.
+- **Bảo mật thông tin thẻ / ví:**
+  - Ô nhập số thẻ / ví có thuộc tính `autoComplete="off"`.
+  - Số thẻ / ví chỉ tồn tại tạm thời trong bộ nhớ của form khi người dùng đang nhập; xóa sạch khỏi state ngay khi gửi API hoặc khi người dùng rời trang.
+  - **Tuyệt đối không bao giờ lưu số thẻ, số ví hay CVV vào `localStorage`, URL hay `console.log`**.
+- **Quản lý đơn chờ thanh toán (`brewlite_pending_order_v1`):**
+  - Khi tạo đơn thành công, thông tin đơn chờ được lưu tạm vào `localStorage` với thời hạn 15 phút (`expiresAt`).
+  - Khi người dùng quay lại trang checkout, nếu đơn chờ còn hạn sẽ hiện banner tiếp tục thanh toán.
+  - Nếu đơn chờ đã quá 15 phút, hệ thống tự động xóa bản ghi và thông báo người dùng tạo đơn mới.
+  - Khi thanh toán thành công, đơn chờ và giỏ hàng tự động được xóa sạch.
+
+**Bật / tắt chế độ giả lập (mock) đơn hàng & thanh toán**
+
+Trong file `apps/web/.env.local`:
+```text
+NEXT_PUBLIC_API_URL=http://localhost:3001
+NEXT_PUBLIC_USE_MOCK_AUTH=true
+NEXT_PUBLIC_USE_MOCK_ORDERS=true
+```
+- Khi bật mock:
+  - Giả lập tạo đơn PENDING (tự tính tổng tiền từ danh mục, hạn 15 phút).
+  - **Cách kích hoạt các kịch bản mock bằng tay trên trình duyệt:**
+    - **Hết hàng (409):** Chọn món "Trà đào cam sả" (món số 3 đang hết hàng) hoặc nhập từ khóa `hethang` / `hết hàng` vào ô Ghi chú.
+    - **Timeout (status 0):** Nhập số điện thoại nhận hàng hoặc số thẻ/ví là `0900000001` (thẻ: `9704000000000001`), hoặc nhập chữ `timeout` vào ô Ghi chú.
+    - **Mất mạng (status 0):** Nhập số điện thoại nhận hàng hoặc số thẻ/ví là `0900000002` (thẻ: `9704000000000002`), hoặc nhập chữ `offline` vào ô Ghi chú (hoặc bật chế độ Offline trong F12 > Network).
+    - **Giao dịch bị từ chối / thất bại (402):** Nhập số thẻ/ví kết thúc bằng chữ số `0` (ví dụ `0901234560` hoặc `9704000000000000`).
+    - **Giao dịch thành công (PAID):** Nhập số thẻ/ví hợp lệ kết thúc bằng số khác `0` (ví dụ `0901234567` hoặc `9704000000000007`).
 
 ### Đăng nhập, đăng ký và xử lý 401 (web)
 
@@ -137,7 +174,7 @@ Mở trình duyệt truy cập: [http://localhost:3000](http://localhost:3000)
 - **Đăng xuất:** chỉ xóa `brewlite_auth_v1`, **giỏ hàng `brewlite_cart_v1` giữ nguyên**, rồi về Menu. Đăng xuất ở một tab thì các tab khác cũng tự đăng xuất.
 - **Khi server trả 401:** hàm chung `apiFetch` (`apps/web/services/auth.ts`) tự gắn header `Authorization: Bearer <token>`. Gặp 401 thì xóa phiên, chuyển về `/login?redirect=<trang hiện tại>&expired=true` (trang đăng nhập hiện "Phiên đăng nhập đã hết hạn..."), đăng nhập lại xong quay về đúng trang cũ. Nhiều request 401 cùng lúc chỉ chuyển trang một lần. Riêng lời gọi đăng nhập/đăng ký bị 401 (sai mật khẩu) thì **không** chuyển trang, chỉ báo lỗi trên form.
 - **Chống chuyển hướng ra ngoài:** tham số `redirect` chỉ nhận đường dẫn nội bộ bắt đầu bằng một dấu `/`. Giá trị như `//evil.com`, `https://...`, `javascript:...` sẽ bị bỏ, về Menu.
-- **Bảo vệ trang (cho Task 17/18):** hook `useRequireAuth` trong `apps/web/context/useRequireAuth.ts`. Hiện **chưa áp dụng** vào trang nào; Menu, chi tiết món, giỏ hàng vẫn xem được khi chưa đăng nhập.
+- **Bảo vệ trang:** hook `useRequireAuth` trong `apps/web/context/useRequireAuth.ts` được áp dụng để bảo vệ trang Đặt đơn & Thanh toán `/checkout` (chưa đăng nhập tự động chuyển về `/login?redirect=%2Fcheckout`). Trang Menu, chi tiết món và giỏ hàng vẫn xem được tự do khi chưa đăng nhập.
 
 **Bật / tắt chế độ giả lập (mock) auth**
 

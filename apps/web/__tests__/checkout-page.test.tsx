@@ -12,6 +12,7 @@ import {
   PENDING_ORDER_STORAGE_KEY,
   savePendingOrder,
 } from '../utils/checkout';
+import { OrderResponse } from '../services/order-contract';
 import * as ordersService from '../services/orders';
 import * as navigation from 'next/navigation';
 
@@ -36,6 +37,7 @@ vi.mock('../services/orders', async () => {
     ...actual,
     createOrderApi: vi.fn(),
     payOrderApi: vi.fn(),
+    getOrderByIdApi: vi.fn(),
   };
 });
 
@@ -80,6 +82,10 @@ describe('Giao diện và luồng xử lý trang Checkout (/checkout)', () => {
 
     vi.mocked(navigation.useSearchParams).mockImplementation(
       () => mockSearchParams as unknown as ReturnType<typeof navigation.useSearchParams>
+    );
+
+    vi.mocked(ordersService.getOrderByIdApi).mockRejectedValue(
+      new Error('No mock order by id')
     );
   });
 
@@ -197,7 +203,7 @@ describe('Giao diện và luồng xử lý trang Checkout (/checkout)', () => {
   });
 
   // 5. Tạo đơn thất bại do hết hàng 409
-  it('5. Hết hàng (409): Hiển thị danh sách món hết hàng và giữ nguyên giỏ hàng', async () => {
+  it('5. Hết hàng (409): Hiển thị danh sách món hết hàng, giữ nguyên giỏ hàng và không tạo đơn chờ sai', async () => {
     const user = userEvent.setup();
     localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(mockLoggedInUser));
     localStorage.setItem(CART_STORAGE_KEY, JSON.stringify([mockCartItem]));
@@ -229,6 +235,8 @@ describe('Giao diện và luồng xử lý trang Checkout (/checkout)', () => {
 
     // Giỏ hàng vẫn còn nguyên vẹn trong storage
     expect(localStorage.getItem(CART_STORAGE_KEY)).not.toBeNull();
+    // Không lưu bản ghi đơn chờ sai vào storage
+    expect(localStorage.getItem(PENDING_ORDER_STORAGE_KEY)).toBeNull();
   });
 
   // 6. Thanh toán thành công: Xóa sạch input nhạy cảm, xóa giỏ hàng và đơn chờ
@@ -485,5 +493,127 @@ describe('Giao diện và luồng xử lý trang Checkout (/checkout)', () => {
 
     // KIỂM TRA QUY TẮC IDEMPOTENCY: Sau lỗi mạng thử lại cùng số -> BẮT BUỘC DÙNG CÙNG KEY
     expect(call2Key).toBe(call1Key);
+  });
+
+  // 10. Chống bấm đúp (Debounce / Khóa submit)
+  it('10. Chống bấm đúp: Bấm liên tiếp nút Đặt đơn chỉ gửi đúng 1 request API tạo đơn', async () => {
+    const user = userEvent.setup();
+    localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(mockLoggedInUser));
+    localStorage.setItem(CART_STORAGE_KEY, JSON.stringify([mockCartItem]));
+
+    let resolvePromise!: (value: OrderResponse) => void;
+    const pendingPromise = new Promise<OrderResponse>((resolve) => {
+      resolvePromise = resolve;
+    });
+
+    vi.mocked(ordersService.createOrderApi).mockImplementationOnce(() => pendingPromise);
+
+    renderCheckout();
+
+    await waitFor(() => {
+      expect(screen.getByText('Cà phê muối')).toBeInTheDocument();
+    });
+
+    const phoneInput = screen.getByLabelText(/số điện thoại nhận hàng/i);
+    await user.type(phoneInput, '0901234567');
+
+    const submitBtn = screen.getByRole('button', { name: /đặt đơn hàng/i });
+
+    // Bấm liên tiếp nhiều lần khi đang xử lý
+    await user.click(submitBtn);
+    await user.click(submitBtn);
+    await user.click(submitBtn);
+
+    // API chỉ được gọi 1 lần duy nhất
+    expect(ordersService.createOrderApi).toHaveBeenCalledTimes(1);
+
+    // Giải phóng promise
+    resolvePromise({
+      id: 'order-double-click',
+      orderNumber: '#BL-1234',
+      status: 'PENDING',
+      receiveType: 'AT_COUNTER',
+      totalAmount: 90000,
+      subtotal: 90000,
+      discountAmount: 0,
+      expiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
+      createdAt: new Date().toISOString(),
+      items: [],
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('#BL-1234')).toBeInTheDocument();
+    });
+  });
+
+  // 11. Đơn chờ đã hoàn tất thanh toán từ trước (PAID)
+  it('11. Đơn chờ đã hoàn tất thanh toán từ trước (PAID): Mở lại trang tự động dọn dẹp đơn chờ, giỏ hàng và chuyển sang màn hình thành công', async () => {
+    localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(mockLoggedInUser));
+    localStorage.setItem(CART_STORAGE_KEY, JSON.stringify([mockCartItem]));
+
+    const pendingOrder: PendingOrderRecord = {
+      orderId: 'order-already-paid',
+      orderNumber: '#BL-PAID-999',
+      totalAmount: 90000,
+      receiveType: 'AT_COUNTER',
+      idempotencyKey: 'idemp-paid-test',
+      expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+      createdAt: new Date().toISOString(),
+      itemCount: 1,
+    };
+    savePendingOrder(pendingOrder);
+
+    // Mock getOrderByIdApi trả về đơn hàng có trạng thái PAID
+    vi.mocked(ordersService.getOrderByIdApi).mockResolvedValueOnce({
+      id: 'order-already-paid',
+      orderNumber: '#BL-PAID-999',
+      status: 'PAID',
+      receiveType: 'AT_COUNTER',
+      totalAmount: 90000,
+      subtotal: 90000,
+      discountAmount: 0,
+      expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+      createdAt: new Date().toISOString(),
+      items: [],
+    });
+
+    renderCheckout();
+
+    // Tự động chuyển sang màn hình thành công
+    await waitFor(() => {
+      expect(screen.getByText(/thanh toán thành công!/i)).toBeInTheDocument();
+      expect(screen.getByText('#BL-PAID-999')).toBeInTheDocument();
+    });
+
+    // Đơn chờ và giỏ hàng đã được xóa sạch
+    expect(localStorage.getItem(PENDING_ORDER_STORAGE_KEY)).toBeNull();
+    expect(localStorage.getItem(CART_STORAGE_KEY)).toBe('[]');
+  });
+
+  // 12. Gặp lỗi 401 giữa chừng
+  it('12. Gặp lỗi 401 giữa chừng khi tạo đơn: Tự động chuyển hướng về /login kèm expired=true', async () => {
+    const user = userEvent.setup();
+    localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(mockLoggedInUser));
+    localStorage.setItem(CART_STORAGE_KEY, JSON.stringify([mockCartItem]));
+
+    vi.mocked(ordersService.createOrderApi).mockRejectedValueOnce(
+      new ordersService.OrderApiError(401, 'Unauthorized')
+    );
+
+    renderCheckout();
+
+    await waitFor(() => {
+      expect(screen.getByText('Cà phê muối')).toBeInTheDocument();
+    });
+
+    const phoneInput = screen.getByLabelText(/số điện thoại nhận hàng/i);
+    await user.type(phoneInput, '0901234567');
+
+    const submitBtn = screen.getByRole('button', { name: /đặt đơn hàng/i });
+    await user.click(submitBtn);
+
+    await waitFor(() => {
+      expect(mockPush).toHaveBeenCalledWith('/login?redirect=%2Fcheckout&expired=true');
+    });
   });
 });

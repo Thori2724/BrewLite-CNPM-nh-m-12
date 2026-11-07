@@ -77,6 +77,21 @@ async function mockCreateOrder(dto: CreateOrderDto): Promise<OrderResponse> {
     throw new OrderApiError(0, ORDER_ERROR_MESSAGES.NETWORK_ERROR);
   }
 
+  // Hỗ trợ kiểm thử thủ công qua ghi chú hoặc số điện thoại giả lập
+  const lowerNote = (dto.note || '').toLowerCase();
+  if (lowerNote.includes('hethang') || lowerNote.includes('hết hàng')) {
+    throw new OrderApiError(409, ORDER_ERROR_MESSAGES.OUT_OF_STOCK, {
+      outOfStockItems: ['Trà đào cam sả'],
+      errorData: { statusCode: 409, outOfStockItems: ['Trà đào cam sả'] },
+    });
+  }
+  if (lowerNote.includes('timeout') || dto.customerPhone === '0900000001') {
+    throw new OrderApiError(0, ORDER_ERROR_MESSAGES.NETWORK_TIMEOUT);
+  }
+  if (lowerNote.includes('offline') || dto.customerPhone === '0900000002') {
+    throw new OrderApiError(0, ORDER_ERROR_MESSAGES.NETWORK_ERROR);
+  }
+
   // 1. Kiểm tra tồn kho (món productId = '3' trong MOCK_PRODUCTS là Trà đào cam sả đang hết hàng)
   const outOfStockNames: string[] = [];
   for (const item of dto.items) {
@@ -161,8 +176,15 @@ async function mockPayOrder(
     throw new OrderApiError(0, ORDER_ERROR_MESSAGES.NETWORK_ERROR);
   }
 
-  // 1. KIỂM TRA IDEMPOTENCY:
+  // 1. KIỂM TRA IDEMPOTENCY & GIẢ LẬP SỰ CỐ QUA SỐ TÀI KHOẢN:
   const cleanNumber = (dto.accountNumber || '').replace(/[\s-]+/g, '');
+  if (cleanNumber === '0900000001' || cleanNumber === '9704000000000001') {
+    throw new OrderApiError(0, ORDER_ERROR_MESSAGES.NETWORK_TIMEOUT);
+  }
+  if (cleanNumber === '0900000002' || cleanNumber === '9704000000000002') {
+    throw new OrderApiError(0, ORDER_ERROR_MESSAGES.NETWORK_ERROR);
+  }
+
   const existingPayload = mockPaymentsPayloadDatabase.get(idempotencyKey);
 
   // Nếu cùng key nhưng body thanh toán khác (đổi orderId, đổi Ví/Thẻ hoặc đổi số tài khoản):
@@ -173,10 +195,7 @@ async function mockPayOrder(
       existingPayload.method !== dto.method ||
       existingPayload.accountNumber !== cleanNumber
     ) {
-      throw new OrderApiError(
-        409,
-        'Idempotency key mismatch: Yêu cầu thanh toán không khớp với dữ liệu đã lưu cho khóa này'
-      );
+      throw new OrderApiError(409, ORDER_ERROR_MESSAGES.IDEMPOTENCY_MISMATCH);
     }
   }
 

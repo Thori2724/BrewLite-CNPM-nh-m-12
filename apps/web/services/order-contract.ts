@@ -143,6 +143,7 @@ export const ORDER_ERROR_MESSAGES = {
   OUT_OF_STOCK: 'Một số món trong giỏ hàng đã hết hàng.',
   PAYMENT_REJECTED: 'Thanh toán không thành công. Thẻ hoặc ví bị từ chối (tài khoản không đủ số dư hoặc thông tin không hợp lệ).',
   ORDER_EXPIRED: 'Đơn hàng đã hết hạn thanh toán (quá thời hạn 15 phút).',
+  IDEMPOTENCY_MISMATCH: 'Yêu cầu thanh toán không khớp với dữ liệu giao dịch trước đó. Vui lòng thử lại.',
   NETWORK_TIMEOUT: 'Yêu cầu bị quá thời gian chờ (timeout). Vui lòng thử lại.',
   NETWORK_ERROR: 'Không thể kết nối đến máy chủ. Vui lòng kiểm tra đường truyền và thử lại.',
   UNKNOWN_ERROR: 'Đã có lỗi xảy ra trong quá trình xử lý đơn hàng. Vui lòng thử lại.',

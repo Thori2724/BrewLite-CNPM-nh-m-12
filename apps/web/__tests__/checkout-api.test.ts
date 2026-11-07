@@ -174,7 +174,7 @@ describe('Lớp gọi API Đơn hàng và Thanh toán (services/orders.ts)', () 
         expect(err).toBeInstanceOf(OrderApiError);
         const orderErr = err as OrderApiError;
         expect(orderErr.statusCode).toBe(409);
-        expect(orderErr.message).toContain('Idempotency key mismatch');
+        expect(orderErr.message).toBe(ORDER_ERROR_MESSAGES.IDEMPOTENCY_MISMATCH);
       }
     });
 

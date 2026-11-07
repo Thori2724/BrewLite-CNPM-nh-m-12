@@ -2,6 +2,7 @@
 
 import React, { Suspense, useEffect, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useRequireAuth } from '../../context/useRequireAuth';
 import { useCart } from '../../context/CartContext';
 import {
@@ -13,6 +14,7 @@ import {
 import {
   createOrderApi,
   payOrderApi,
+  getOrderByIdApi,
   OrderApiError,
 } from '../../services/orders';
 import {
@@ -44,6 +46,7 @@ function getIceLabel(ice?: string): string {
 }
 
 function CheckoutContent() {
+  const router = useRouter();
   const { user, isChecking, isReady } = useRequireAuth();
   const { items, totalAmount, clearAll, isHydrated } = useCart();
 
@@ -98,6 +101,43 @@ function CheckoutContent() {
       setAccountNumber('');
     };
   }, []);
+
+  // Kiểm tra nếu đơn chờ đã được thanh toán thành công từ trước (F5 / mở lại trang)
+  useEffect(() => {
+    const orderIdToCheck = pendingOrder?.orderId;
+    if (!orderIdToCheck) return;
+
+    let isMounted = true;
+    getOrderByIdApi(orderIdToCheck)
+      .then((order) => {
+        if (!isMounted) return;
+        if (order.status === 'PAID') {
+          clearPendingOrder();
+          clearAll();
+          setCreatedOrder(order);
+          setPendingOrder(null);
+          setPaymentSuccessData({
+            id: `paid-${order.id}`,
+            orderId: order.id,
+            amount: order.totalAmount,
+            method: 'E_WALLET',
+            status: 'SUCCESS',
+            orderStatus: 'PAID',
+            idempotencyKey: pendingOrder.idempotencyKey,
+            gatewayRef: 'Đã hoàn tất thanh toán',
+            createdAt: order.createdAt,
+          });
+          setStep('success');
+        }
+      })
+      .catch(() => {
+        // Bỏ qua nếu backend chưa có endpoint hoặc gặp lỗi kết nối
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [pendingOrder?.orderId, pendingOrder?.idempotencyKey, clearAll]);
 
   // 1. Đang kiểm tra đăng nhập hoặc chưa nạp xong giỏ hàng
   if (isChecking || !isReady || !isHydrated) {
@@ -225,6 +265,10 @@ function CheckoutContent() {
       setStep('payment');
     } catch (err: unknown) {
       if (err instanceof OrderApiError) {
+        if (err.statusCode === 401) {
+          router.push(`/login?redirect=${encodeURIComponent('/checkout')}&expired=true`);
+          return;
+        }
         if (err.statusCode === 409) {
           // Lỗi hết hàng
           setOutOfStockList(err.outOfStockItems || []);
@@ -259,6 +303,18 @@ function CheckoutContent() {
       return;
     }
 
+    // Kiểm tra đơn đã quá thời hạn 15 phút hay chưa
+    const activeOrder = createdOrder || pendingOrder;
+    if (activeOrder && new Date(activeOrder.expiresAt).getTime() <= Date.now()) {
+      clearPendingOrder();
+      setPendingOrder(null);
+      setCreatedOrder(null);
+      setStep('order');
+      setWasExpiredNotice(true);
+      setPaymentError('Đơn hàng đã hết hạn thanh toán (quá 15 phút). Vui lòng tạo đơn mới.');
+      return;
+    }
+
     setIsSubmittingPayment(true);
     setPaymentError(null);
 
@@ -289,7 +345,6 @@ function CheckoutContent() {
     // Luôn đồng bộ key hữu hiệu vào state và storage
     setCurrentIdempotencyKey(effectiveKey);
 
-    const activeOrder = createdOrder || pendingOrder;
     if (activeOrder) {
       const updatedRecord: PendingOrderRecord = {
         orderId: 'id' in activeOrder ? activeOrder.id : activeOrder.orderId,
@@ -324,6 +379,19 @@ function CheckoutContent() {
       setStep('success');
     } catch (err: unknown) {
       if (err instanceof OrderApiError) {
+        if (err.statusCode === 401) {
+          router.push(`/login?redirect=${encodeURIComponent('/checkout')}&expired=true`);
+          return;
+        }
+        if (err.statusCode === 410) {
+          clearPendingOrder();
+          setPendingOrder(null);
+          setCreatedOrder(null);
+          setStep('order');
+          setWasExpiredNotice(true);
+          setPaymentError('Đơn hàng đã hết hạn thanh toán (quá 15 phút). Vui lòng tạo đơn mới.');
+          return;
+        }
         if (err.statusCode === 402) {
           // Bị từ chối rõ ràng: Đánh dấu lần gửi này bị từ chối
           setLastSubmittedPayment({
@@ -353,7 +421,11 @@ function CheckoutContent() {
             savePendingOrder(nextRecord);
             setPendingOrder(nextRecord);
           }
-          setPaymentError(err.message || 'Giao dịch bị từ chối. Vui lòng kiểm tra lại số thẻ/ví.');
+          const rawErr = err.message || '';
+          const cleanErr = rawErr.toLowerCase().includes('idempotency')
+            ? 'Yêu cầu thanh toán không khớp với dữ liệu giao dịch trước đó. Vui lòng thử lại.'
+            : rawErr;
+          setPaymentError(cleanErr || 'Giao dịch bị từ chối. Vui lòng kiểm tra lại số thẻ/ví.');
         } else if (err.statusCode === 0) {
           // Lỗi mạng hoặc timeout (kết quả chưa rõ ràng): Bắt buộc giữ nguyên key cũ
           setLastSubmittedPayment({
@@ -384,7 +456,11 @@ function CheckoutContent() {
           }
           setPaymentError(err.message || 'Kết nối mạng bị gián đoạn. Vui lòng bấm Thử lại.');
         } else {
-          setPaymentError(err.message);
+          const rawErr = err.message || '';
+          const cleanErr = rawErr.toLowerCase().includes('idempotency')
+            ? 'Yêu cầu thanh toán không khớp với dữ liệu giao dịch trước đó. Vui lòng thử lại.'
+            : rawErr;
+          setPaymentError(cleanErr);
         }
       } else {
         setPaymentError('Có lỗi xảy ra khi xử lý thanh toán.');
