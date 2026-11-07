@@ -237,8 +237,7 @@ describe('Trang Giỏ hàng (CartPage)', () => {
     expect(screen.getByText('Giỏ hàng của bạn đang trống')).toBeInTheDocument();
   });
 
-  it('7. Bấm nút "Tiến hành đặt đơn" hiển thị thông báo Task 17', async () => {
-    const user = userEvent.setup();
+  it('7. Nút "Tiến hành đặt đơn" liên kết điều hướng sang trang /checkout', async () => {
     localStorage.setItem(CART_STORAGE_KEY, JSON.stringify([mockItemCake]));
 
     render(
@@ -251,10 +250,12 @@ describe('Trang Giỏ hàng (CartPage)', () => {
       expect(screen.getByText('Bánh croissant phô mai')).toBeInTheDocument();
     });
 
-    const checkoutBtn = screen.getByRole('button', { name: /tiến hành đặt đơn/i });
-    await user.click(checkoutBtn);
-
-    expect(screen.getByText(/Chức năng đặt đơn và thanh toán sẽ có ở Task 17/i)).toBeInTheDocument();
+    const checkoutLink = screen.getByRole('link', { name: /tiến hành đặt đơn/i });
+    expect(checkoutLink).toBeInTheDocument();
+    expect(checkoutLink).toHaveAttribute('href', '/checkout');
+    expect(
+      screen.queryByText(/chức năng đặt đơn và thanh toán sẽ có ở task 17/i)
+    ).not.toBeInTheDocument();
   });
 });
 

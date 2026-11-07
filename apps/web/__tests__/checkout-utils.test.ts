@@ -9,6 +9,7 @@ import {
   maskAccountNumber,
   PendingOrderRecord,
   PENDING_ORDER_STORAGE_KEY,
+  resolveIdempotencyKey,
   savePendingOrder,
   validateAccountNumber,
   validateCustomerPhone,
@@ -229,6 +230,58 @@ describe('Hàm thuần xử lý đơn hàng và thanh toán (utils/checkout.ts)'
       clearPendingOrder();
       expect(loadPendingOrder()).toBeNull();
       expect(localStorage.getItem(PENDING_ORDER_STORAGE_KEY)).toBeNull();
+    });
+  });
+
+  // 6. Quyết định giữ hay đổi Idempotency-Key (resolveIdempotencyKey)
+  describe('Hàm quyết định Idempotency-Key (resolveIdempotencyKey)', () => {
+    const existingKey = '88888888-4444-4333-8222-111111111111';
+
+    it('6.1. Khi kết quả chưa rõ (isUncertainResult = true: timeout, mất mạng): BẮT BUỘC GIỮ NGUYÊN key', () => {
+      const result = resolveIdempotencyKey({
+        currentKey: existingKey,
+        isUncertainResult: true,
+      });
+
+      expect(result.key).toBe(existingKey);
+      expect(result.isNewKey).toBe(false);
+    });
+
+    it('6.2. Khi thông tin thanh toán thay đổi (hasPaymentInfoChanged = true): BẮT BUỘC ĐỔI SANG key MỚI', () => {
+      const result = resolveIdempotencyKey({
+        currentKey: existingKey,
+        hasPaymentInfoChanged: true,
+      });
+
+      expect(result.key).not.toBe(existingKey);
+      expect(result.isNewKey).toBe(true);
+      expect(result.key).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
+    });
+
+    it('6.3. Khi bị từ chối rõ ràng (isPaymentRejectedClearly = true): BẮT BUỘC ĐỔI SANG key MỚI để thử lại', () => {
+      const result = resolveIdempotencyKey({
+        currentKey: existingKey,
+        isPaymentRejectedClearly: true,
+      });
+
+      expect(result.key).not.toBe(existingKey);
+      expect(result.isNewKey).toBe(true);
+    });
+
+    it('6.4. Khi chưa có key (currentKey rỗng hoặc chỉ có khoảng trắng): BẮT BUỘC SINH key MỚI', () => {
+      const resultEmpty = resolveIdempotencyKey({ currentKey: '' });
+      expect(resultEmpty.isNewKey).toBe(true);
+      expect(resultEmpty.key).toBeDefined();
+
+      const resultWhitespace = resolveIdempotencyKey({ currentKey: '   ' });
+      expect(resultWhitespace.isNewKey).toBe(true);
+      expect(resultWhitespace.key).toBeDefined();
+    });
+
+    it('6.5. Mặc định khi không có biến động bất thường: GIỮ NGUYÊN key', () => {
+      const result = resolveIdempotencyKey({ currentKey: existingKey });
+      expect(result.key).toBe(existingKey);
+      expect(result.isNewKey).toBe(false);
     });
   });
 });

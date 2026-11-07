@@ -1,6 +1,5 @@
 'use client';
 
-import { useState } from 'react';
 import Link from 'next/link';
 import { useCart } from '../../context/CartContext';
 import { getLineTotal, MAX_ITEM_QUANTITY } from '../../utils/cart';
@@ -23,7 +22,6 @@ function getIceLabel(ice?: string): string {
 export default function CartPage() {
   const { items, totalAmount, totalCount, isHydrated, updateQuantity, removeFromCart, clearAll } =
     useCart();
-  const [orderNotice, setOrderNotice] = useState<string | null>(null);
 
   // 1. Chờ hydration từ localStorage để tránh nhấp nháy hoặc lệch giao diện Server/Client
   if (!isHydrated) {
@@ -63,15 +61,6 @@ export default function CartPage() {
     }
   };
 
-  // 4. Xử lý nút Tiến hành đặt đơn (Task 17)
-  const handleProceedToCheckout = () => {
-    // TODO (Task 17): Chuyển sang trang đặt đơn và thanh toán (Checkout)
-    setOrderNotice('Chức năng đặt đơn và thanh toán sẽ có ở Task 17!');
-    setTimeout(() => {
-      setOrderNotice(null);
-    }, 3500);
-  };
-
   return (
     <div className="space-y-4 max-w-2xl mx-auto">
       {/* Thanh điều hướng và Tiêu đề */}
@@ -96,13 +85,6 @@ export default function CartPage() {
           Giỏ hàng ({totalCount} món)
         </h1>
       </div>
-
-      {/* Thông báo Task 17 */}
-      {orderNotice && (
-        <div className="bg-amber-50 border border-amber-200 text-amber-800 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-medium text-center transition">
-          ℹ️ {orderNotice}
-        </div>
-      )}
 
       {/* Danh sách các dòng giỏ hàng */}
       <div className="space-y-3">
@@ -209,14 +191,13 @@ export default function CartPage() {
           * Giá trên là tạm tính; tiền thật do server tính toán chính thức khi tạo đơn hàng.
         </p>
 
-        {/* Nút Tiến hành đặt đơn (Task 17) */}
-        <button
-          type="button"
-          onClick={handleProceedToCheckout}
-          className="w-full py-3 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-xl text-sm transition shadow-sm cursor-pointer"
+        {/* Nút Tiến hành đặt đơn chuyển sang trang /checkout */}
+        <Link
+          href="/checkout"
+          className="block w-full py-3 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-xl text-sm transition shadow-sm text-center"
         >
           Tiến hành đặt đơn ({totalAmount.toLocaleString('vi-VN')} đ)
-        </button>
+        </Link>
       </div>
     </div>
   );

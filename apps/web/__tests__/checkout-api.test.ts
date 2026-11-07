@@ -150,6 +150,58 @@ describe('Lớp gọi API Đơn hàng và Thanh toán (services/orders.ts)', () 
       expect(res2.gatewayRef).toBe(res1.gatewayRef);
       expect(res2.status).toBe('SUCCESS');
     });
+
+    it('2.4. IDEMPOTENCY: Cùng key nhưng body thanh toán khác (đổi số tài khoản) thì trả lỗi 409 Mismatch và không trừ tiền lần 2', async () => {
+      const initialDto: PaymentDto = {
+        method: 'E_WALLET',
+        accountNumber: '0901234567',
+      };
+      const sameKey = 'idemp-key-mismatch-test';
+
+      // Lần gửi 1 thành công
+      await payOrderApi(createdOrderId, initialDto, sameKey);
+
+      // Lần gửi 2 cùng key nhưng đổi số tài khoản khác
+      const alteredDto: PaymentDto = {
+        method: 'E_WALLET',
+        accountNumber: '0908888888',
+      };
+
+      try {
+        await payOrderApi(createdOrderId, alteredDto, sameKey);
+        expect.unreachable('Phải ném lỗi 409 Mismatch');
+      } catch (err) {
+        expect(err).toBeInstanceOf(OrderApiError);
+        const orderErr = err as OrderApiError;
+        expect(orderErr.statusCode).toBe(409);
+        expect(orderErr.message).toContain('Idempotency key mismatch');
+      }
+    });
+
+    it('2.5. IDEMPOTENCY: Sau thất bại rõ ràng (PAYMENT_FAILED), thử lại với key mới thì xử lý độc lập và thành công', async () => {
+      const keyFail = 'idemp-key-rejected-1';
+      const failedDto: PaymentDto = {
+        method: 'E_WALLET',
+        accountNumber: '0901234560', // Đuôi 0 -> giả lập bị từ chối rõ ràng
+      };
+
+      // Lần 1: Bị từ chối
+      await expect(payOrderApi(createdOrderId, failedDto, keyFail)).rejects.toThrow(
+        ORDER_ERROR_MESSAGES.PAYMENT_REJECTED
+      );
+
+      // Lần 2: Sinh key mới sau thất bại rõ ràng, dùng số tài khoản mới hợp lệ
+      const keyNew = 'idemp-key-retry-success-2';
+      const validRetryDto: PaymentDto = {
+        method: 'E_WALLET',
+        accountNumber: '0901234567',
+      };
+
+      const resRetry = await payOrderApi(createdOrderId, validRetryDto, keyNew);
+      expect(resRetry.status).toBe('SUCCESS');
+      expect(resRetry.orderStatus).toBe('PAID');
+      expect(resRetry.idempotencyKey).toBe(keyNew);
+    });
   });
 
   // 3. Giả lập Timeout và Mất mạng

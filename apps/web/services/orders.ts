@@ -44,6 +44,10 @@ interface MockOrderRecord extends OrderResponse {
 
 const mockOrdersDatabase: Map<string, MockOrderRecord> = new Map();
 const mockPaymentsDatabase: Map<string, PaymentResponse> = new Map();
+const mockPaymentsPayloadDatabase: Map<
+  string,
+  { orderId: string; method: string; accountNumber: string }
+> = new Map();
 
 // Cờ giả lập lỗi mạng để phục vụ kiểm thử
 let mockNetworkSimulation: 'timeout' | 'offline' | null = null;
@@ -55,6 +59,7 @@ export function setMockNetworkSimulation(type: 'timeout' | 'offline' | null): vo
 export function resetMockOrdersDatabase(): void {
   mockOrdersDatabase.clear();
   mockPaymentsDatabase.clear();
+  mockPaymentsPayloadDatabase.clear();
   mockNetworkSimulation = null;
 }
 
@@ -156,7 +161,26 @@ async function mockPayOrder(
     throw new OrderApiError(0, ORDER_ERROR_MESSAGES.NETWORK_ERROR);
   }
 
-  // 1. KIỂM TRA IDEMPOTENCY: Nếu đã xử lý với key này trước đó -> trả lại kết quả cũ
+  // 1. KIỂM TRA IDEMPOTENCY:
+  const cleanNumber = (dto.accountNumber || '').replace(/[\s-]+/g, '');
+  const existingPayload = mockPaymentsPayloadDatabase.get(idempotencyKey);
+
+  // Nếu cùng key nhưng body thanh toán khác (đổi orderId, đổi Ví/Thẻ hoặc đổi số tài khoản):
+  // Server từ chối (409 Conflict), không xử lý giao dịch lần hai
+  if (existingPayload) {
+    if (
+      existingPayload.orderId !== orderId ||
+      existingPayload.method !== dto.method ||
+      existingPayload.accountNumber !== cleanNumber
+    ) {
+      throw new OrderApiError(
+        409,
+        'Idempotency key mismatch: Yêu cầu thanh toán không khớp với dữ liệu đã lưu cho khóa này'
+      );
+    }
+  }
+
+  // Nếu đã xử lý với key này trước đó và body khớp -> trả lại kết quả cũ (không trừ tiền lần 2)
   const existingPayment = mockPaymentsDatabase.get(idempotencyKey);
   if (existingPayment) {
     if (existingPayment.status === 'SUCCESS') {
@@ -165,6 +189,15 @@ async function mockPayOrder(
     // Nếu lần trước thất bại với cùng key này
     throw new OrderApiError(402, ORDER_ERROR_MESSAGES.PAYMENT_REJECTED, {
       errorData: existingPayment,
+    });
+  }
+
+  // Lưu payload của lần gửi đầu tiên với key này
+  if (!existingPayload) {
+    mockPaymentsPayloadDatabase.set(idempotencyKey, {
+      orderId,
+      method: dto.method,
+      accountNumber: cleanNumber,
     });
   }
 
@@ -197,7 +230,6 @@ async function mockPayOrder(
   }
 
   // 2. QUY TẮC MÔ PHỎNG: số kết thúc bằng 0 -> THẤT BẠI
-  const cleanNumber = (dto.accountNumber || '').replace(/[\s-]+/g, '');
   if (cleanNumber.endsWith('0')) {
     order.status = 'PAYMENT_FAILED';
 

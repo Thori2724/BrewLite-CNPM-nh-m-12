@@ -303,3 +303,69 @@ export function validateAccountNumber(
   return { isValid: true };
 }
 
+/**
+ * Tham số đầu vào để quyết định giữ hay đổi Idempotency-Key
+ */
+export interface ResolveKeyParams {
+  currentKey: string;
+  isUncertainResult?: boolean; // Lỗi mạng, timeout, 5xx, gửi lại khi chưa có kết quả
+  isPaymentRejectedClearly?: boolean; // Server đã trả kết quả từ chối rõ ràng (402 PAYMENT_FAILED)
+  hasPaymentInfoChanged?: boolean; // Khách đã đổi Ví/Thẻ hoặc đổi số tài khoản
+}
+
+/**
+ * Hàm thuần quyết định giữ nguyên hay sinh mới Idempotency-Key.
+ * Quy tắc:
+ * 1. Khi kết quả chưa rõ (isUncertainResult = true: timeout, mất mạng, gửi lại): GIỮ NGUYÊN key.
+ * 2. Khi thông tin thanh toán thay đổi (hasPaymentInfoChanged = true): ĐỔI sang key MỚI.
+ * 3. Khi thất bại rõ ràng (isPaymentRejectedClearly = true): ĐỔI sang key MỚI để thử lại.
+ * 4. Nếu chưa có key (chuỗi rỗng): SINH key MỚI.
+ */
+export function resolveIdempotencyKey(params: ResolveKeyParams): {
+  key: string;
+  isNewKey: boolean;
+} {
+  const cleanCurrentKey = (params.currentKey || '').trim();
+
+  // Chưa có key -> bắt buộc sinh mới
+  if (!cleanCurrentKey) {
+    return {
+      key: generateIdempotencyKey(),
+      isNewKey: true,
+    };
+  }
+
+  // Ưu tiên 1: Kết quả chưa rõ ràng (mất mạng, timeout, gửi lại) -> BẮT BUỘC GIỮ NGUYÊN KEY CŨ
+  if (params.isUncertainResult) {
+    return {
+      key: cleanCurrentKey,
+      isNewKey: false,
+    };
+  }
+
+  // Ưu tiên 2: Thông tin thanh toán đã thay đổi -> BẮT BUỘC ĐỔI SANG KEY MỚI
+  if (params.hasPaymentInfoChanged) {
+    return {
+      key: generateIdempotencyKey(),
+      isNewKey: true,
+    };
+  }
+
+  // Ưu tiên 3: Server đã từ chối rõ ràng và khách bấm thử lại -> BẮT BUỘC ĐỔI SANG KEY MỚI
+  if (params.isPaymentRejectedClearly) {
+    return {
+      key: generateIdempotencyKey(),
+      isNewKey: true,
+    };
+  }
+
+  // Mặc định: Giữ nguyên key đang có
+  return {
+    key: cleanCurrentKey,
+    isNewKey: false,
+  };
+}
+
+
+
+
