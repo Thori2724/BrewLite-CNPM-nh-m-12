@@ -62,6 +62,11 @@ $ npm run test:cov
 - `GET /products`: Lấy danh sách món đang hiển thị (`isVisible = true`), sắp xếp theo `category` rồi `name`. Hỗ trợ query tùy chọn `category` (`TEA`, `COFFEE`, `MILK_TEA`, `CAKE`) và `q` (tìm theo tên không phân biệt hoa/thường, có dấu).
 - `GET /products/:id`: Xem chi tiết một sản phẩm theo UUID kèm cấu hình `sizes`, `sugarLevels`, `iceLevels`, `toppings` (món `CAKE` trả 4 mảng rỗng `[]`).
 
+## Logic nghiệp vụ Đơn hàng (`src/orders`, chưa mở endpoint)
+
+- `validateTransition(from, to)` (`order-status.ts`): Kiểm tra chuyển đổi trạng thái đơn hàng theo máy trạng thái hợp đồng; ném `409 Conflict` nếu chuyển không hợp lệ.
+- `calculateOrderTotal(items)` (`order-pricing.ts`): Tính `unitPrice`, `lineTotal` từng dòng và `totalAmount` toàn đơn (dùng hằng số phụ thu size từ `products.constants.ts`).
+
 Chạy unit test trên PowerShell (từ thư mục `apps/api`):
 ```powershell
 npm.cmd run test
