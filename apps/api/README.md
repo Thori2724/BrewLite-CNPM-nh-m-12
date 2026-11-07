@@ -72,6 +72,11 @@ Chạy unit test trên PowerShell (từ thư mục `apps/api`):
 npm.cmd run test
 ```
 
+## Database Migration (Prisma)
+
+- Chạy migration ở môi trường dev (từ `apps/api`): `npm.cmd run prisma -- migrate dev` (hoặc `npx.cmd prisma migrate dev` / `npx.cmd prisma migrate deploy` nếu đã cấu hình biến `DATABASE_URL` trong `apps/api/.env`).
+- **Lưu ý khi pull code mới về:** Bắt buộc chạy `npm.cmd run prisma -- migrate dev` (hoặc `npx.cmd prisma migrate deploy`) và `npx.cmd prisma generate` trong thư mục `apps/api` để cập nhật 6 bảng mới (`User`, `Topping`, `Order`, `OrderItem`, `OrderItemTopping`, `Payment`) vào database.
+
 ## Deployment
 
 When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
