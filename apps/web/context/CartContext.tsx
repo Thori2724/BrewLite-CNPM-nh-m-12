@@ -16,27 +16,15 @@ import {
 
 type CartAction =
   | { type: 'INIT'; payload: CartItem[] }
-  | { type: 'ADD_ITEM'; payload: Omit<CartItem, 'id'> & { id?: string } }
-  | { type: 'UPDATE_QUANTITY'; payload: { id: string; quantity: number } }
-  | { type: 'REMOVE_ITEM'; payload: { id: string } }
-  | { type: 'CLEAR_CART' };
+  | { type: 'SET_ITEMS'; payload: CartItem[] };
 
 function cartReducer(state: CartItem[], action: CartAction): CartItem[] {
   let newState: CartItem[];
   switch (action.type) {
     case 'INIT':
       return action.payload;
-    case 'ADD_ITEM':
-      newState = addItemToCart(state, action.payload);
-      break;
-    case 'UPDATE_QUANTITY':
-      newState = updateItemQuantity(state, action.payload.id, action.payload.quantity);
-      break;
-    case 'REMOVE_ITEM':
-      newState = removeItemFromCart(state, action.payload.id);
-      break;
-    case 'CLEAR_CART':
-      newState = clearCart();
+    case 'SET_ITEMS':
+      newState = action.payload;
       break;
     default:
       return state;
@@ -50,7 +38,8 @@ interface CartContextValue {
   totalAmount: number;
   totalCount: number;
   isHydrated: boolean;
-  addToCart: (item: Omit<CartItem, 'id'> & { id?: string }) => void;
+  storageError: boolean;
+  addToCart: (item: Omit<CartItem, 'id'> & { id?: string }) => { ok: boolean; error?: string };
   updateQuantity: (id: string, quantity: number) => void;
   removeFromCart: (id: string) => void;
   clearAll: () => void;
@@ -61,6 +50,7 @@ const CartContext = createContext<CartContextValue | undefined>(undefined);
 export function CartProvider({ children }: { children: React.ReactNode }) {
   const [items, dispatch] = useReducer(cartReducer, []);
   const [isHydrated, setIsHydrated] = useState(false);
+  const [storageError, setStorageError] = useState(false);
 
   // 1. Chỉ nạp từ localStorage sau khi component mount trên client (tránh lỗi hydration)
   useEffect(() => {
@@ -68,17 +58,26 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
 
     Promise.resolve().then(() => {
       if (isMounted) {
-        const saved = loadCartFromStorage();
-        dispatch({ type: 'INIT', payload: saved });
-        setIsHydrated(true);
+        try {
+          const saved = loadCartFromStorage();
+          dispatch({ type: 'INIT', payload: saved });
+        } catch {
+          setStorageError(true);
+        } finally {
+          setIsHydrated(true);
+        }
       }
     });
 
-    // 2. Lắng nghe storage event để đồng bộ tức thì giữa các tab
+    // 2. Lắng nghe storage event để đồng bộ tức thì giữa các tab với key brewlite_cart_v2
     const handleStorageChange = (e: StorageEvent) => {
       if (e.key === CART_STORAGE_KEY && isMounted) {
-        const updated = loadCartFromStorage();
-        dispatch({ type: 'INIT', payload: updated });
+        try {
+          const updated = loadCartFromStorage();
+          dispatch({ type: 'INIT', payload: updated });
+        } catch {
+          setStorageError(true);
+        }
       }
     };
 
@@ -92,20 +91,30 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const totalAmount = calculateCartTotal(items);
   const totalCount = calculateCartItemCount(items);
 
-  const addToCart = (item: Omit<CartItem, 'id'> & { id?: string }) => {
-    dispatch({ type: 'ADD_ITEM', payload: item });
+  const addToCart = (
+    item: Omit<CartItem, 'id'> & { id?: string }
+  ): { ok: boolean; error?: string } => {
+    const result = addItemToCart(items, item);
+    if (!result.ok) {
+      return { ok: false, error: result.error };
+    }
+    dispatch({ type: 'SET_ITEMS', payload: result.cart });
+    return { ok: true };
   };
 
   const updateQuantity = (id: string, quantity: number) => {
-    dispatch({ type: 'UPDATE_QUANTITY', payload: { id, quantity } });
+    const newCart = updateItemQuantity(items, id, quantity);
+    dispatch({ type: 'SET_ITEMS', payload: newCart });
   };
 
   const removeFromCart = (id: string) => {
-    dispatch({ type: 'REMOVE_ITEM', payload: { id } });
+    const newCart = removeItemFromCart(items, id);
+    dispatch({ type: 'SET_ITEMS', payload: newCart });
   };
 
   const clearAll = () => {
-    dispatch({ type: 'CLEAR_CART' });
+    const newCart = clearCart();
+    dispatch({ type: 'SET_ITEMS', payload: newCart });
   };
 
   return (
@@ -115,6 +124,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         totalAmount,
         totalCount,
         isHydrated,
+        storageError,
         addToCart,
         updateQuantity,
         removeFromCart,
@@ -131,13 +141,14 @@ const defaultCartContext: CartContextValue = {
   totalAmount: 0,
   totalCount: 0,
   isHydrated: true,
-  addToCart: () => {},
+  storageError: false,
+  addToCart: () => ({ ok: true }),
   updateQuantity: () => {},
   removeFromCart: () => {},
   clearAll: () => {},
 };
 
-export function useCart() {
+export function useCart(): CartContextValue {
   const context = useContext(CartContext);
   if (!context) {
     return defaultCartContext;

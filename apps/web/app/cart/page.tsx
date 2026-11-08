@@ -3,28 +3,36 @@
 import Link from 'next/link';
 import { useCart } from '../../context/CartContext';
 import { getLineTotal, MAX_ITEM_QUANTITY } from '../../utils/cart';
-import { SUGAR_LABELS, SugarLevel } from '../../services/api';
+import { SUGAR_LABELS, ICE_LABELS, SugarLevel, IceLevel } from '../../services/api';
 
-function getIceLabel(ice?: string): string {
-  switch (ice) {
-    case 'NONE':
-      return 'Không đá';
-    case 'LOW':
-      return 'Ít đá';
-    case 'NORMAL':
-      return 'Bình thường';
-    case 'FULL':
-      return 'Nhiều đá';
-    default:
-      return ice || '';
-  }
+function getSizeLabel(size?: string): string {
+  if (!size) return '';
+  return `Size ${size}`;
+}
+
+function getSugarLabel(sugar?: SugarLevel): string {
+  if (!sugar) return '';
+  return SUGAR_LABELS[sugar] || sugar;
+}
+
+function getIceLabel(ice?: IceLevel): string {
+  if (!ice) return '';
+  return ICE_LABELS[ice] || ice;
 }
 
 export default function CartPage() {
-  const { items, totalAmount, totalCount, isHydrated, updateQuantity, removeFromCart, clearAll } =
-    useCart();
+  const {
+    items,
+    totalAmount,
+    totalCount,
+    isHydrated,
+    storageError,
+    updateQuantity,
+    removeFromCart,
+    clearAll,
+  } = useCart();
 
-  // 1. Chờ hydration từ localStorage để tránh nhấp nháy hoặc lệch giao diện Server/Client
+  // 1. Trạng thái Loading: Chờ hydration từ localStorage để tránh nhấp nháy hoặc lệch giao diện Server/Client
   if (!isHydrated) {
     return (
       <div className="py-16 text-center text-gray-500 text-sm">
@@ -34,10 +42,15 @@ export default function CartPage() {
     );
   }
 
-  // 2. Trạng thái Giỏ hàng rỗng
+  // 2. Trạng thái Giỏ hàng rỗng (kèm thông báo nếu có lỗi storage)
   if (items.length === 0) {
     return (
-      <div className="py-12 px-4 text-center max-w-md mx-auto">
+      <div className="py-12 px-4 text-center max-w-md mx-auto space-y-4">
+        {storageError && (
+          <div className="bg-amber-50 text-amber-800 p-3 rounded-xl text-xs text-center border border-amber-200">
+            Không thể truy cập bộ nhớ trình duyệt để lưu giỏ hàng.
+          </div>
+        )}
         <div className="w-20 h-20 bg-amber-50 rounded-full flex items-center justify-center mx-auto mb-4 text-3xl">
           🛒
         </div>
@@ -64,6 +77,13 @@ export default function CartPage() {
 
   return (
     <div className="space-y-4 max-w-2xl mx-auto">
+      {/* Cảnh báo lỗi truy cập storage nếu có */}
+      {storageError && (
+        <div className="bg-amber-50 text-amber-800 p-3 rounded-xl text-xs text-center border border-amber-200">
+          Cảnh báo: Không thể lưu giỏ hàng vào bộ nhớ trình duyệt.
+        </div>
+      )}
+
       {/* Thanh điều hướng và Tiêu đề */}
       <div className="flex items-center justify-between border-b border-gray-100 pb-3">
         <Link
@@ -83,105 +103,121 @@ export default function CartPage() {
 
       <div className="flex items-baseline justify-between">
         <h1 className="text-lg sm:text-xl font-bold text-gray-900">
-          Giỏ hàng ({totalCount} món)
+          Giỏ hàng ({totalCount} ly)
         </h1>
       </div>
 
       {/* Danh sách các dòng giỏ hàng */}
       <div className="space-y-3">
-        {items.map((item) => (
-          <div
-            key={item.id}
-            className="p-3 sm:p-4 bg-white rounded-xl border border-gray-100 shadow-xs flex flex-col gap-2.5"
-          >
-            {/* Hàng 1: Ảnh, Tên món, Nút Xóa */}
-            <div className="flex gap-3 items-start">
-              <img
-                src={item.image}
-                alt={item.name}
-                className="w-14 h-14 sm:w-16 sm:h-16 object-cover rounded-lg flex-shrink-0 bg-gray-100"
-              />
-              <div className="flex-1 min-w-0">
-                <div className="flex justify-between items-start gap-1">
-                  <h2 className="text-sm sm:text-base font-bold text-gray-900 truncate">
-                    {item.name}
-                  </h2>
+        {items.map((item) => {
+          const hasOptions = Boolean(item.size || item.sugarLevel || item.iceLevel);
+          const hasToppings = Boolean(item.toppings && item.toppings.length > 0);
+          const hasNote = Boolean(item.note && item.note.trim());
+
+          return (
+            <div
+              key={item.id}
+              className="p-3 sm:p-4 bg-white rounded-xl border border-gray-100 shadow-xs flex flex-col gap-2.5"
+            >
+              {/* Hàng 1: Ảnh (imageUrl), Tên món, Nút Xóa */}
+              <div className="flex gap-3 items-start">
+                <img
+                  src={item.imageUrl}
+                  alt={item.name}
+                  className="w-14 h-14 sm:w-16 sm:h-16 object-cover rounded-lg flex-shrink-0 bg-gray-100"
+                />
+                <div className="flex-1 min-w-0">
+                  <div className="flex justify-between items-start gap-1">
+                    <h2 className="text-sm sm:text-base font-bold text-gray-900 truncate">
+                      {item.name}
+                    </h2>
+                    <button
+                      type="button"
+                      onClick={() => removeFromCart(item.id)}
+                      aria-label={`Xóa ${item.name}`}
+                      className="text-gray-400 hover:text-red-500 text-xs px-1.5 py-0.5 rounded transition cursor-pointer"
+                    >
+                      ✕
+                    </button>
+                  </div>
+
+                  {/* Tùy chọn chi tiết: ẩn hoàn toàn nếu không có dữ liệu, không in "undefined" hay dòng trống */}
+                  <div className="text-[11px] sm:text-xs text-gray-500 space-y-0.5 mt-0.5">
+                    {hasOptions && (
+                      <div className="flex flex-wrap gap-x-2 gap-y-0.5">
+                        {item.size && (
+                          <span>
+                            {getSizeLabel(item.size)}
+                          </span>
+                        )}
+                        {item.sugarLevel && (
+                          <span>
+                            Đường: <strong>{getSugarLabel(item.sugarLevel)}</strong>
+                          </span>
+                        )}
+                        {item.iceLevel && (
+                          <span>
+                            Đá: <strong>{getIceLabel(item.iceLevel)}</strong>
+                          </span>
+                        )}
+                      </div>
+                    )}
+
+                    {hasToppings && (
+                      <div className="text-gray-600">
+                        Topping: {item.toppings.map((t) => t.name).join(', ')}
+                      </div>
+                    )}
+
+                    {hasNote && (
+                      <div className="italic text-gray-500">
+                        Ghi chú: &ldquo;{item.note}&rdquo;
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Hàng 2: Bộ đổi số lượng và Giá tiền */}
+              <div className="flex justify-between items-center pt-2 border-t border-gray-50 text-xs sm:text-sm">
+                {/* Bộ tăng/giảm số lượng (kẹp 1..10, giảm dưới 1 không tự xóa) */}
+                <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden">
                   <button
                     type="button"
-                    onClick={() => removeFromCart(item.id)}
-                    aria-label={`Xóa ${item.name}`}
-                    className="text-gray-400 hover:text-red-500 text-xs px-1.5 py-0.5 rounded transition cursor-pointer"
+                    disabled={item.quantity <= 1}
+                    onClick={() => updateQuantity(item.id, item.quantity - 1)}
+                    aria-label="Giảm số lượng"
+                    className="w-7 h-7 flex items-center justify-center bg-gray-50 hover:bg-gray-100 text-gray-700 disabled:opacity-30 disabled:cursor-not-allowed font-bold"
                   >
-                    ✕
+                    -
+                  </button>
+                  <span className="w-8 text-center font-bold text-gray-800">
+                    {item.quantity}
+                  </span>
+                  <button
+                    type="button"
+                    disabled={item.quantity >= MAX_ITEM_QUANTITY}
+                    onClick={() => updateQuantity(item.id, item.quantity + 1)}
+                    aria-label="Tăng số lượng"
+                    className="w-7 h-7 flex items-center justify-center bg-gray-50 hover:bg-gray-100 text-gray-700 disabled:opacity-30 disabled:cursor-not-allowed font-bold"
+                  >
+                    +
                   </button>
                 </div>
 
-                {/* Tùy chọn chi tiết: chỉ hiện khi có dữ liệu, ẩn hoàn toàn nếu undefined (món bánh) */}
-                <div className="text-[11px] sm:text-xs text-gray-500 space-y-0.5 mt-0.5">
-                  <div className="flex flex-wrap gap-x-2 gap-y-0.5">
-                    {item.size && <span>Size: <strong>{item.size}</strong></span>}
-                    {item.sugarLevel && (
-                      <span>
-                        Đường: <strong>{SUGAR_LABELS[item.sugarLevel as SugarLevel] || item.sugarLevel}</strong>
-                      </span>
-                    )}
-                    {item.iceLevel && <span>Đá: <strong>{getIceLabel(item.iceLevel)}</strong></span>}
+                {/* Đơn giá và Thành tiền */}
+                <div className="text-right">
+                  <div className="text-[11px] text-gray-400">
+                    Đơn giá: {item.unitPrice.toLocaleString('vi-VN')} đ
                   </div>
-
-                  {item.toppings && item.toppings.length > 0 && (
-                    <div className="text-gray-600">
-                      Topping: {item.toppings.map((t) => t.name).join(', ')}
-                    </div>
-                  )}
-
-                  {item.note && (
-                    <div className="italic text-gray-500">
-                      Ghi chú: &ldquo;{item.note}&rdquo;
-                    </div>
-                  )}
+                  <div className="font-extrabold text-amber-600 text-sm sm:text-base">
+                    {getLineTotal(item).toLocaleString('vi-VN')} đ
+                  </div>
                 </div>
               </div>
             </div>
-
-            {/* Hàng 2: Bộ đổi số lượng và Giá tiền */}
-            <div className="flex justify-between items-center pt-2 border-t border-gray-50 text-xs sm:text-sm">
-              {/* Bộ tăng/giảm số lượng */}
-              <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden">
-                <button
-                  type="button"
-                  disabled={item.quantity <= 1}
-                  onClick={() => updateQuantity(item.id, item.quantity - 1)}
-                  aria-label="Giảm số lượng"
-                  className="w-7 h-7 flex items-center justify-center bg-gray-50 hover:bg-gray-100 text-gray-700 disabled:opacity-30 disabled:cursor-not-allowed font-bold"
-                >
-                  -
-                </button>
-                <span className="w-8 text-center font-bold text-gray-800">
-                  {item.quantity}
-                </span>
-                <button
-                  type="button"
-                  disabled={item.quantity >= MAX_ITEM_QUANTITY}
-                  onClick={() => updateQuantity(item.id, item.quantity + 1)}
-                  aria-label="Tăng số lượng"
-                  className="w-7 h-7 flex items-center justify-center bg-gray-50 hover:bg-gray-100 text-gray-700 disabled:opacity-30 disabled:cursor-not-allowed font-bold"
-                >
-                  +
-                </button>
-              </div>
-
-              {/* Đơn giá và Thành tiền */}
-              <div className="text-right">
-                <div className="text-[11px] text-gray-400">
-                  Đơn giá: {item.unitPrice.toLocaleString('vi-VN')} đ
-                </div>
-                <div className="font-extrabold text-amber-600 text-sm sm:text-base">
-                  {getLineTotal(item).toLocaleString('vi-VN')} đ
-                </div>
-              </div>
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {/* Tổng tiền và Nút đặt đơn */}
@@ -207,4 +243,3 @@ export default function CartPage() {
     </div>
   );
 }
-

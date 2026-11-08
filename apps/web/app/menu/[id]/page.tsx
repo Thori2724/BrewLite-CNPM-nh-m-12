@@ -42,6 +42,7 @@ function ProductDetailContent() {
   const [note, setNote] = useState<string>('');
   const [quantity, setQuantity] = useState<number>(1);
   const [addedSuccess, setAddedSuccess] = useState<boolean>(false);
+  const [cartError, setCartError] = useState<string | null>(null);
   const [toppingWarning, setToppingWarning] = useState<string | null>(null);
   const [quantityWarning, setQuantityWarning] = useState<string | null>(null);
 
@@ -174,6 +175,8 @@ function ProductDetailContent() {
       return;
     }
 
+    setCartError(null);
+
     // Đơn giá 1 ly/món = basePrice + sizeExtraPrice + tổng giá topping
     const unitPrice = calculatePrice({
       basePrice: product.basePrice,
@@ -182,11 +185,10 @@ function ProductDetailContent() {
       quantity: 1,
     });
 
-    addToCart({
+    const result = addToCart({
       productId: product.id,
       name: product.name,
       imageUrl: product.imageUrl,
-      image: product.imageUrl,
       size: product.sizes && product.sizes.length > 0 ? selectedSize : undefined,
       sugarLevel: product.sugarLevels && product.sugarLevels.length > 0 ? selectedSugar : undefined,
       iceLevel: product.iceLevels && product.iceLevels.length > 0 ? selectedIce : undefined,
@@ -195,6 +197,11 @@ function ProductDetailContent() {
       unitPrice,
       quantity,
     });
+
+    if (!result.ok) {
+      setCartError(result.error || 'Không thể thêm vào giỏ hàng.');
+      return;
+    }
 
     setAddedSuccess(true);
     setTimeout(() => {
@@ -270,6 +277,13 @@ function ProductDetailContent() {
       {addedSuccess && (
         <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-xl text-sm font-medium text-center">
           ✓ Đã thêm vào giỏ hàng! Xem tại biểu tượng 🛒
+        </div>
+      )}
+
+      {/* Thông báo lỗi khi thêm vào giỏ hàng thất bại */}
+      {cartError && (
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm font-medium text-center">
+          {cartError}
         </div>
       )}
 

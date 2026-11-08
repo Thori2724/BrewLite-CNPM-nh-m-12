@@ -107,7 +107,7 @@ NEXT_PUBLIC_USE_MOCK_ORDERS=true
 
 | Khóa lưu trữ | Mục đích |
 |---|---|
-| `brewlite_cart_v1` | Lưu trữ danh sách các món trong giỏ hàng phía Client. Độc lập với phiên đăng nhập (đăng xuất không mất giỏ). *(Sẽ nâng lên `v2` ở Phần C)* |
+| `brewlite_cart_v2` | Lưu trữ danh sách các món trong giỏ hàng phía Client. Tối đa 10 ly/món, giỏ chứa tối đa 20 dòng món khác nhau. Tự động dọn dẹp khóa cũ `brewlite_cart_v1` nếu tồn tại. Độc lập với phiên đăng nhập (đăng xuất không mất giỏ). |
 | `brewlite_auth_v1` | Lưu trữ JWT token và thông tin người dùng cơ bản (`id`, `email`, `displayName`, `role`). Tuyệt đối không lưu mật khẩu. *(Sẽ nâng lên `v2` ở Phần D)* |
 | `brewlite_pending_order_v1` | Lưu thông tin đơn hàng đang chờ thanh toán (`orderId`, `orderNumber`, `totalAmount`, `idempotencyKey`). Tuyệt đối không lưu số thẻ/ví. *(Sẽ nâng lên `v2` ở Phần E)* |
 | `brewlite_mock_orders_db_v1` | Dữ liệu cơ sở dữ liệu giả lập (chỉ hoạt động khi `NEXT_PUBLIC_USE_MOCK_ORDERS=true`) để dữ liệu sống qua F5. *(Sẽ nâng lên `v2` ở Phần E)* |

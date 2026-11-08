@@ -4,19 +4,20 @@ export interface CartItem {
   id: string; // Mã duy nhất cho từng dòng trong giỏ hàng
   productId: string;
   name: string;
-  imageUrl?: string;
-  image?: string;
+  imageUrl: string;
   size?: SizeId;
   sugarLevel?: SugarLevel;
-  iceLevel?: IceLevel | string;
+  iceLevel?: IceLevel;
   toppings: Topping[];
   note: string;
-  unitPrice: number; // Đơn giá của 1 ly/món (đã gồm giá size + tổng giá topping)
-  quantity: number; // Số lượng món
+  unitPrice: number; // Đơn giá 1 ly/món (đã gồm basePrice + sizeExtraPrice + tổng giá topping)
+  quantity: number; // Số lượng món (1..10)
 }
 
 export const MAX_ITEM_QUANTITY = 10;
-export const CART_STORAGE_KEY = 'brewlite_cart_v1';
+export const MAX_CART_ITEMS = 20;
+export const CART_STORAGE_KEY = 'brewlite_cart_v2';
+export const LEGACY_CART_STORAGE_KEY = 'brewlite_cart_v1';
 
 /**
  * Sinh chuỗi định danh đặc trưng cho các tùy chọn của món để kiểm tra trùng lặp.
@@ -29,7 +30,7 @@ export function getCartItemSignature(item: {
   productId: string;
   size?: SizeId | null;
   sugarLevel?: SugarLevel | null;
-  iceLevel?: IceLevel | string | null;
+  iceLevel?: IceLevel | null;
   toppings?: Topping[];
   note?: string | null;
 }): string {
@@ -56,15 +57,23 @@ export function getLineTotal(item: CartItem): number {
   return safeUnitPrice * safeQuantity;
 }
 
+export interface AddToCartResult {
+  ok: boolean;
+  cart: CartItem[];
+  error?: string;
+}
+
 /**
  * Thêm món vào giỏ hàng:
- * - Nếu trùng toàn bộ tùy chọn (cùng signature): cộng dồn số lượng (tối đa 10 ly).
- * - Nếu khác tùy chọn: tạo dòng mới với id riêng.
+ * - Nếu trùng toàn bộ tùy chọn (cùng signature): cộng dồn số lượng, kẹp tối đa 10 ly.
+ * - Nếu khác tùy chọn:
+ *   + Nếu giỏ đã đạt tối đa 20 dòng: trả về { ok: false, error: '...' }, GIỮ NGUYÊN giỏ cũ, KHÔNG ném exception.
+ *   + Nếu chưa đủ 20 dòng: tạo dòng mới với id riêng và thêm vào giỏ.
  */
 export function addItemToCart(
   cart: CartItem[],
   newItem: Omit<CartItem, 'id'> & { id?: string }
-): CartItem[] {
+): AddToCartResult {
   const newSignature = getCartItemSignature(newItem);
   const existingIndex = cart.findIndex(
     (item) => getCartItemSignature(item) === newSignature
@@ -75,7 +84,7 @@ export function addItemToCart(
   const safeUnitPrice = Math.max(0, newItem.unitPrice || 0);
 
   if (existingIndex > -1) {
-    return cart.map((item, idx) => {
+    const updatedCart = cart.map((item, idx) => {
       if (idx === existingIndex) {
         const combinedQty = Math.min(MAX_ITEM_QUANTITY, item.quantity + safeQuantity);
         return {
@@ -85,17 +94,32 @@ export function addItemToCart(
       }
       return item;
     });
+    return { ok: true, cart: updatedCart };
+  }
+
+  // Chặn khi vượt quá 20 dòng theo hợp đồng
+  if (cart.length >= MAX_CART_ITEMS) {
+    return {
+      ok: false,
+      cart, // Giữ nguyên giỏ cũ không thay đổi
+      error: 'Giỏ hàng chỉ được chứa tối đa 20 món khác nhau',
+    };
   }
 
   const createdItem: CartItem = {
     ...newItem,
     id: newItem.id || `cart-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    imageUrl: newItem.imageUrl,
+    size: newItem.size,
+    sugarLevel: newItem.sugarLevel,
+    iceLevel: newItem.iceLevel,
+    toppings: newItem.toppings || [],
     note: cleanNote,
     unitPrice: safeUnitPrice,
     quantity: safeQuantity,
   };
 
-  return [...cart, createdItem];
+  return { ok: true, cart: [...cart, createdItem] };
 }
 
 /**
@@ -151,11 +175,20 @@ export function calculateCartItemCount(cart: CartItem[]): number {
 
 /**
  * Đọc dữ liệu giỏ hàng an toàn từ localStorage.
- * Trả về mảng rỗng nếu môi trường server, JSON lỗi, hoặc cấu trúc dữ liệu bị hỏng.
+ * - Nếu còn khóa cũ brewlite_cart_v1: xóa bỏ ngay (không đọc, không migrate).
+ * - Đọc khóa brewlite_cart_v2.
+ * - Trả về mảng rỗng nếu môi trường server, JSON lỗi, hoặc cấu trúc dữ liệu bị hỏng.
  */
 export function loadCartFromStorage(): CartItem[] {
   if (typeof window === 'undefined' || !window.localStorage) return [];
+
   try {
+    // 1. Tự động dọn sạch khóa cũ brewlite_cart_v1 nếu còn
+    if (window.localStorage.getItem(LEGACY_CART_STORAGE_KEY) !== null) {
+      window.localStorage.removeItem(LEGACY_CART_STORAGE_KEY);
+    }
+
+    // 2. Đọc khóa brewlite_cart_v2
     const raw = window.localStorage.getItem(CART_STORAGE_KEY);
     if (!raw) return [];
     const parsed = JSON.parse(raw);
@@ -169,8 +202,10 @@ export function loadCartFromStorage(): CartItem[] {
         typeof item.id === 'string' &&
         typeof item.productId === 'string' &&
         typeof item.name === 'string' &&
+        typeof item.imageUrl === 'string' &&
         typeof item.unitPrice === 'number' &&
-        typeof item.quantity === 'number'
+        typeof item.quantity === 'number' &&
+        Array.isArray(item.toppings)
     );
     return validItems;
   } catch {
@@ -179,14 +214,14 @@ export function loadCartFromStorage(): CartItem[] {
 }
 
 /**
- * Ghi dữ liệu giỏ hàng vào localStorage.
+ * Ghi dữ liệu giỏ hàng vào localStorage an toàn.
  */
-export function saveCartToStorage(cart: CartItem[]): void {
-  if (typeof window === 'undefined' || !window.localStorage) return;
+export function saveCartToStorage(cart: CartItem[]): boolean {
+  if (typeof window === 'undefined' || !window.localStorage) return false;
   try {
     window.localStorage.setItem(CART_STORAGE_KEY, JSON.stringify(cart));
-  } catch (err) {
-    console.error('Không thể lưu giỏ hàng vào localStorage:', err);
+    return true;
+  } catch {
+    return false;
   }
 }
-

@@ -12,7 +12,7 @@ export default function CartIcon() {
   return (
     <Link
       href="/cart"
-      aria-label={`Giỏ hàng${displayCount > 0 ? `, ${displayCount} món` : ', trống'}`}
+      aria-label={`Giỏ hàng${displayCount > 0 ? `, ${displayCount} ly` : ', trống'}`}
       className="relative cursor-pointer inline-flex items-center"
     >
       <span className="text-2xl" role="img" aria-hidden="true">🛒</span>

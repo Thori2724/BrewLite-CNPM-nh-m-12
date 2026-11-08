@@ -10,7 +10,7 @@ const mockItem1: CartItem = {
   id: 'cart-1',
   productId: '1',
   name: 'Cà phê sữa đá',
-  image: 'https://images.unsplash.com/photo-1517701550927-30cf4ba1dba5?w=500',
+  imageUrl: 'https://images.unsplash.com/photo-1517701550927-30cf4ba1dba5?w=500',
   size: 'M',
   sugarLevel: 'P50',
   iceLevel: 'NORMAL',
@@ -24,7 +24,7 @@ const mockItemCake: CartItem = {
   id: 'cart-2',
   productId: '4',
   name: 'Bánh croissant phô mai',
-  image: 'https://images.unsplash.com/photo-1555507036-ab1f4038808a?w=500',
+  imageUrl: 'https://images.unsplash.com/photo-1555507036-ab1f4038808a?w=500',
   // Không có size, đường, đá, topping (món bánh)
   size: undefined,
   sugarLevel: undefined,
@@ -66,7 +66,7 @@ describe('Component CartIcon', () => {
 
     await waitFor(() => {
       expect(screen.getByText('3')).toBeInTheDocument();
-      const link = screen.getByRole('link', { name: /giỏ hàng, 3 món/i });
+      const link = screen.getByRole('link', { name: /giỏ hàng, 3 ly/i });
       expect(link).toBeInTheDocument();
     });
   });
@@ -120,14 +120,14 @@ describe('Trang Giỏ hàng (CartPage)', () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByRole('heading', { level: 1, name: /Giỏ hàng \(3 món\)/ })).toBeInTheDocument();
+      expect(screen.getByRole('heading', { level: 1, name: /Giỏ hàng \(3 ly\)/i })).toBeInTheDocument();
     });
 
     // Món 1: Đồ uống
     expect(screen.getByRole('heading', { level: 2, name: 'Cà phê sữa đá' })).toBeInTheDocument();
-    expect(screen.getByText('M')).toBeInTheDocument();
+    expect(screen.getByText('Size M')).toBeInTheDocument();
     expect(screen.getByText('50%')).toBeInTheDocument();
-    expect(screen.getByText('Bình thường')).toBeInTheDocument();
+    expect(screen.getByText('Đá vừa')).toBeInTheDocument();
     expect(screen.getByText(/Trân châu đen/)).toBeInTheDocument();
     expect(screen.getByText(/pha đậm vị trà/)).toBeInTheDocument();
     expect(screen.getByText(/78\.000/)).toBeInTheDocument();
@@ -258,4 +258,3 @@ describe('Trang Giỏ hàng (CartPage)', () => {
     ).not.toBeInTheDocument();
   });
 });
-

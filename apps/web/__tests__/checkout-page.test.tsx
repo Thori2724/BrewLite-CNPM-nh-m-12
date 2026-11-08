@@ -45,7 +45,7 @@ const mockCartItem: CartItem = {
   id: 'cart-1',
   productId: 'prod-1',
   name: 'Cà phê muối',
-  image: 'https://images.unsplash.com/photo-1517701550927-30cf4ba1dba5?w=500',
+  imageUrl: 'https://images.unsplash.com/photo-1517701550927-30cf4ba1dba5?w=500',
   size: 'M',
   sugarLevel: 'P50',
   iceLevel: 'NORMAL',

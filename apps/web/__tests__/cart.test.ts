@@ -11,13 +11,15 @@ import {
   loadCartFromStorage,
   saveCartToStorage,
   CART_STORAGE_KEY,
+  LEGACY_CART_STORAGE_KEY,
+  MAX_CART_ITEMS,
 } from '../utils/cart';
 
 describe('Logic giỏ hàng thuần túy (utils/cart.ts)', () => {
   const baseItem: Omit<CartItem, 'id'> = {
     productId: '1',
     name: 'Cà phê sữa đá',
-    image: 'https://example.com/cf.jpg',
+    imageUrl: 'https://example.com/cf.jpg',
     size: 'M',
     sugarLevel: 'P100',
     iceLevel: 'NORMAL',
@@ -34,22 +36,25 @@ describe('Logic giỏ hàng thuần túy (utils/cart.ts)', () => {
 
   // 1. Thêm món mới
   it('1. Thêm món mới vào giỏ hàng rỗng', () => {
-    const cart = addItemToCart([], baseItem);
+    const result = addItemToCart([], baseItem);
 
-    expect(cart).toHaveLength(1);
-    expect(cart[0].productId).toBe('1');
-    expect(cart[0].unitPrice).toBe(34000);
-    expect(cart[0].quantity).toBe(1);
-    expect(cart[0].id).toBeDefined();
+    expect(result.ok).toBe(true);
+    expect(result.cart).toHaveLength(1);
+    expect(result.cart[0].productId).toBe('1');
+    expect(result.cart[0].unitPrice).toBe(34000);
+    expect(result.cart[0].quantity).toBe(1);
+    expect(result.cart[0].id).toBeDefined();
+    expect(result.cart[0].imageUrl).toBe('https://example.com/cf.jpg');
   });
 
   // 2. Gộp dòng trùng
   it('2. Gộp dòng trùng: cùng món, cùng size, cùng đường/đá, topping và ghi chú', () => {
-    const initialCart = addItemToCart([], baseItem);
-    const updatedCart = addItemToCart(initialCart, { ...baseItem, quantity: 2 });
+    const initial = addItemToCart([], baseItem);
+    const updated = addItemToCart(initial.cart, { ...baseItem, quantity: 2 });
 
-    expect(updatedCart).toHaveLength(1);
-    expect(updatedCart[0].quantity).toBe(3); // 1 + 2 = 3 ly
+    expect(updated.ok).toBe(true);
+    expect(updated.cart).toHaveLength(1);
+    expect(updated.cart[0].quantity).toBe(3); // 1 + 2 = 3 ly
   });
 
   // 3. So sánh dòng trùng - TH1: Sắp xếp topping theo id
@@ -62,14 +67,14 @@ describe('Logic giỏ hàng thuần túy (utils/cart.ts)', () => {
       ...baseItem,
       toppings: [topping1, topping2],
       quantity: 1,
-    });
+    }).cart;
 
     // Dòng 2 chọn theo thứ tự ngược: [top-2, top-1]
     const cart2 = addItemToCart(cart1, {
       ...baseItem,
       toppings: [topping2, topping1],
       quantity: 2,
-    });
+    }).cart;
 
     // Phải gộp lại thành 1 dòng duy nhất với số lượng = 3
     expect(cart2).toHaveLength(1);
@@ -83,14 +88,14 @@ describe('Logic giỏ hàng thuần túy (utils/cart.ts)', () => {
       ...baseItem,
       note: '   pha đậm vị trà   ',
       quantity: 1,
-    });
+    }).cart;
 
     // Dòng 2 ghi chú đã trim gọn gàng
     const cart2 = addItemToCart(cart1, {
       ...baseItem,
       note: 'pha đậm vị trà',
       quantity: 1,
-    });
+    }).cart;
 
     expect(cart2).toHaveLength(1);
     expect(cart2[0].quantity).toBe(2);
@@ -102,7 +107,7 @@ describe('Logic giỏ hàng thuần túy (utils/cart.ts)', () => {
     const cakeItem: Omit<CartItem, 'id'> = {
       productId: '5',
       name: 'Bánh croissant',
-      image: 'https://example.com/cake.jpg',
+      imageUrl: 'https://example.com/cake.jpg',
       sugarLevel: undefined, // Không có đường
       iceLevel: undefined, // Không có đá
       toppings: [],
@@ -112,8 +117,8 @@ describe('Logic giỏ hàng thuần túy (utils/cart.ts)', () => {
     };
 
     // Thêm 2 chiếc bánh cùng không có đường/đá
-    const cart1 = addItemToCart([], cakeItem);
-    const cart2 = addItemToCart(cart1, { ...cakeItem, quantity: 2 });
+    const cart1 = addItemToCart([], cakeItem).cart;
+    const cart2 = addItemToCart(cart1, { ...cakeItem, quantity: 2 }).cart;
 
     expect(cart2).toHaveLength(1);
     expect(cart2[0].quantity).toBe(3);
@@ -123,15 +128,15 @@ describe('Logic giỏ hàng thuần túy (utils/cart.ts)', () => {
       ...cakeItem,
       sugarLevel: 'P100', // Có đường
       quantity: 1,
-    });
+    }).cart;
     expect(cart3).toHaveLength(2);
   });
 
   // 6. Khác tùy chọn thì tách dòng riêng
   it('6. Khác size hoặc khác topping thì tách dòng riêng', () => {
-    const cart1 = addItemToCart([], baseItem);
+    const cart1 = addItemToCart([], baseItem).cart;
     // Cùng món nhưng chọn Size L thay vì M
-    const cart2 = addItemToCart(cart1, { ...baseItem, size: 'L', unitPrice: 39000, quantity: 1 });
+    const cart2 = addItemToCart(cart1, { ...baseItem, size: 'L', unitPrice: 39000, quantity: 1 }).cart;
 
     expect(cart2).toHaveLength(2);
     expect(cart2[0].size).toBe('M');
@@ -140,15 +145,15 @@ describe('Logic giỏ hàng thuần túy (utils/cart.ts)', () => {
 
   // 7. Số lượng tối đa 10 ly khi gộp dòng
   it('7. Số lượng khi cộng dồn không vượt quá giới hạn tối đa 10 ly', () => {
-    const cart1 = addItemToCart([], { ...baseItem, quantity: 8 });
-    const cart2 = addItemToCart(cart1, { ...baseItem, quantity: 5 }); // 8 + 5 = 13 -> giới hạn 10
+    const cart1 = addItemToCart([], { ...baseItem, quantity: 8 }).cart;
+    const cart2 = addItemToCart(cart1, { ...baseItem, quantity: 5 }).cart; // 8 + 5 = 13 -> giới hạn 10
 
     expect(cart2[0].quantity).toBe(10);
   });
 
   // 8. Đổi số lượng và không giảm dưới 1
   it('8. Đổi số lượng: tối thiểu là 1, tối đa 10, giảm dưới 1 không tự xóa', () => {
-    const cart = addItemToCart([], baseItem);
+    const cart = addItemToCart([], baseItem).cart;
     const itemId = cart[0].id;
 
     // Tăng lên 5
@@ -169,8 +174,8 @@ describe('Logic giỏ hàng thuần túy (utils/cart.ts)', () => {
 
   // 9. Xóa dòng và xóa hết
   it('9. Xóa một dòng và xóa toàn bộ giỏ hàng', () => {
-    const cart1 = addItemToCart([], baseItem);
-    const cart2 = addItemToCart(cart1, { ...baseItem, size: 'L', unitPrice: 39000, quantity: 1 });
+    const cart1 = addItemToCart([], baseItem).cart;
+    const cart2 = addItemToCart(cart1, { ...baseItem, size: 'L', unitPrice: 39000, quantity: 1 }).cart;
     expect(cart2).toHaveLength(2);
 
     // Xóa dòng 1
@@ -189,7 +194,7 @@ describe('Logic giỏ hàng thuần túy (utils/cart.ts)', () => {
       id: 'item-1',
       productId: '1',
       name: 'Cà phê sữa đá',
-      image: '',
+      imageUrl: '',
       size: 'M',
       toppings: [],
       note: '',
@@ -201,7 +206,7 @@ describe('Logic giỏ hàng thuần túy (utils/cart.ts)', () => {
       id: 'item-2',
       productId: '5',
       name: 'Bánh croissant',
-      image: '',
+      imageUrl: '',
       toppings: [],
       note: '',
       unitPrice: 25000, // 25.000đ 1 cái
@@ -220,7 +225,7 @@ describe('Logic giỏ hàng thuần túy (utils/cart.ts)', () => {
 
   // 11. Lưu và nạp từ localStorage an toàn
   it('11. Đọc và ghi an toàn với localStorage, chống sập khi dữ liệu hỏng', () => {
-    const items = addItemToCart([], baseItem);
+    const items = addItemToCart([], baseItem).cart;
     saveCartToStorage(items);
 
     // Đọc lại khi dữ liệu đúng
@@ -238,5 +243,75 @@ describe('Logic giỏ hàng thuần túy (utils/cart.ts)', () => {
     const loadedNotArray = loadCartFromStorage();
     expect(loadedNotArray).toEqual([]);
   });
-});
 
+  // 12. Chặn thêm món khi giỏ hàng đã đạt giới hạn tối đa 20 dòng, giữ nguyên giỏ cũ
+  it('12. Chặn thêm món khi giỏ hàng đã có 20 món khác nhau, không ném lỗi và giữ nguyên giỏ cũ', () => {
+    let currentCart: CartItem[] = [];
+
+    // Tạo sẵn 20 dòng khác nhau trong giỏ
+    for (let i = 1; i <= MAX_CART_ITEMS; i++) {
+      const item: Omit<CartItem, 'id'> = {
+        productId: `prod-${i}`,
+        name: `Món số ${i}`,
+        imageUrl: `https://example.com/item-${i}.jpg`,
+        toppings: [],
+        note: '',
+        unitPrice: 30000,
+        quantity: 1,
+      };
+      const res = addItemToCart(currentCart, item);
+      expect(res.ok).toBe(true);
+      currentCart = res.cart;
+    }
+
+    expect(currentCart).toHaveLength(20);
+
+    // Thử thêm món thứ 21 (khác tùy chọn/khác ID)
+    const item21: Omit<CartItem, 'id'> = {
+      productId: 'prod-21',
+      name: 'Món số 21',
+      imageUrl: 'https://example.com/item-21.jpg',
+      toppings: [],
+      note: '',
+      unitPrice: 35000,
+      quantity: 1,
+    };
+
+    const overflowResult = addItemToCart(currentCart, item21);
+
+    // Phải trả về ok: false, kèm error tiếng Việt, giỏ cũ được giữ nguyên 20 món
+    expect(overflowResult.ok).toBe(false);
+    expect(overflowResult.error).toBe('Giỏ hàng chỉ được chứa tối đa 20 món khác nhau');
+    expect(overflowResult.cart).toHaveLength(20);
+    expect(overflowResult.cart).toBe(currentCart); // Giữ nguyên tham chiếu hoặc dữ liệu giỏ cũ
+  });
+
+  // 13. Tự động dọn dẹp khóa cũ brewlite_cart_v1 khi nạp giỏ hàng
+  it('13. Tự động xóa khóa cũ brewlite_cart_v1 khi gọi loadCartFromStorage', () => {
+    // Giả lập người dùng trước đó có dữ liệu ở khóa v1
+    localStorage.setItem(LEGACY_CART_STORAGE_KEY, JSON.stringify([{ id: 'legacy-item-1' }]));
+    localStorage.setItem(
+      CART_STORAGE_KEY,
+      JSON.stringify([
+        {
+          id: 'cart-v2-1',
+          productId: 'prod-1',
+          name: 'Trà sen vàng',
+          imageUrl: 'https://example.com/tra.jpg',
+          toppings: [],
+          note: '',
+          unitPrice: 35000,
+          quantity: 2,
+        },
+      ])
+    );
+
+    const loaded = loadCartFromStorage();
+
+    // Khóa brewlite_cart_v1 phải bị xóa hoàn toàn khỏi localStorage
+    expect(localStorage.getItem(LEGACY_CART_STORAGE_KEY)).toBeNull();
+    // Dữ liệu v2 nạp đúng
+    expect(loaded).toHaveLength(1);
+    expect(loaded[0].id).toBe('cart-v2-1');
+  });
+});
