@@ -117,6 +117,33 @@ const products = [
   },
 ];
 
+const toppings = [
+  {
+    id: '22222222-0000-0000-0000-000000000001',
+    name: 'Trân châu đen',
+    price: 5000,
+    isVisible: true,
+  },
+  {
+    id: '22222222-0000-0000-0000-000000000002',
+    name: 'Thạch dừa',
+    price: 5000,
+    isVisible: true,
+  },
+  {
+    id: '22222222-0000-0000-0000-000000000003',
+    name: 'Pudding',
+    price: 7000,
+    isVisible: true,
+  },
+  {
+    id: '22222222-0000-0000-0000-000000000004',
+    name: 'Kem cheese',
+    price: 10000,
+    isVisible: true,
+  },
+];
+
 async function main() {
   console.log('Đang khởi tạo dữ liệu mẫu cho menu (seed)...');
   for (const product of products) {
@@ -127,6 +154,19 @@ async function main() {
     });
   }
   console.log(`Đã nạp thành công ${products.length} sản phẩm vào bảng Product.`);
+
+  for (const topping of toppings) {
+    await prisma.topping.upsert({
+      where: { id: topping.id },
+      update: {
+        name: topping.name,
+        price: topping.price,
+        isVisible: topping.isVisible,
+      },
+      create: topping,
+    });
+  }
+  console.log(`Đã nạp thành công ${toppings.length} topping vào bảng Topping.`);
 }
 
 main()

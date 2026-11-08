@@ -57,10 +57,11 @@ $ npm run test:e2e
 $ npm run test:cov
 ```
 
-## Endpoints Sản phẩm (Sprint 1)
+## Endpoints Sản phẩm (Sprint 1 & Việc 5)
 
 - `GET /products`: Lấy danh sách món đang hiển thị (`isVisible = true`), sắp xếp theo `category` rồi `name`. Hỗ trợ query tùy chọn `category` (`TEA`, `COFFEE`, `MILK_TEA`, `CAKE`) và `q` (tìm theo tên không phân biệt hoa/thường, có dấu).
-- `GET /products/:id`: Xem chi tiết một sản phẩm theo UUID kèm cấu hình `sizes`, `sugarLevels`, `iceLevels`, `toppings` (món `CAKE` trả 4 mảng rỗng `[]`).
+- `GET /products/:id`: Xem chi tiết một sản phẩm theo UUID kèm cấu hình `sizes`, `sugarLevels`, `iceLevels` và `toppings` (lấy các topping `isVisible = true` từ bảng `Topping`, sắp xếp theo `id` tăng dần; riêng món `CAKE` trả 4 mảng rỗng `[]`).
+- **Dữ liệu mẫu (Seed):** Nạp 12 sản phẩm (`Product`) và 4 topping (`Topping`: Trân châu đen, Thạch dừa, Pudding, Kem cheese) bằng `upsert` theo UUID cố định. Chạy lệnh seed từ thư mục `apps/api`: `npm.cmd run seed`.
 
 ## Logic nghiệp vụ Đơn hàng (`src/orders`, chưa mở endpoint)
 
