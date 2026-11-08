@@ -1,13 +1,13 @@
 import {
   AUTH_ENDPOINTS,
   AUTH_ERROR_MESSAGES,
-  AuthUser,
   LoginDto,
   LoginResponse,
   RegisterDto,
   RegisterResponse,
 } from './auth-contract';
 import { clearAuthSession, getSafeRedirectUrl, loadAuthSession } from '../utils/auth';
+import { isMockAuthActive, mockLogin, mockRegister } from '../mocks/mock-auth';
 
 export class AuthApiError extends Error {
   statusCode: number;
@@ -28,12 +28,8 @@ export function resetRedirectFlag(): void {
   isRedirectingToLogin = false;
 }
 
-/**
- * Kiểm tra xem có đang bật chế độ Mock Auth hay không
- */
-export function isMockAuthActive(): boolean {
-  return process.env.NEXT_PUBLIC_USE_MOCK_AUTH === 'true';
-}
+// Re-export để tương thích các component và test hiện hữu
+export { isMockAuthActive };
 
 /**
  * Lấy Base URL của API
@@ -155,85 +151,6 @@ export async function apiFetch<T>(
   } catch {
     return {} as T;
   }
-}
-
-// ==========================================
-// MOCK AUTH IMPLEMENTATION (Khi backend chưa có API auth)
-// ==========================================
-
-interface MockUserRecord {
-  id: string;
-  email: string;
-  fullName: string;
-  password: string;
-  role: 'CUSTOMER' | 'STAFF' | 'ADMIN';
-}
-
-const mockDatabaseUsers: MockUserRecord[] = [
-  {
-    id: 'mock-user-1',
-    email: 'khachhang@brewlite.vn',
-    fullName: 'Khách hàng BrewLite',
-    password: 'password123',
-    role: 'CUSTOMER',
-  },
-];
-
-async function mockLogin(dto: LoginDto): Promise<LoginResponse> {
-  // Giả lập độ trễ mạng 250ms
-  await new Promise((resolve) => setTimeout(resolve, 250));
-
-  const normalizedEmail = dto.email.trim().toLowerCase();
-  const user = mockDatabaseUsers.find((u) => u.email.toLowerCase() === normalizedEmail);
-
-  if (!user || user.password !== dto.password) {
-    throw new AuthApiError(401, AUTH_ERROR_MESSAGES.INVALID_CREDENTIALS);
-  }
-
-  const authUser: AuthUser = {
-    id: user.id,
-    email: user.email,
-    fullName: user.fullName,
-    role: user.role,
-    loyaltyPoints: 50,
-  };
-
-  return {
-    access_token: `mock_jwt_token_${user.id}_${Date.now()}`,
-    user: authUser,
-  };
-}
-
-async function mockRegister(dto: RegisterDto): Promise<RegisterResponse> {
-  await new Promise((resolve) => setTimeout(resolve, 250));
-
-  const normalizedEmail = dto.email.trim().toLowerCase();
-  const existing = mockDatabaseUsers.find((u) => u.email.toLowerCase() === normalizedEmail);
-
-  if (existing) {
-    throw new AuthApiError(409, AUTH_ERROR_MESSAGES.EMAIL_ALREADY_EXISTS);
-  }
-
-  const newUser: MockUserRecord = {
-    id: `mock-user-${Date.now()}`,
-    email: dto.email.trim(),
-    fullName: dto.fullName.trim(),
-    password: dto.password,
-    role: 'CUSTOMER',
-  };
-
-  mockDatabaseUsers.push(newUser);
-
-  return {
-    message: AUTH_ERROR_MESSAGES.REGISTRATION_SUCCESS,
-    user: {
-      id: newUser.id,
-      email: newUser.email,
-      fullName: newUser.fullName,
-      role: newUser.role,
-      loyaltyPoints: 0,
-    },
-  };
 }
 
 /**

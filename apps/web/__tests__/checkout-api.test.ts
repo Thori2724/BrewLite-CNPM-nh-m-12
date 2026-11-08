@@ -1,14 +1,16 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
-  clearMockMemoryOnlyForTesting,
   createOrderApi,
   getOrderByIdApi,
-  MOCK_ORDERS_STORAGE_KEY,
   OrderApiError,
   payOrderApi,
+} from '../services/orders';
+import {
+  clearMockMemoryOnlyForTesting,
+  MOCK_ORDERS_STORAGE_KEY,
   resetMockOrdersDatabase,
   setMockNetworkSimulation,
-} from '../services/orders';
+} from '../mocks/mock-orders';
 import {
   CreateOrderDto,
   ORDER_ERROR_MESSAGES,
