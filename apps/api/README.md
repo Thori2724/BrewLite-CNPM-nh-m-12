@@ -78,6 +78,17 @@ npm.cmd run test
 - Chạy migration ở môi trường dev (từ `apps/api`): `npm.cmd run prisma -- migrate dev` (hoặc `npx.cmd prisma migrate dev` / `npx.cmd prisma migrate deploy` nếu đã cấu hình biến `DATABASE_URL` trong `apps/api/.env`).
 - **Lưu ý khi pull code mới về:** Bắt buộc chạy `npm.cmd run prisma -- migrate dev` (hoặc `npx.cmd prisma migrate deploy`) và `npx.cmd prisma generate` trong thư mục `apps/api` để cập nhật 6 bảng mới (`User`, `Topping`, `Order`, `OrderItem`, `OrderItemTopping`, `Payment`) vào database.
 
+## Dựng lại database từ đầu
+
+Khi khởi tạo database mới trên máy local (sau khi đã bật PostgreSQL bằng `docker compose up -d` và cấu hình `.env` ở thư mục gốc), chạy theo đúng thứ tự từ thư mục `apps/api`:
+```powershell
+cd apps/api
+npm.cmd run prisma -- migrate deploy
+npm.cmd run prisma -- generate
+npm.cmd run seed
+```
+- **Tài khoản khách hàng demo:** Nếu biến môi trường `DEMO_USER_PASSWORD` trong `.env` được đặt (tối thiểu 6 ký tự), lệnh `npm.cmd run seed` sẽ tạo/cập nhật tài khoản demo với email `khach@example.com` (`role: CUSTOMER`, `displayName: "Khách demo"`). Nếu biến này để trống hoặc ngắn hơn 6 ký tự, seed sẽ tự động bỏ qua bước tạo tài khoản demo.
+
 ## Endpoints Xác thực (Sprint 2 - Việc 4b)
 
 - Biến môi trường bắt buộc trong `.env`: `JWT_SECRET=<chuỗi-bí-mật>` (nếu thiếu ứng dụng sẽ báo lỗi ngay khi khởi động).
