@@ -2,76 +2,123 @@
 
 Đọc kỹ file này trước khi làm bất cứ việc gì trong repo.
 
-## Nguồn sự thật (không tự ý thay đổi)
-- Yêu cầu: `docs/requirements/`
-- Sơ đồ: `docs/diagrams/`
-- Kiến trúc và quyết định: `docs/architecture/architecture.md` và `docs/architecture/adr/`
-- Nếu thấy tài liệu mâu thuẫn, thiếu, hoặc code cần khác tài liệu: DỪNG và hỏi tôi, không tự quyết.
-- Không sửa `docs/` trừ khi tôi yêu cầu rõ (tài liệu do một bạn khác trong nhóm phụ trách).
+## 0. Xác định vai trò (làm ĐẦU TIÊN mỗi phiên)
+Dự án có 3 người làm song song, mỗi người một vai: **FE**, **BE**, **Dev&Ops**. Có thêm vai phụ **Docs**: giống Dev&Ops nhưng CHỈ được sửa `docs/` và `README.md`.
 
-## Công nghệ cố định
-- Frontend: Next.js trong `apps/web`
-- Backend: NestJS trong `apps/api`
-- Database: PostgreSQL 16 + Prisma
-- Chạy local: Docker Compose
-- Ngôn ngữ: TypeScript
+Xác định vai theo thứ tự:
+1. Tôi nói trong chat (ví dụ "tôi là BE").
+2. Đọc file `.role.local` ở thư mục gốc (file này không commit, chỉ chứa một chữ: FE, BE, DevOps hoặc Docs).
+3. Nếu không có cả hai: hỏi tôi một câu "Bạn là FE, BE, Dev&Ops hay Docs?", rồi tạo `.role.local` với đúng một chữ đó.
+
+Nói rõ vai đã xác định ngay trong câu trả lời đầu tiên, rồi chỉ làm việc trong khu vực của vai đó (mục 2).
+
+## 1. Nguồn sự thật (không tự ý thay đổi)
+- Đề bài gốc: `docs/de-bai/Assignment2.md`
+- **Hợp đồng API: `docs/api-contract.md`**. FE và BE làm theo đúng từng chữ (tên endpoint, tên trường, kiểu dữ liệu, mã lỗi, thông báo lỗi tiếng Việt). Nếu code, tài liệu khác hoặc yêu cầu của tôi khác hợp đồng: DỪNG và hỏi tôi. Không tự đổi hợp đồng, không tự thêm endpoint hoặc trường ngoài hợp đồng.
+- Yêu cầu `docs/requirements/`, sơ đồ `docs/diagrams/`, kiến trúc `docs/architecture/` đang được sửa cho khớp hợp đồng. Nếu mâu thuẫn với hợp đồng thì theo hợp đồng và báo tôi.
+- Nếu tài liệu mâu thuẫn, thiếu hoặc mơ hồ: DỪNG và hỏi tôi, không tự quyết.
+
+## 2. Khu vực chỉnh sửa (BẮT BUỘC TUÂN THỦ)
+
+| Khu vực | Chủ sở hữu |
+|---|---|
+| `apps/api/**` (code, test, `prisma/`) | **BE** |
+| `apps/api/prisma/schema.prisma` và `apps/api/prisma/migrations/**` | Chỉ **BE được tôi chỉ định làm dòng 4a** (schema). BE khác cần đổi schema thì DỪNG, báo người đó |
+| `apps/web/**` (code, test, giao diện) | **FE** |
+| `apps/api/Dockerfile`, `apps/api/.dockerignore`, `apps/web/Dockerfile`, `apps/web/.dockerignore` | **Dev&Ops** (dù nằm trong thư mục của app khác) |
+| `docker-compose*.yml`, `.github/**`, `tests/**` (E2E), mọi file triển khai (Caddyfile, script deploy...) | **Dev&Ops** |
+| `docs/**` | **Dev&Ops / Docs** |
+| `README.md` ở thư mục gốc | **Dev&Ops / Docs** (BE và FE ghi cách chạy vào `apps/api/README.md` và `apps/web/README.md` của mình) |
+| `.gitignore`, `AGENTS.md` | **Dev&Ops** |
+| `.env.example` | **Dùng chung**: mỗi vai chỉ được THÊM hoặc sửa dòng trong khối của mình (`# --- API (BE) ---`, `# --- WEB (FE) ---`, `# --- DEPLOY (Dev&Ops) ---`), không đụng dòng của vai khác |
+
+Quy tắc khi cần làm gì đó NGOÀI khu vực của vai mình:
+1. DỪNG, không tự sửa, dù chỉ một dòng.
+2. Viết sẵn cho tôi một tin nhắn ngắn để chuyển cho người phụ trách, theo mẫu: "Gửi [vai trò]: cần [việc cụ thể] ở [file/thư mục], vì [lý do]."
+3. Tiếp tục phần việc trong khu vực của mình, nếu còn.
+
+Quy tắc giữ cho 3 người không đụng nhau:
+- Giữ nguyên tên script `lint`, `test`, `build` trong `package.json` của từng app (CI phụ thuộc vào đó). Không đổi tên, không xóa.
+- Dev&Ops không sửa code ứng dụng để CI qua. CI đỏ do code thì báo FE hoặc BE.
+- Không đổi định dạng hàng loạt (format lại cả file hoặc cả thư mục) và không đổi tên, di chuyển file nếu tôi chưa bảo.
+- Không chạy `npm install` hoặc cập nhật thư viện ở thư mục app của vai khác.
+
+## 3. Công nghệ cố định
+- Frontend: Next.js trong `apps/web`. Backend: NestJS trong `apps/api`.
+- Database: PostgreSQL 16 + Prisma. Chạy local: Docker Compose. Ngôn ngữ: TypeScript.
 - `apps/web` và `apps/api` là hai package độc lập, mỗi bên có `package.json` riêng. KHÔNG tạo `package.json` ở thư mục gốc, KHÔNG dùng workspaces, Nx hay Turborepo.
-- Giao diện: được dùng Tailwind CSS. Chưa thêm Zustand, React Query, PWA (quyết sau khi tới giỏ hàng). Muốn thêm thư viện nào khác phải hỏi tôi trước.
+- Giao diện: được dùng Tailwind CSS. Chưa thêm Zustand, React Query, PWA.
+- Thư viện chuẩn được phép cho đúng việc của nó: Prisma, class-validator, class-transformer, bcrypt (hoặc bcryptjs nếu bcrypt lỗi trên Windows), @nestjs/jwt, @nestjs/config. Thư viện test và công cụ E2E: phải hỏi tôi trước khi thêm. Mọi thư viện khác cũng phải hỏi trước.
 - Không thêm hoặc thay framework, dịch vụ mới nếu chưa hỏi tôi.
 
-## Môi trường của tôi
+## 4. Môi trường của tôi
 - Windows, dùng PowerShell. Hướng dẫn lệnh phải chạy được trên PowerShell.
 - Nếu `npm` báo "running scripts is disabled", dùng `npm.cmd` thay cho `npm`.
 - API chạy ở cổng 3001 (đọc từ biến `PORT`, mặc định 3001). Web chạy ở cổng 3000.
 
-## Cách làm việc
-1. Mỗi lần chỉ làm MỘT việc nhỏ tôi nêu. Không làm thêm phần ngoài yêu cầu.
-2. Trước khi viết code: nói ngắn gọn sẽ tạo hoặc sửa những file nào, rồi chờ tôi đồng ý (trừ khi tôi nói rõ là đã đồng ý trước).
+## 5. Cách làm việc
+1. Tôi giao việc theo từng dòng trong bảng phân công. Chỉ làm ĐÚNG dòng đó, không làm thêm phần ngoài yêu cầu.
+2. Trước khi viết code: nói ngắn gọn sẽ tạo hoặc sửa những file nào (kiểm tra từng file có nằm trong khu vực của vai mình không), rồi chờ tôi đồng ý (trừ khi tôi nói rõ là đã đồng ý trước).
 3. Sau khi viết code: hướng dẫn tôi chạy và kiểm tra từng bước (lệnh cụ thể hoặc request Postman), và nói rõ kết quả đúng trông như thế nào.
 4. Không xóa file, không ghi đè nhiều file cùng lúc mà không báo trước. Không chạy lệnh nguy hiểm (xóa hàng loạt, `git reset --hard`, `git push --force`).
 5. Giải thích bằng tiếng Việt đơn giản. Tôi không biết lập trình.
 6. Khi gặp lỗi: chỉ ra nguyên nhân và cách sửa tối thiểu, không viết lại cả phần code.
 7. Giữ câu trả lời ngắn gọn, đừng đọc lại toàn bộ docs/ mỗi lần; chỉ đọc file liên quan đến việc đang làm.
 
-## Quy tắc code
-- API phải validate dữ liệu đầu vào (class-validator). Tiền do server tính, không tin giá từ client.
-- Mật khẩu băm bằng bcrypt. Xác thực bằng JWT.
+## 6. Quy tắc code chung
 - Không viết secret, mật khẩu, khóa truy cập vào code hoặc log. Dùng biến môi trường, cập nhật `.env.example`, không bao giờ commit `.env`.
 - Mỗi tính năng có test tối thiểu.
-- Đơn hàng chỉ chuyển trạng thái theo state machine: PENDING → PAID → PREPARING → READY → COMPLETED, cộng PAYMENT_FAILED và CANCELLED.
-- Thanh toán dùng header `Idempotency-Key`; tạo đơn và trừ tồn kho nằm trong một transaction.
+- Tiền là số nguyên VND. Server tự tính tiền, không bao giờ tin giá từ client.
 
-## Quyết định đã chốt
-- Ưu tiên giao diện WEB trên máy tính (thầy yêu cầu). Làm responsive để vẫn xem được trên điện thoại, nhưng thiết kế và kiểm tra trên màn hình máy tính trước.
+### Riêng BE
+- Làm đúng hợp đồng: không thêm endpoint ngoài 9 endpoint. Route `GET /orders/me` phải khai báo TRƯỚC `GET /orders/:id`.
+- Validate đầu vào bằng class-validator. Lỗi theo chuẩn NestJS: kiểm tra dữ liệu thì `message` là mảng chuỗi tiếng Anh, lỗi nghiệp vụ thì `message` là chuỗi tiếng Việt đúng như hợp đồng.
+- Mật khẩu băm bcrypt, JWT hết hạn 24 giờ, không bao giờ trả hoặc ghi log mật khẩu.
+- Thanh toán: kiểm tra theo đúng thứ tự trong hợp đồng; số tài khoản kết thúc `0000` thì thất bại; chỉ lưu 4 số cuối, KHÔNG ghi log số tài khoản đầy đủ.
+- Tạo đơn và trừ kho trong một transaction, điều kiện `stock >= tổng số lượng cần` (cộng gộp theo món). Không dùng cột `version`.
+- Hàm `validateTransition` cho trạng thái đơn và unit test đầy đủ, dù một số trạng thái chưa có API kích hoạt.
+- Seed dùng upsert theo ID cố định trong hợp đồng, chạy lại nhiều lần không nhân đôi dữ liệu.
+- KHÔNG tạo bảng `Size`, `Promotion`, `LoyaltyTransaction`.
+
+### Riêng FE
+- Giá và nhãn hiển thị: dùng bảng nhãn tiếng Việt ở mục 7 của hợp đồng. Mã kỹ thuật giữ tiếng Anh.
+- Đọc địa chỉ API từ `NEXT_PUBLIC_API_URL` (mặc định `http://localhost:3001`), không viết cứng.
+- Không tự tính giá để gửi lên server (chỉ hiển thị giá tạm tính). Không gửi `unitPrice`, `totalAmount`.
+- Khi chưa có API thật: dùng dữ liệu giả đúng hình dạng hợp đồng, đặt trong một thư mục riêng, dễ tắt đi khi nối API thật.
+- Mọi trang đều có trạng thái loading, empty, error. Gặp lỗi 401 thì chuyển về đăng nhập.
+- Thanh toán thất bại: giữ `orderId`, bấm "Thử lại thanh toán" thì gọi lại `POST /payments` cho đơn đó với `Idempotency-Key` MỚI. Không tạo đơn mới.
+- Giao diện ưu tiên máy tính (desktop-first) nhưng vẫn responsive.
+
+### Riêng Dev&Ops
+- CI: Install → Lint → Test → Build cho cả API và web; PR không merge được nếu CI đỏ.
+- Docker: `NEXT_PUBLIC_API_URL` phải truyền lúc build image web; `CORS_ORIGIN` đặt đúng địa chỉ web thật. Production KHÔNG mở cổng 5432 của PostgreSQL ra ngoài.
+- Không để secret xuất hiện trong repository hoặc log CI.
+- Khi sửa tài liệu: mỗi thay đổi qua pull request và ghi rõ lý do.
+
+## 7. Quyết định đã chốt (theo hợp đồng API, thay cho mọi chỗ cũ khác)
+- Ưu tiên giao diện WEB trên máy tính (thầy yêu cầu), vẫn responsive. Không làm PWA.
 - Giỏ hàng lưu trên trình duyệt (localStorage), chỉ gửi lên server khi đặt đơn.
-- Không làm giao diện nhân viên quầy/quản lý trong MVP. (Nếu còn thời gian, có thể làm API đổi trạng thái đơn để demo bằng Postman.)
-- Vai trò người dùng: CUSTOMER, STAFF, ADMIN.
-- Một đơn có thể có nhiều lần thanh toán (Order 1–nhiều Payment); trạng thái Payment gồm PENDING, SUCCESS, FAILED.
-- Topping sẽ thêm vào mô hình dữ liệu khi làm phần chi tiết món (Sprint 2).
-- Cập nhật trạng thái đơn bằng cách hỏi lại server mỗi 5 giây, không dùng công nghệ real-time.
-- Tồn kho tính theo món, không theo size. Mức đá: NONE, LOW, NORMAL, FULL.
-- Tự hủy đơn sau 15 phút, voucher và tích điểm: làm sau nếu còn thời gian.
-- Triển khai lên mạng để sau: chạy bằng Docker trên một máy chủ có địa chỉ IP công khai, gắn tên miền miễn phí. Chưa làm gì liên quan lúc này, chỉ cần mọi thứ chạy được bằng Docker Compose và cấu hình qua biến môi trường.
+- KHÔNG làm: giao diện nhân viên/quản lý, API đổi trạng thái đơn, API thêm/sửa/xóa món, hủy đơn và tự hủy sau 15 phút, voucher, tích điểm, `GET /auth/me`, phân trang, polling tự động mỗi 5 giây. Trang theo dõi đơn chỉ tải khi mở trang hoặc khi bấm tải lại.
+- Vai trò người dùng: CUSTOMER, STAFF, ADMIN. Đăng ký luôn tạo CUSTOMER.
+- Một đơn có thể có nhiều lần thanh toán. Mỗi đơn chỉ có tối đa một thanh toán SUCCESS.
+- Tồn kho tính theo món, không theo size. Menu xem được không cần đăng nhập.
+- Trạng thái đơn: PENDING → PAID → PREPARING → READY → COMPLETED, cộng PAYMENT_FAILED và CANCELLED. Chỉ PENDING, PAYMENT_FAILED mới thanh toán được.
 
-## Phạm vi và tiến độ Sprint 1
-Làm theo thứ tự, mỗi lần một việc:
-1. (XONG) Khởi tạo repo, Docker Compose chạy PostgreSQL, `.env.example`, README mục database.
-2. (XONG) API NestJS trong `apps/api` với `GET /health`, cổng 3001. Còn thiếu: README mục "Chạy API".
-3. Prisma: bảng Product và dữ liệu mẫu (seed) cho menu.
-4. API `GET /products` (lọc theo danh mục, tìm theo tên) và `GET /products/:id`, kèm test.
-5. Khởi tạo Next.js trong `apps/web`, kết nối URL API qua biến môi trường.
-6. Trang Menu: gọi API, có đủ 3 trạng thái loading, empty, error; món hết hàng hiện nhãn "Hết hàng".
-7. Test API, lint, cập nhật README cách chạy.
-8. CI (GitHub Actions): Install → Lint → Unit Test → Build, chạy khi mở pull request.
+## 8. Triển khai lên mạng (CHƯA CHỐT)
+Nhóm đang hỏi thầy về cách triển khai (AWS, tên miền). Cho đến khi mục này được Dev&Ops cập nhật thành "ĐÃ CHỐT" kèm chi tiết, KHÔNG ai làm gì liên quan đến hạ tầng hoặc deploy. Chỉ cần mọi thứ chạy được bằng Docker Compose và cấu hình qua biến môi trường.
 
-Dời sang Sprint 2: chi tiết món (size, topping), giỏ hàng, đăng nhập JWT, tạo đơn, thanh toán.
+## 9. Git (3 người làm song song)
+- Không có nhánh `dev`. Nhánh ghép chung là `some-diagram-and-SRS` (gọi tắt: nhánh some).
+- Mỗi vai làm trên nhánh riêng của vai đó (FE, BE hoặc Dev&Ops), đã tạo sẵn từ nhánh some. Trước khi làm, chạy `git branch --show-current` để biết đang đứng ở nhánh nào; nếu không phải nhánh của vai mình thì DỪNG và hỏi tôi. Đầu mỗi buổi làm, lấy bản mới của nhánh some về nhánh của mình: `git pull origin some-diagram-and-SRS`.
+- KHÔNG đẩy thẳng lên `main` hay nhánh some. Làm xong một việc thì push nhánh của vai mình, rồi mở pull request vào nhánh some (nhớ đổi ô "base" khỏi `main`); CI xanh mới merge. Nhánh some chỉ được đưa vào `main` một lần ở cuối, do Dev&Ops làm.
+- KHÔNG dùng `git add .` hoặc `git add -A`. Chỉ `git add` từng đường dẫn nằm trong khu vực của vai mình. Trước mỗi commit chạy `git status` và kiểm tra tất cả file đều thuộc khu vực của mình; file nào ngoài khu vực thì bỏ ra, không commit.
+- Một pull request chỉ chứa file trong khu vực của một vai.
+- Commit nhỏ, thông điệp rõ có phạm vi: `feat(api):`, `feat(web):`, `fix(api):`, `ci:`, `docs:`, `chore:`.
+- Không tự đẩy code nếu tôi chưa bảo. Hướng dẫn tôi từng lệnh `git add`, `git commit`, `git push`.
+- Không bao giờ add `.env`, `.role.local`, file khóa (`*.pem`) hoặc `node_modules`.
 
-## Git
-- Làm trên nhánh hiện tại hoặc nhánh con của nó. KHÔNG đụng vào `main`, không merge vào `main`.
-- Commit nhỏ, thông điệp rõ (`feat:`, `fix:`, `docs:`). Hướng dẫn tôi từng lệnh `git add`, `git commit`, `git push`, không tự đẩy code nếu tôi chưa bảo.
-- Không bao giờ add `.env` hoặc `node_modules`.
-
-## Khi nào một việc được coi là xong
+## 10. Khi nào một việc được coi là xong
 - Chạy được, không lỗi build, lint và test đều qua.
-- README đã cập nhật cách chạy.
+- README của phần mình (hoặc README gốc nếu là Dev&Ops) đã cập nhật cách chạy.
+- Chỉ có file trong khu vực của vai mình bị thay đổi.
 - Tôi đã tự chạy thử và thấy đúng.
