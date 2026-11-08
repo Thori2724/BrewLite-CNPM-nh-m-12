@@ -4,10 +4,11 @@ export interface CartItem {
   id: string; // Mã duy nhất cho từng dòng trong giỏ hàng
   productId: string;
   name: string;
-  image: string;
+  imageUrl?: string;
+  image?: string;
   size?: SizeId;
   sugarLevel?: SugarLevel;
-  iceLevel?: IceLevel;
+  iceLevel?: IceLevel | string;
   toppings: Topping[];
   note: string;
   unitPrice: number; // Đơn giá của 1 ly/món (đã gồm giá size + tổng giá topping)
@@ -28,7 +29,7 @@ export function getCartItemSignature(item: {
   productId: string;
   size?: SizeId | null;
   sugarLevel?: SugarLevel | null;
-  iceLevel?: IceLevel | null;
+  iceLevel?: IceLevel | string | null;
   toppings?: Topping[];
   note?: string | null;
 }): string {

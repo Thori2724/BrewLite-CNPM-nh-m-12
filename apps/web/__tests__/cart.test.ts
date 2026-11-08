@@ -19,7 +19,7 @@ describe('Logic giỏ hàng thuần túy (utils/cart.ts)', () => {
     name: 'Cà phê sữa đá',
     image: 'https://example.com/cf.jpg',
     size: 'M',
-    sugarLevel: '100%',
+    sugarLevel: 'P100',
     iceLevel: 'NORMAL',
     toppings: [{ id: 'top-1', name: 'Trân châu đen', price: 5000 }],
     note: 'ít ngọt',
@@ -121,7 +121,7 @@ describe('Logic giỏ hàng thuần túy (utils/cart.ts)', () => {
     // Món có đường vs món không đường sẽ tách thành 2 dòng riêng
     const cart3 = addItemToCart(cart2, {
       ...cakeItem,
-      sugarLevel: '100%', // Có đường
+      sugarLevel: 'P100', // Có đường
       quantity: 1,
     });
     expect(cart3).toHaveLength(2);

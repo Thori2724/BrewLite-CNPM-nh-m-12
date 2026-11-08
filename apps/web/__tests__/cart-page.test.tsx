@@ -12,7 +12,7 @@ const mockItem1: CartItem = {
   name: 'Cà phê sữa đá',
   image: 'https://images.unsplash.com/photo-1517701550927-30cf4ba1dba5?w=500',
   size: 'M',
-  sugarLevel: '50%',
+  sugarLevel: 'P50',
   iceLevel: 'NORMAL',
   toppings: [{ id: 'top-1', name: 'Trân châu đen', price: 5000 }],
   note: 'pha đậm vị trà',

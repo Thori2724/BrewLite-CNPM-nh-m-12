@@ -39,7 +39,7 @@ describe('Lớp gọi API Đơn hàng và Thanh toán (services/orders.ts)', () 
         {
           productId: '1', // Cà phê sữa đá (29.000đ)
           size: 'M', // +5.000đ -> 34.000đ
-          sugarLevel: '50%',
+          sugarLevel: 'P50',
           iceLevel: 'NORMAL',
           quantity: 2, // 34.000 x 2 = 68.000đ
         },

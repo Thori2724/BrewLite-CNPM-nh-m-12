@@ -43,7 +43,7 @@ export interface CreateOrderItemDto {
   productId: string;
   size?: SizeId;
   sugarLevel?: SugarLevel;
-  iceLevel?: IceLevel;
+  iceLevel?: IceLevel | string;
   toppingIds?: string[];
   note?: string;
   quantity: number;
@@ -73,7 +73,7 @@ export interface OrderItemResponse {
   quantity: number;
   size?: SizeId;
   sugarLevel?: SugarLevel;
-  iceLevel?: IceLevel;
+  iceLevel?: IceLevel | string;
   toppings?: Array<{ id: string; name: string; price: number }>;
   note?: string;
   lineTotal: number;

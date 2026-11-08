@@ -6,52 +6,44 @@ import { useParams } from 'next/navigation';
 import {
   getProductById,
   ProductDetail,
-  SIZES,
-  SUGAR_LEVELS,
-  ICE_LEVELS,
-  TOPPINGS,
+  ProductTopping,
   SizeId,
   SugarLevel,
   IceLevel,
-  Topping,
+  CATEGORY_LABELS,
 } from '../../../services/api';
 import { calculatePrice } from '../../../utils/price';
 import { useCart } from '../../../context/CartContext';
 
-export interface OrderItemDraft {
-  productId: string;
-  productName: string;
-  size: SizeId;
-  sugarLevel?: SugarLevel;
-  iceLevel?: IceLevel;
-  toppings: Topping[];
-  note: string;
-  quantity: number;
-  estimatedPrice: number;
-}
-
 const MAX_TOPPINGS = 3;
 const MAX_NOTE_LENGTH = 200;
 const MAX_QUANTITY = 10;
+const MIN_QUANTITY = 1;
 
 function ProductDetailContent() {
   const params = useParams();
-  const id = typeof params?.id === 'string' ? params.id : Array.isArray(params?.id) ? params.id[0] : '';
+  const id =
+    typeof params?.id === 'string'
+      ? params.id
+      : Array.isArray(params?.id)
+      ? params.id[0]
+      : '';
 
   const [product, setProduct] = useState<ProductDetail | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const { addToCart } = useCart();
 
-  // Các lựa chọn tùy chỉnh
-  const [selectedSize, setSelectedSize] = useState<SizeId>('M');
-  const [selectedSugar, setSelectedSugar] = useState<SugarLevel>('100%');
+  // Các lựa chọn tùy chỉnh mặc định theo yêu cầu: Size S, Đường P100, Đá NORMAL (không lấy phần tử đầu mảng)
+  const [selectedSize, setSelectedSize] = useState<SizeId>('S');
+  const [selectedSugar, setSelectedSugar] = useState<SugarLevel>('P100');
   const [selectedIce, setSelectedIce] = useState<IceLevel>('NORMAL');
-  const [selectedToppings, setSelectedToppings] = useState<Topping[]>([]);
+  const [selectedToppings, setSelectedToppings] = useState<ProductTopping[]>([]);
   const [note, setNote] = useState<string>('');
   const [quantity, setQuantity] = useState<number>(1);
   const [addedSuccess, setAddedSuccess] = useState<boolean>(false);
   const [toppingWarning, setToppingWarning] = useState<string | null>(null);
+  const [quantityWarning, setQuantityWarning] = useState<string | null>(null);
 
   useEffect(() => {
     if (!id) return;
@@ -63,11 +55,29 @@ function ProductDetailContent() {
           setProduct(data);
           setError(null);
           setLoading(false);
+
+          if (data) {
+            // Đặt mặc định theo server options nếu có
+            if (data.sizes && data.sizes.length > 0) {
+              const hasS = data.sizes.some((s) => s.value === 'S');
+              setSelectedSize(hasS ? 'S' : data.sizes[0].value);
+            }
+            if (data.sugarLevels && data.sugarLevels.length > 0) {
+              const hasP100 = data.sugarLevels.some((s) => s.value === 'P100');
+              setSelectedSugar(hasP100 ? 'P100' : data.sugarLevels[0].value);
+            }
+            if (data.iceLevels && data.iceLevels.length > 0) {
+              const hasNormal = data.iceLevels.some((i) => i.value === 'NORMAL');
+              setSelectedIce(hasNormal ? 'NORMAL' : data.iceLevels[0].value);
+            }
+          }
         }
       })
-      .catch(() => {
+      .catch((err: unknown) => {
         if (!isCancelled) {
-          setError('Không thể tải thông tin món. Vui lòng thử lại!');
+          const message =
+            err instanceof Error ? err.message : 'Không thể tải thông tin món. Vui lòng thử lại!';
+          setError(message);
           setLoading(false);
         }
       });
@@ -84,15 +94,31 @@ function ProductDetailContent() {
     try {
       const data = await getProductById(id);
       setProduct(data);
-    } catch {
-      setError('Không thể tải thông tin món. Vui lòng thử lại!');
+      if (data) {
+        if (data.sizes && data.sizes.length > 0) {
+          const hasS = data.sizes.some((s) => s.value === 'S');
+          setSelectedSize(hasS ? 'S' : data.sizes[0].value);
+        }
+        if (data.sugarLevels && data.sugarLevels.length > 0) {
+          const hasP100 = data.sugarLevels.some((s) => s.value === 'P100');
+          setSelectedSugar(hasP100 ? 'P100' : data.sugarLevels[0].value);
+        }
+        if (data.iceLevels && data.iceLevels.length > 0) {
+          const hasNormal = data.iceLevels.some((i) => i.value === 'NORMAL');
+          setSelectedIce(hasNormal ? 'NORMAL' : data.iceLevels[0].value);
+        }
+      }
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error ? err.message : 'Không thể tải thông tin món. Vui lòng thử lại!';
+      setError(message);
     } finally {
       setLoading(false);
     }
   };
 
-  // Xử lý chọn / bỏ chọn Topping (tối đa 3 loại)
-  const toggleTopping = (topping: Topping) => {
+  // Xử lý chọn / bỏ chọn Topping (tối đa 3 loại không trùng)
+  const toggleTopping = (topping: ProductTopping) => {
     setToppingWarning(null);
     const exists = selectedToppings.some((t) => t.id === topping.id);
     if (exists) {
@@ -106,15 +132,34 @@ function ProductDetailContent() {
     }
   };
 
-  // Tính giá tạm tính
-  const currentSizeOption = SIZES.find((s) => s.id === selectedSize) || SIZES[0];
-  const sizePriceDiff = product?.allowSize ? currentSizeOption.priceDiff : 0;
-  const activeToppings = product?.allowTopping ? selectedToppings : [];
+  const handleIncreaseQuantity = () => {
+    setQuantityWarning(null);
+    if (quantity >= MAX_QUANTITY) {
+      setQuantityWarning('Số lượng phải từ 1 đến 10.');
+      return;
+    }
+    setQuantity((q) => Math.min(MAX_QUANTITY, q + 1));
+  };
+
+  const handleDecreaseQuantity = () => {
+    setQuantityWarning(null);
+    if (quantity <= MIN_QUANTITY) {
+      setQuantityWarning('Số lượng phải từ 1 đến 10.');
+      return;
+    }
+    setQuantity((q) => Math.max(MIN_QUANTITY, q - 1));
+  };
+
+  // Tính giá tạm tính phía client
+  const isOutOfStock = !product || product.stock <= 0;
+  const currentSizeOption = product?.sizes?.find((s) => s.value === selectedSize);
+  const sizeExtraPrice = currentSizeOption ? currentSizeOption.extraPrice : 0;
+  const activeToppings = (product?.toppings && product.toppings.length > 0) ? selectedToppings : [];
 
   const estimatedPrice = product
     ? calculatePrice({
-        basePrice: product.price,
-        sizePriceDiff,
+        basePrice: product.basePrice,
+        sizeExtraPrice,
         toppings: activeToppings,
         quantity,
       })
@@ -122,12 +167,17 @@ function ProductDetailContent() {
 
   // Xử lý khi nhấn nút "Thêm vào giỏ"
   const handleAddToCart = () => {
-    if (!product || !product.isAvailable) return;
+    if (!product || isOutOfStock) return;
 
-    // Đơn giá 1 ly = (giá món theo size + tổng giá topping)
+    if (quantity < MIN_QUANTITY || quantity > MAX_QUANTITY) {
+      setQuantityWarning('Số lượng phải từ 1 đến 10.');
+      return;
+    }
+
+    // Đơn giá 1 ly/món = basePrice + sizeExtraPrice + tổng giá topping
     const unitPrice = calculatePrice({
-      basePrice: product.price,
-      sizePriceDiff,
+      basePrice: product.basePrice,
+      sizeExtraPrice,
       toppings: activeToppings,
       quantity: 1,
     });
@@ -135,10 +185,11 @@ function ProductDetailContent() {
     addToCart({
       productId: product.id,
       name: product.name,
-      image: product.image,
-      size: product.allowSize ? selectedSize : undefined,
-      sugarLevel: product.allowSugar ? selectedSugar : undefined,
-      iceLevel: product.allowIce ? selectedIce : undefined,
+      imageUrl: product.imageUrl,
+      image: product.imageUrl,
+      size: product.sizes && product.sizes.length > 0 ? selectedSize : undefined,
+      sugarLevel: product.sugarLevels && product.sugarLevels.length > 0 ? selectedSugar : undefined,
+      iceLevel: product.iceLevels && product.iceLevels.length > 0 ? selectedIce : undefined,
       toppings: activeToppings,
       note: note.trim(),
       unitPrice,
@@ -170,6 +221,7 @@ function ProductDetailContent() {
         </div>
         <div>
           <button
+            type="button"
             onClick={handleRetry}
             className="px-4 py-2 bg-amber-600 text-white rounded-lg text-sm font-semibold hover:bg-amber-700 transition"
           >
@@ -197,6 +249,11 @@ function ProductDetailContent() {
     );
   }
 
+  const hasSizes = product.sizes && product.sizes.length > 0;
+  const hasIceLevels = product.iceLevels && product.iceLevels.length > 0;
+  const hasSugarLevels = product.sugarLevels && product.sugarLevels.length > 0;
+  const hasToppings = product.toppings && product.toppings.length > 0;
+
   return (
     <div className="space-y-6">
       {/* Nút quay lại Menu */}
@@ -222,56 +279,53 @@ function ProductDetailContent() {
         <div>
           <div className="relative w-full h-64 sm:h-80 bg-gray-100 rounded-xl overflow-hidden shadow-inner">
             <img
-              src={product.image}
+              src={product.imageUrl}
               alt={product.name}
-              className={`w-full h-full object-cover ${!product.isAvailable ? 'grayscale opacity-60' : ''}`}
+              className={`w-full h-full object-cover ${isOutOfStock ? 'grayscale opacity-60' : ''}`}
             />
-            {/* Nhãn hết hàng */}
-            {!product.isAvailable && (
+            {/* Nhãn hết hàng (stock = 0) */}
+            {isOutOfStock && (
               <span className="absolute top-3 right-3 bg-gray-800 text-white text-xs px-3 py-1.5 rounded-md font-bold shadow">
                 Hết hàng
               </span>
             )}
             <span className="absolute bottom-3 left-3 bg-black/60 text-white text-xs px-2.5 py-1 rounded-md">
-              {product.category}
+              {CATEGORY_LABELS[product.category] || product.category}
             </span>
           </div>
 
           <div className="mt-4">
             <h1 className="text-xl sm:text-2xl font-bold text-gray-900">{product.name}</h1>
             <p className="text-amber-600 font-extrabold text-lg sm:text-xl mt-1">
-              {product.price.toLocaleString('vi-VN')} đ <span className="text-xs font-normal text-gray-400">(giá gốc)</span>
-            </p>
-            <p className="text-gray-600 text-sm mt-3 leading-relaxed">
-              {product.description}
+              {product.basePrice.toLocaleString('vi-VN')} đ <span className="text-xs font-normal text-gray-400">(giá gốc)</span>
             </p>
           </div>
         </div>
 
-        {/* CỘT PHẢI: Các tùy chọn món */}
+        {/* CỘT PHẢI: Các tùy chọn món (render động từ server, ẩn mục rỗng) */}
         <div className="space-y-5">
-          {/* 1. Chọn Size (chỉ hiển thị nếu món hỗ trợ) */}
-          {product.allowSize && (
+          {/* 1. Chọn Size (ẩn nếu mảng rỗng) */}
+          {hasSizes && (
             <div>
               <label className="block text-sm font-bold text-gray-800 mb-2">
                 Chọn kích cỡ (Size) <span className="text-red-500">*</span>
               </label>
               <div className="grid grid-cols-3 gap-2">
-                {SIZES.map((size) => (
+                {product.sizes.map((size) => (
                   <button
-                    key={size.id}
+                    key={size.value}
                     type="button"
-                    disabled={!product.isAvailable}
-                    onClick={() => setSelectedSize(size.id)}
+                    disabled={isOutOfStock}
+                    onClick={() => setSelectedSize(size.value)}
                     className={`py-2 px-3 rounded-xl border text-center transition ${
-                      selectedSize === size.id
+                      selectedSize === size.value
                         ? 'border-amber-600 bg-amber-50 text-amber-900 font-bold shadow-xs'
                         : 'border-gray-200 text-gray-700 hover:bg-gray-50'
-                    } ${!product.isAvailable ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    } ${isOutOfStock ? 'opacity-50 cursor-not-allowed' : ''}`}
                   >
-                    <div className="text-xs">{size.name}</div>
+                    <div className="text-xs">{size.label}</div>
                     <div className="text-xs text-amber-700 font-semibold mt-0.5">
-                      {size.priceDiff > 0 ? `+${size.priceDiff.toLocaleString('vi-VN')} đ` : 'Gốc'}
+                      {size.extraPrice > 0 ? `+${size.extraPrice.toLocaleString('vi-VN')} đ` : 'Gốc'}
                     </div>
                   </button>
                 ))}
@@ -279,24 +333,24 @@ function ProductDetailContent() {
             </div>
           )}
 
-          {/* 2. Chọn Đá (nếu món hỗ trợ) */}
-          {product.allowIce && (
+          {/* 2. Chọn Đá (ẩn nếu mảng rỗng) */}
+          {hasIceLevels && (
             <div>
               <label className="block text-sm font-bold text-gray-800 mb-2">
                 Lượng đá
               </label>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                {ICE_LEVELS.map((ice) => (
+                {product.iceLevels.map((ice) => (
                   <button
-                    key={ice.id}
+                    key={ice.value}
                     type="button"
-                    disabled={!product.isAvailable}
-                    onClick={() => setSelectedIce(ice.id)}
+                    disabled={isOutOfStock}
+                    onClick={() => setSelectedIce(ice.value)}
                     className={`py-1.5 px-2 rounded-lg border text-xs font-medium text-center transition ${
-                      selectedIce === ice.id
+                      selectedIce === ice.value
                         ? 'border-amber-600 bg-amber-50 text-amber-900 font-bold'
                         : 'border-gray-200 text-gray-600 hover:bg-gray-50'
-                    } ${!product.isAvailable ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    } ${isOutOfStock ? 'opacity-50 cursor-not-allowed' : ''}`}
                   >
                     {ice.label}
                   </button>
@@ -305,34 +359,34 @@ function ProductDetailContent() {
             </div>
           )}
 
-          {/* 3. Chọn Đường (nếu món hỗ trợ) */}
-          {product.allowSugar && (
+          {/* 3. Chọn Đường (ẩn nếu mảng rỗng) */}
+          {hasSugarLevels && (
             <div>
               <label className="block text-sm font-bold text-gray-800 mb-2">
                 Lượng đường
               </label>
               <div className="grid grid-cols-5 gap-1.5">
-                {SUGAR_LEVELS.map((sugar) => (
+                {product.sugarLevels.map((sugar) => (
                   <button
-                    key={sugar.id}
+                    key={sugar.value}
                     type="button"
-                    disabled={!product.isAvailable}
-                    onClick={() => setSelectedSugar(sugar.id)}
+                    disabled={isOutOfStock}
+                    onClick={() => setSelectedSugar(sugar.value)}
                     className={`py-1.5 px-1 rounded-lg border text-xs font-medium text-center transition ${
-                      selectedSugar === sugar.id
+                      selectedSugar === sugar.value
                         ? 'border-amber-600 bg-amber-50 text-amber-900 font-bold'
                         : 'border-gray-200 text-gray-600 hover:bg-gray-50'
-                    } ${!product.isAvailable ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    } ${isOutOfStock ? 'opacity-50 cursor-not-allowed' : ''}`}
                   >
-                    {sugar.id}
+                    {sugar.label}
                   </button>
                 ))}
               </div>
             </div>
           )}
 
-          {/* 4. Chọn Topping (chỉ hiển thị nếu món hỗ trợ) */}
-          {product.allowTopping && (
+          {/* 4. Chọn Topping (ẩn nếu mảng rỗng) */}
+          {hasToppings && (
             <div>
               <div className="flex justify-between items-center mb-2">
                 <label className="text-sm font-bold text-gray-800">
@@ -344,27 +398,27 @@ function ProductDetailContent() {
               </div>
 
               {toppingWarning && (
-                <p className="text-xs text-amber-600 mb-2 font-medium">{toppingWarning}</p>
+                <p className="text-xs text-red-600 mb-2 font-medium">{toppingWarning}</p>
               )}
 
               <div className="space-y-2">
-                {TOPPINGS.map((topping) => {
+                {product.toppings.map((topping) => {
                   const isChecked = selectedToppings.some((t) => t.id === topping.id);
                   return (
                     <div
                       key={topping.id}
-                      onClick={() => product.isAvailable && toggleTopping(topping)}
+                      onClick={() => !isOutOfStock && toggleTopping(topping)}
                       className={`flex items-center justify-between p-2.5 rounded-xl border cursor-pointer transition ${
                         isChecked
                           ? 'border-amber-600 bg-amber-50/50'
                           : 'border-gray-200 hover:bg-gray-50'
-                      } ${!product.isAvailable ? 'opacity-50 cursor-not-allowed' : ''}`}
+                      } ${isOutOfStock ? 'opacity-50 cursor-not-allowed' : ''}`}
                     >
                       <div className="flex items-center gap-2.5">
                         <input
                           type="checkbox"
                           checked={isChecked}
-                          disabled={!product.isAvailable}
+                          disabled={isOutOfStock}
                           onChange={() => {}}
                           className="w-4 h-4 text-amber-600 rounded border-gray-300 focus:ring-amber-500 pointer-events-none"
                         />
@@ -391,7 +445,7 @@ function ProductDetailContent() {
             <textarea
               rows={2}
               maxLength={MAX_NOTE_LENGTH}
-              disabled={!product.isAvailable}
+              disabled={isOutOfStock}
               value={note}
               onChange={(e) => setNote(e.target.value)}
               placeholder="Ví dụ: ít ngọt, pha đậm vị trà..."
@@ -401,13 +455,13 @@ function ProductDetailContent() {
 
           {/* 6. Số lượng và Giá tạm tính */}
           <div className="pt-2 border-t border-gray-100">
-            <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center justify-between mb-2">
               <span className="text-sm font-bold text-gray-800">Số lượng</span>
               <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden">
                 <button
                   type="button"
-                  disabled={!product.isAvailable || quantity <= 1}
-                  onClick={() => setQuantity((q) => Math.max(1, q - 1))}
+                  disabled={isOutOfStock || quantity <= MIN_QUANTITY}
+                  onClick={handleDecreaseQuantity}
                   className="w-8 h-8 flex items-center justify-center bg-gray-50 hover:bg-gray-100 text-gray-600 disabled:opacity-40 disabled:cursor-not-allowed font-bold"
                 >
                   -
@@ -415,14 +469,18 @@ function ProductDetailContent() {
                 <span className="w-10 text-center text-sm font-bold text-gray-800">{quantity}</span>
                 <button
                   type="button"
-                  disabled={!product.isAvailable || quantity >= MAX_QUANTITY}
-                  onClick={() => setQuantity((q) => Math.min(MAX_QUANTITY, q + 1))}
+                  disabled={isOutOfStock || quantity >= MAX_QUANTITY}
+                  onClick={handleIncreaseQuantity}
                   className="w-8 h-8 flex items-center justify-center bg-gray-50 hover:bg-gray-100 text-gray-600 disabled:opacity-40 disabled:cursor-not-allowed font-bold"
                 >
                   +
                 </button>
               </div>
             </div>
+
+            {quantityWarning && (
+              <p className="text-xs text-red-600 mb-2 font-medium">{quantityWarning}</p>
+            )}
 
             {/* Hiển thị giá tạm tính */}
             <div className="bg-amber-50/70 p-3 rounded-xl mb-4 border border-amber-100">
@@ -437,18 +495,20 @@ function ProductDetailContent() {
               </p>
             </div>
 
-            {/* Nút Thêm vào giỏ */}
+            {/* Nút Thêm vào giỏ (khóa nút khi stock <= 0) */}
             <button
               type="button"
-              disabled={!product.isAvailable}
+              disabled={isOutOfStock}
               onClick={handleAddToCart}
               className={`w-full py-3 rounded-xl text-sm font-bold transition shadow-sm ${
-                product.isAvailable
-                  ? 'bg-amber-600 text-white hover:bg-amber-700 active:scale-98'
+                !isOutOfStock
+                  ? 'bg-amber-600 text-white hover:bg-amber-700 active:scale-98 cursor-pointer'
                   : 'bg-gray-200 text-gray-400 cursor-not-allowed'
               }`}
             >
-              {product.isAvailable ? `+ Thêm vào giỏ (${estimatedPrice.toLocaleString('vi-VN')} đ)` : 'Món tạm hết hàng'}
+              {!isOutOfStock
+                ? `+ Thêm vào giỏ (${estimatedPrice.toLocaleString('vi-VN')} đ)`
+                : 'Món tạm hết hàng'}
             </button>
           </div>
         </div>

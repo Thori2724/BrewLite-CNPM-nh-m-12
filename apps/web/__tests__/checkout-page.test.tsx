@@ -47,7 +47,7 @@ const mockCartItem: CartItem = {
   name: 'Cà phê muối',
   image: 'https://images.unsplash.com/photo-1517701550927-30cf4ba1dba5?w=500',
   size: 'M',
-  sugarLevel: '50%',
+  sugarLevel: 'P50',
   iceLevel: 'NORMAL',
   toppings: [{ id: 'top-1', name: 'Kem mặn', price: 10000 }],
   note: 'uống liền',

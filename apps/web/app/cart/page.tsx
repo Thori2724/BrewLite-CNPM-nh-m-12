@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useCart } from '../../context/CartContext';
 import { getLineTotal, MAX_ITEM_QUANTITY } from '../../utils/cart';
+import { SUGAR_LABELS, SugarLevel } from '../../services/api';
 
 function getIceLabel(ice?: string): string {
   switch (ice) {
@@ -119,7 +120,11 @@ export default function CartPage() {
                 <div className="text-[11px] sm:text-xs text-gray-500 space-y-0.5 mt-0.5">
                   <div className="flex flex-wrap gap-x-2 gap-y-0.5">
                     {item.size && <span>Size: <strong>{item.size}</strong></span>}
-                    {item.sugarLevel && <span>Đường: <strong>{item.sugarLevel}</strong></span>}
+                    {item.sugarLevel && (
+                      <span>
+                        Đường: <strong>{SUGAR_LABELS[item.sugarLevel as SugarLevel] || item.sugarLevel}</strong>
+                      </span>
+                    )}
                     {item.iceLevel && <span>Đá: <strong>{getIceLabel(item.iceLevel)}</strong></span>}
                   </div>
 

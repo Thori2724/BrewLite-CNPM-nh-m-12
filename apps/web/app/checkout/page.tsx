@@ -11,6 +11,7 @@ import {
   OrderResponse,
   PaymentResponse,
 } from '../../services/order-contract';
+import { SUGAR_LABELS, SugarLevel } from '../../services/api';
 import {
   createOrderApi,
   payOrderApi,
@@ -747,7 +748,9 @@ function CheckoutContent() {
                       </div>
                       <div className="text-[11px] text-gray-500 space-x-1">
                         {item.size && <span>Size {item.size}</span>}
-                        {item.sugarLevel && <span>• Đường: {item.sugarLevel}</span>}
+                        {item.sugarLevel && (
+                          <span>• Đường: {SUGAR_LABELS[item.sugarLevel as SugarLevel] || item.sugarLevel}</span>
+                        )}
                         {item.iceLevel && <span>• Đá: {getIceLabel(item.iceLevel)}</span>}
                       </div>
                       {item.toppings && item.toppings.length > 0 && (

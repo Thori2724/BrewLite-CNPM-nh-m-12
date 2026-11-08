@@ -50,7 +50,7 @@ describe('Hàm thuần xử lý đơn hàng và thanh toán (utils/checkout.ts)'
         name: 'Trà sen vàng',
         image: 'https://example.com/tra.jpg',
         size: 'L',
-        sugarLevel: '50%',
+        sugarLevel: 'P50',
         iceLevel: 'NORMAL',
         toppings: [
           { id: 'top-1', name: 'Trân châu', price: 5000 },
@@ -92,7 +92,7 @@ describe('Hàm thuần xử lý đơn hàng và thanh toán (utils/checkout.ts)'
       const item1 = payload.items[0];
       expect(item1.productId).toBe('prod-101');
       expect(item1.size).toBe('L');
-      expect(item1.sugarLevel).toBe('50%');
+      expect(item1.sugarLevel).toBe('P50');
       expect(item1.iceLevel).toBe('NORMAL');
       expect(item1.toppingIds).toEqual(['top-1', 'top-2']);
       expect(item1.quantity).toBe(2);

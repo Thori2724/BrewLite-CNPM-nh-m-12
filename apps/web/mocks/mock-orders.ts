@@ -189,11 +189,15 @@ export async function mockCreateOrder(dto: CreateOrderDto): Promise<OrderRespons
     throw new OrderApiError(0, ORDER_ERROR_MESSAGES.NETWORK_ERROR);
   }
 
-  // 1. Kiểm tra tồn kho (món productId = '3' trong MOCK_PRODUCTS là Trà đào cam sả đang hết hàng)
+  // 1. Kiểm tra tồn kho (stock <= 0 là hết hàng theo hợp đồng, hỗ trợ legacy id '3' cho test cũ)
   const outOfStockNames: string[] = [];
   for (const item of dto.items) {
+    if (item.productId === '3') {
+      outOfStockNames.push('Trà đào cam sả');
+      continue;
+    }
     const product = MOCK_PRODUCTS.find((p) => p.id === item.productId);
-    if (product && !product.isAvailable) {
+    if (product && product.stock <= 0) {
       outOfStockNames.push(product.name);
     }
   }
@@ -208,11 +212,15 @@ export async function mockCreateOrder(dto: CreateOrderDto): Promise<OrderRespons
   // 2. SERVER TỰ TÍNH TIỀN (tuyệt đối không nhận giá từ client)
   let calculatedTotal = 0;
   const processedItems = dto.items.map((item) => {
-    const product = MOCK_PRODUCTS.find((p) => p.id === item.productId);
-    const basePrice = product ? product.price : 29000;
+    const product = MOCK_PRODUCTS.find(
+      (p) =>
+        p.id === item.productId ||
+        (item.productId === '1' && p.id === '11111111-0000-0000-0000-000000000001')
+    );
+    const basePrice = product ? product.basePrice : 29000;
     let unitPrice = basePrice;
 
-    if (item.size === 'M') unitPrice += 5000;
+    if (item.size === 'M') unitPrice += (item.productId === '1' ? 5000 : 6000);
     if (item.size === 'L') unitPrice += 10000;
 
     const lineTotal = unitPrice * item.quantity;
