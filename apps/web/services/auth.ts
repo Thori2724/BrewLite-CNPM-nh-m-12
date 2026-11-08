@@ -28,7 +28,7 @@ export function resetRedirectFlag(): void {
   isRedirectingToLogin = false;
 }
 
-// Re-export để tương thích các component và test hiện hữu
+// Re-export để tương thích các component và test
 export { isMockAuthActive };
 
 /**
@@ -129,7 +129,8 @@ export async function apiFetch<T>(
       if (errorData && typeof errorData === 'object') {
         const errorObj = errorData as Record<string, unknown>;
         if (Array.isArray(errorObj.message) && errorObj.message.length > 0) {
-          message = errorObj.message.join(', ');
+          // Lỗi validate 400 mảng tiếng Anh -> câu chung tiếng Việt
+          message = AUTH_ERROR_MESSAGES.VALIDATION_ERROR;
         } else if (typeof errorObj.message === 'string') {
           message = errorObj.message;
         }

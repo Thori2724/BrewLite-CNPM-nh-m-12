@@ -6,16 +6,16 @@ import { useAuth } from '../../context/AuthContext';
 
 /**
  * Phần xác thực trên header:
- * - Đang kiểm tra (chưa đọc xong localStorage): hiện khung trống mờ, tránh nhấp nháy sai nội dung.
+ * - Đang kiểm tra (chưa đọc xong localStorage): hiện khung skeleton mờ, tránh nhấp nháy sai nội dung.
  * - Chưa đăng nhập: liên kết "Đăng nhập" và "Đăng ký".
- * - Đã đăng nhập: tên người dùng và nút "Đăng xuất".
+ * - Đã đăng nhập: tên hiển thị người dùng (displayName) và nút "Đăng xuất".
  */
 export default function AuthNav() {
   const { user, isAuthenticated, isHydrated, logout } = useAuth();
   const router = useRouter();
 
   const handleLogout = () => {
-    // Chỉ xóa phiên đăng nhập (brewlite_auth_v1), giỏ hàng brewlite_cart_v1 giữ nguyên
+    // Chỉ xóa phiên đăng nhập (brewlite_auth_v2), giỏ hàng brewlite_cart_v2 giữ nguyên
     logout();
     router.push('/');
   };
@@ -33,9 +33,9 @@ export default function AuthNav() {
   if (isAuthenticated && user) {
     return (
       <div className="flex items-center gap-2 min-w-0">
-        <span className="text-sm font-medium truncate max-w-[9rem]" title={user.fullName}>
+        <span className="text-sm font-medium truncate max-w-[9rem]" title={user.displayName}>
           <span className="sr-only">Đang đăng nhập với tên </span>
-          {user.fullName}
+          {user.displayName}
         </span>
         <button
           type="button"
@@ -68,4 +68,3 @@ export default function AuthNav() {
     </div>
   );
 }
-

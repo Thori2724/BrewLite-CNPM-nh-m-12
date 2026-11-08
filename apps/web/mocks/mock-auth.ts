@@ -1,15 +1,16 @@
 import {
   AUTH_ERROR_MESSAGES,
-  AuthUser,
   LoginDto,
   LoginResponse,
   RegisterDto,
   RegisterResponse,
+  UserRole,
 } from '../services/auth-contract';
 import { AuthApiError } from '../services/auth';
 
 /**
- * Kiểm tra xem có đang bật chế độ Mock Auth hay không
+ * Kiểm tra xem có đang bật chế độ Mock Auth hay không.
+ * Mặc định: true trong môi trường phát triển cục bộ nếu biến NEXT_PUBLIC_USE_MOCK_AUTH=true.
  */
 export function isMockAuthActive(): boolean {
   return process.env.NEXT_PUBLIC_USE_MOCK_AUTH === 'true';
@@ -18,50 +19,55 @@ export function isMockAuthActive(): boolean {
 export interface MockUserRecord {
   id: string;
   email: string;
-  fullName: string;
+  displayName: string;
   password: string;
-  role: 'CUSTOMER' | 'STAFF' | 'ADMIN';
+  role: UserRole;
 }
 
+/**
+ * Dữ liệu người dùng mẫu trong Mock Database.
+ * LƯU Ý QUAN TRỌNG:
+ * - Tài khoản đăng ký mới trong mock chỉ sống trong bộ nhớ RAM của phiên duyệt web (sẽ mất khi F5 hoặc mở tab mới).
+ * - Tài khoản mẫu kiểm thử cố định:
+ *   + Email: khachhang@brewlite.vn
+ *   + Mật khẩu: password123
+ */
 export const mockDatabaseUsers: MockUserRecord[] = [
   {
     id: 'mock-user-1',
     email: 'khachhang@brewlite.vn',
-    fullName: 'Khách hàng BrewLite',
+    displayName: 'Khách hàng BrewLite',
     password: 'password123',
     role: 'CUSTOMER',
   },
 ];
 
 export async function mockLogin(dto: LoginDto): Promise<LoginResponse> {
-  // Giả lập độ trễ mạng 250ms
+  // Giả lập độ trễ mạng nhẹ 250ms
   await new Promise((resolve) => setTimeout(resolve, 250));
 
-  const normalizedEmail = dto.email.trim().toLowerCase();
+  const normalizedEmail = (dto.email || '').trim().toLowerCase();
   const user = mockDatabaseUsers.find((u) => u.email.toLowerCase() === normalizedEmail);
 
   if (!user || user.password !== dto.password) {
     throw new AuthApiError(401, AUTH_ERROR_MESSAGES.INVALID_CREDENTIALS);
   }
 
-  const authUser: AuthUser = {
-    id: user.id,
-    email: user.email,
-    fullName: user.fullName,
-    role: user.role,
-    loyaltyPoints: 50,
-  };
-
   return {
-    access_token: `mock_jwt_token_${user.id}_${Date.now()}`,
-    user: authUser,
+    accessToken: `mock_jwt_token_${user.id}_${Date.now()}`,
+    user: {
+      id: user.id,
+      email: user.email,
+      displayName: user.displayName,
+      role: user.role,
+    },
   };
 }
 
 export async function mockRegister(dto: RegisterDto): Promise<RegisterResponse> {
   await new Promise((resolve) => setTimeout(resolve, 250));
 
-  const normalizedEmail = dto.email.trim().toLowerCase();
+  const normalizedEmail = (dto.email || '').trim().toLowerCase();
   const existing = mockDatabaseUsers.find((u) => u.email.toLowerCase() === normalizedEmail);
 
   if (existing) {
@@ -70,23 +76,19 @@ export async function mockRegister(dto: RegisterDto): Promise<RegisterResponse> 
 
   const newUser: MockUserRecord = {
     id: `mock-user-${Date.now()}`,
-    email: dto.email.trim(),
-    fullName: dto.fullName.trim(),
+    email: normalizedEmail,
+    displayName: dto.displayName.trim(),
     password: dto.password,
     role: 'CUSTOMER',
   };
 
   mockDatabaseUsers.push(newUser);
 
+  // Response 201 trả thẳng thông tin user vừa tạo theo hợp đồng API
   return {
-    message: AUTH_ERROR_MESSAGES.REGISTRATION_SUCCESS,
-    user: {
-      id: newUser.id,
-      email: newUser.email,
-      fullName: newUser.fullName,
-      role: newUser.role,
-      loyaltyPoints: 0,
-    },
+    id: newUser.id,
+    email: newUser.email,
+    displayName: newUser.displayName,
+    role: newUser.role,
   };
 }
-

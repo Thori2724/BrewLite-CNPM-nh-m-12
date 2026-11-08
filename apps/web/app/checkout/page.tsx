@@ -73,7 +73,7 @@ function CheckoutContent() {
   // Thông tin giao nhận & Người nhận
   const [receiveType, setReceiveType] = useState<ReceiveType>('AT_COUNTER');
   const [customCustomerName, setCustomCustomerName] = useState<string | null>(null);
-  const customerName = customCustomerName !== null ? customCustomerName : (user?.fullName || '');
+  const customerName = customCustomerName !== null ? customCustomerName : (user?.displayName || '');
   const [customerPhone, setCustomerPhone] = useState<string>('');
   const [note, setNote] = useState<string>('');
   const [phoneError, setPhoneError] = useState<string | null>(null);

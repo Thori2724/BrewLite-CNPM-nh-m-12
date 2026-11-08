@@ -60,7 +60,7 @@ const mockLoggedInUser = {
   user: {
     id: 'user-001',
     email: 'nguyenvana@example.com',
-    fullName: 'Nguyễn Văn A',
+    displayName: 'Nguyễn Văn A',
     role: 'CUSTOMER' as const,
   },
 };

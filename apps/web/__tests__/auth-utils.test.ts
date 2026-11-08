@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
   AUTH_STORAGE_KEY,
+  LEGACY_AUTH_STORAGE_KEY,
   clearAuthSession,
   extractErrorMessage,
   getSafeRedirectUrl,
@@ -8,8 +9,9 @@ import {
   saveAuthSession,
   validateConfirmPassword,
   validateEmail,
-  validateFullName,
+  validateDisplayName,
   validatePassword,
+  validateLoginPassword,
 } from '../utils/auth';
 import { AuthUser, AUTH_ERROR_MESSAGES } from '../services/auth-contract';
 
@@ -77,7 +79,7 @@ describe('Logic xác thực thuần túy (utils/auth.ts)', () => {
       expect(validateEmail('@domain.com').isValid).toBe(false);
     });
 
-    it('2.2. validatePassword: độ dài tối thiểu 6 ký tự', () => {
+    it('2.2. validatePassword: độ dài tối thiểu 6 ký tự cho đăng ký', () => {
       expect(validatePassword('123456').isValid).toBe(true);
       expect(validatePassword('matkhau_manh_123').isValid).toBe(true);
 
@@ -90,20 +92,41 @@ describe('Logic xác thực thuần túy (utils/auth.ts)', () => {
       expect(shortRes.error).toBe('Mật khẩu phải có ít nhất 6 ký tự');
     });
 
-    it('2.3. validateFullName: tối thiểu 2 ký tự', () => {
-      expect(validateFullName('Nguyễn Văn A').isValid).toBe(true);
-      expect(validateFullName('An').isValid).toBe(true);
+    it('2.3. validateLoginPassword: chỉ bắt buộc nhập, không áp tối thiểu 6 ký tự', () => {
+      expect(validateLoginPassword('123').isValid).toBe(true);
+      expect(validateLoginPassword('abcde').isValid).toBe(true);
 
-      const emptyRes = validateFullName('');
+      const emptyRes = validateLoginPassword('');
       expect(emptyRes.isValid).toBe(false);
-      expect(emptyRes.error).toBe('Vui lòng nhập họ và tên');
-
-      const shortRes = validateFullName('A');
-      expect(shortRes.isValid).toBe(false);
-      expect(shortRes.error).toBe('Họ và tên phải có ít nhất 2 ký tự');
+      expect(emptyRes.error).toBe('Vui lòng nhập mật khẩu');
     });
 
-    it('2.4. validateConfirmPassword: phải trùng khớp với mật khẩu', () => {
+    it('2.4. validateDisplayName: 1 đến 50 ký tự sau khi trim, chuỗi toàn khoảng trắng bị báo lỗi', () => {
+      expect(validateDisplayName('Nguyễn Văn An').isValid).toBe(true);
+      expect(validateDisplayName('A').isValid).toBe(true); // 1 ký tự hợp lệ
+      expect(validateDisplayName('   B   ').isValid).toBe(true); // trim lại còn 1 ký tự
+
+      // Chuỗi rỗng
+      const emptyRes = validateDisplayName('');
+      expect(emptyRes.isValid).toBe(false);
+      expect(emptyRes.error).toBe('Vui lòng nhập tên hiển thị');
+
+      // Chuỗi toàn khoảng trắng
+      const spacesRes = validateDisplayName('     ');
+      expect(spacesRes.isValid).toBe(false);
+      expect(spacesRes.error).toBe('Vui lòng nhập tên hiển thị');
+
+      // Chuỗi vượt quá 50 ký tự
+      const longName = 'A'.repeat(51);
+      const longRes = validateDisplayName(longName);
+      expect(longRes.isValid).toBe(false);
+      expect(longRes.error).toBe('Tên hiển thị không được vượt quá 50 ký tự');
+
+      // Chuỗi đúng 50 ký tự
+      expect(validateDisplayName('A'.repeat(50)).isValid).toBe(true);
+    });
+
+    it('2.5. validateConfirmPassword: phải trùng khớp với mật khẩu', () => {
       expect(validateConfirmPassword('secret123', 'secret123').isValid).toBe(true);
 
       const emptyRes = validateConfirmPassword('secret123', '');
@@ -117,32 +140,41 @@ describe('Logic xác thực thuần túy (utils/auth.ts)', () => {
   });
 
   // 3. Kiểm tra lưu trữ token an toàn và đọc dữ liệu hỏng
-  describe('Quản lý phiên đăng nhập trong localStorage', () => {
+  describe('Quản lý phiên đăng nhập trong localStorage (brewlite_auth_v2)', () => {
     const mockUser: AuthUser = {
       id: 'user-uuid-1',
       email: 'customer@brewlite.vn',
-      fullName: 'Nguyễn Khách Hàng',
+      displayName: 'Nguyễn Khách Hàng',
       role: 'CUSTOMER',
-      loyaltyPoints: 100,
     };
 
-    it('3.1. Lưu và nạp phiên đăng nhập hợp lệ', () => {
+    it('3.1. Lưu và nạp phiên đăng nhập hợp lệ với brewlite_auth_v2', () => {
       saveAuthSession({ token: 'mock-jwt-token', user: mockUser });
 
       const loaded = loadAuthSession();
       expect(loaded).not.toBeNull();
       expect(loaded?.token).toBe('mock-jwt-token');
       expect(loaded?.user.email).toBe('customer@brewlite.vn');
-      expect(loaded?.user.fullName).toBe('Nguyễn Khách Hàng');
+      expect(loaded?.user.displayName).toBe('Nguyễn Khách Hàng');
       expect(loaded?.user.role).toBe('CUSTOMER');
     });
 
-    it('3.2. Không làm sập ứng dụng và trả về null khi dữ liệu JSON bị hỏng', () => {
+    it('3.2. Tự động xóa khóa cũ brewlite_auth_v1 và không nạp từ khóa cũ', () => {
+      localStorage.setItem(LEGACY_AUTH_STORAGE_KEY, JSON.stringify({ token: 'legacy-token' }));
+      expect(localStorage.getItem(LEGACY_AUTH_STORAGE_KEY)).not.toBeNull();
+
+      const loaded = loadAuthSession();
+      expect(loaded).toBeNull();
+      // Khóa brewlite_auth_v1 phải bị xóa hoàn toàn
+      expect(localStorage.getItem(LEGACY_AUTH_STORAGE_KEY)).toBeNull();
+    });
+
+    it('3.3. Không làm sập ứng dụng và trả về null khi dữ liệu JSON bị hỏng', () => {
       localStorage.setItem(AUTH_STORAGE_KEY, 'invalid-json-{[(');
       expect(loadAuthSession()).toBeNull();
     });
 
-    it('3.3. Trả về null khi cấu trúc dữ liệu thiếu token hoặc user', () => {
+    it('3.4. Trả về null khi cấu trúc dữ liệu thiếu token hoặc user hoặc displayName', () => {
       localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify({ token: '' }));
       expect(loadAuthSession()).toBeNull();
 
@@ -151,32 +183,36 @@ describe('Logic xác thực thuần túy (utils/auth.ts)', () => {
 
       localStorage.setItem(
         AUTH_STORAGE_KEY,
-        JSON.stringify({ token: 'abc', user: { id: '1' } }) // thiếu email, fullName, role
+        JSON.stringify({ token: 'abc', user: { id: '1' } }) // thiếu email, displayName, role
       );
       expect(loadAuthSession()).toBeNull();
     });
 
-    it('3.4. clearAuthSession xóa token auth nhưng giữ nguyên dữ liệu khác (như giỏ hàng)', () => {
-      localStorage.setItem('brewlite_cart_v1', JSON.stringify([{ id: 'cart-1', name: 'Trà đào' }]));
+    it('3.5. clearAuthSession xóa token auth nhưng giữ nguyên dữ liệu khác (như giỏ hàng brewlite_cart_v2)', () => {
+      localStorage.setItem('brewlite_cart_v2', JSON.stringify([{ id: 'cart-1', name: 'Trà đào' }]));
       saveAuthSession({ token: 'mock-jwt-token', user: mockUser });
 
       clearAuthSession();
 
       expect(loadAuthSession()).toBeNull();
       // Giỏ hàng vẫn phải còn nguyên
-      expect(localStorage.getItem('brewlite_cart_v1')).toContain('Trà đào');
+      expect(localStorage.getItem('brewlite_cart_v2')).toContain('Trà đào');
     });
   });
 
   // 4. Trích xuất thông báo lỗi
   describe('extractErrorMessage', () => {
-    it('4.1. Trích xuất đúng mảng lỗi từ NestJS ValidationPipe', () => {
+    it('4.1. Khi server trả về mảng chuỗi tiếng Anh (NestJS 400), chỉ hiện câu chung tiếng Việt', () => {
       const nestJsError = {
         statusCode: 400,
         message: ['email must be an email', 'password is too short'],
         error: 'Bad Request',
       };
-      expect(extractErrorMessage(nestJsError)).toBe('email must be an email, password is too short');
+      // Không hiện nguyên văn mảng tiếng Anh lên màn hình
+      const msg = extractErrorMessage(nestJsError);
+      expect(msg).toBe(AUTH_ERROR_MESSAGES.VALIDATION_ERROR);
+      expect(msg).not.toContain('email must be an email');
+      expect(msg).not.toContain('password is too short');
     });
 
     it('4.2. Trích xuất chuỗi message đơn lẻ hoặc chuỗi trực tiếp', () => {
@@ -191,4 +227,3 @@ describe('Logic xác thực thuần túy (utils/auth.ts)', () => {
     });
   });
 });
-

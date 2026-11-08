@@ -30,7 +30,7 @@ describe('Lớp gọi API xác thực (services/auth.ts)', () => {
     it('1.1. Tự động gắn header Authorization: Bearer <token> khi có phiên đăng nhập', async () => {
       saveAuthSession({
         token: 'test-valid-jwt-token',
-        user: { id: '1', email: 'test@brewlite.vn', fullName: 'Tester', role: 'CUSTOMER' },
+        user: { id: '1', email: 'test@brewlite.vn', displayName: 'Tester', role: 'CUSTOMER' },
       });
 
       const mockFetch = vi.fn().mockResolvedValue({
@@ -66,7 +66,7 @@ describe('Lớp gọi API xác thực (services/auth.ts)', () => {
     it('1.3. Không gắn header Authorization khi truyền skipAuth: true', async () => {
       saveAuthSession({
         token: 'test-valid-jwt-token',
-        user: { id: '1', email: 'test@brewlite.vn', fullName: 'Tester', role: 'CUSTOMER' },
+        user: { id: '1', email: 'test@brewlite.vn', displayName: 'Tester', role: 'CUSTOMER' },
       });
 
       const mockFetch = vi.fn().mockResolvedValue({
@@ -89,7 +89,7 @@ describe('Lớp gọi API xác thực (services/auth.ts)', () => {
     it('2.1. Request nghiệp vụ gặp 401 (hết hạn): Xóa token và kích hoạt chuyển về /login', async () => {
       saveAuthSession({
         token: 'expired-token',
-        user: { id: '1', email: 'test@brewlite.vn', fullName: 'Tester', role: 'CUSTOMER' },
+        user: { id: '1', email: 'test@brewlite.vn', displayName: 'Tester', role: 'CUSTOMER' },
       });
 
       // Mock window.location
@@ -149,7 +149,7 @@ describe('Lớp gọi API xác thực (services/auth.ts)', () => {
     it('2.3. Chống dồn dập: Nhiều request 401 đồng thời chỉ kích hoạt redirect 1 lần', async () => {
       saveAuthSession({
         token: 'expired-token',
-        user: { id: '1', email: 'test@brewlite.vn', fullName: 'Tester', role: 'CUSTOMER' },
+        user: { id: '1', email: 'test@brewlite.vn', displayName: 'Tester', role: 'CUSTOMER' },
       });
 
       const originalLocation = window.location;
@@ -201,7 +201,7 @@ describe('Lớp gọi API xác thực (services/auth.ts)', () => {
         apiFetch(AUTH_ENDPOINTS.REGISTER, {
           method: 'POST',
           body: JSON.stringify({
-            fullName: 'Test',
+            displayName: 'Test',
             email: 'duplicate@brewlite.vn',
             password: 'password123',
           }),
@@ -238,8 +238,9 @@ describe('Lớp gọi API xác thực (services/auth.ts)', () => {
         password: 'password123',
       });
 
-      expect(res.access_token).toBeDefined();
+      expect(res.accessToken).toBeDefined();
       expect(res.user.email).toBe('khachhang@brewlite.vn');
+      expect(res.user.displayName).toBe('Khách hàng BrewLite');
       expect(res.user.role).toBe('CUSTOMER');
     });
 
@@ -254,17 +255,18 @@ describe('Lớp gọi API xác thực (services/auth.ts)', () => {
       ).rejects.toThrow(AUTH_ERROR_MESSAGES.INVALID_CREDENTIALS);
     });
 
-    it('4.3. Đăng ký qua Mock Auth thành công với email mới', async () => {
+    it('4.3. Đăng ký qua Mock Auth thành công với email mới (trả response 201 trực tiếp)', async () => {
       process.env.NEXT_PUBLIC_USE_MOCK_AUTH = 'true';
 
       const res = await registerApi({
-        fullName: 'Người Dùng Mới',
+        displayName: 'Người Dùng Mới',
         email: `newuser-${Date.now()}@brewlite.vn`,
         password: 'newpassword123',
       });
 
-      expect(res.message).toBe(AUTH_ERROR_MESSAGES.REGISTRATION_SUCCESS);
-      expect(res.user.fullName).toBe('Người Dùng Mới');
+      expect(res.id).toBeDefined();
+      expect(res.displayName).toBe('Người Dùng Mới');
+      expect(res.role).toBe('CUSTOMER');
     });
 
     it('4.4. Đăng ký qua Mock Auth thất bại khi trùng email mẫu (ném 409)', async () => {
@@ -272,7 +274,7 @@ describe('Lớp gọi API xác thực (services/auth.ts)', () => {
 
       await expect(
         registerApi({
-          fullName: 'Trùng Email',
+          displayName: 'Trùng Email',
           email: 'khachhang@brewlite.vn',
           password: 'password123',
         })

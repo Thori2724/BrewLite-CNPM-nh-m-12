@@ -7,7 +7,7 @@ import { useAuth } from '../../context/AuthContext';
 import {
   getSafeRedirectUrl,
   validateEmail,
-  validatePassword,
+  validateLoginPassword,
   extractErrorMessage,
 } from '../../utils/auth';
 import { AUTH_ERROR_MESSAGES } from '../../services/auth-contract';
@@ -44,9 +44,9 @@ function LoginForm() {
     e.preventDefault();
     if (isSubmitting) return;
 
-    // 1. Validate phía client
+    // 1. Validate phía client: email hợp lệ và mật khẩu bắt buộc nhập (không áp tối thiểu 6 ký tự ở login)
     const emailValidation = validateEmail(email);
-    const passwordValidation = validatePassword(password);
+    const passwordValidation = validateLoginPassword(password);
 
     const newErrors: { email?: string; password?: string; general?: string } = {};
 
@@ -67,13 +67,13 @@ function LoginForm() {
 
     try {
       await login({
-        email: email.trim(),
+        email: email.trim().toLowerCase(),
         password,
       });
       // Đăng nhập thành công -> chuyển về trang định vào trước đó
       router.push(targetRedirect);
     } catch (err) {
-      // Thông báo lỗi chung, không tiết lộ cụ thể sai email hay sai mật khẩu để bảo mật
+      // Thông báo lỗi chung 401 hoặc lỗi validate, không tiết lộ cụ thể sai email hay sai mật khẩu
       const message = extractErrorMessage(err, AUTH_ERROR_MESSAGES.INVALID_CREDENTIALS);
       setErrors({
         general: message,
@@ -176,7 +176,7 @@ function LoginForm() {
               type={showPassword ? 'text' : 'password'}
               name="password"
               autoComplete="current-password"
-              placeholder="Nhập mật khẩu (tối thiểu 6 ký tự)"
+              placeholder="Nhập mật khẩu"
               value={password}
               onChange={(e) => {
                 setPassword(e.target.value);
@@ -204,34 +204,29 @@ function LoginForm() {
           )}
         </div>
 
-        {/* Nút Đăng nhập */}
+        {/* Nút gửi */}
         <button
           type="submit"
           disabled={isSubmitting}
-          className="w-full py-3 bg-amber-600 text-white font-medium rounded-xl text-sm shadow hover:bg-amber-700 active:scale-[0.99] transition disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2 cursor-pointer"
+          className={`w-full py-3 rounded-xl font-bold text-sm text-white transition shadow-sm ${
+            isSubmitting
+              ? 'bg-amber-400 cursor-not-allowed opacity-75'
+              : 'bg-amber-600 hover:bg-amber-700 active:scale-98 cursor-pointer'
+          }`}
         >
-          {isSubmitting ? (
-            <>
-              <div className="animate-spin inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full"></div>
-              <span>Đang đăng nhập...</span>
-            </>
-          ) : (
-            'Đăng nhập'
-          )}
+          {isSubmitting ? 'Đang đăng nhập...' : 'Đăng nhập'}
         </button>
       </form>
 
-      {/* Điều hướng sang trang Đăng ký */}
-      <div className="text-center pt-2">
-        <p className="text-sm text-gray-600">
-          Chưa có tài khoản?{' '}
-          <Link
-            href={`/register${redirectParam ? `?redirect=${encodeURIComponent(targetRedirect)}` : ''}`}
-            className="text-amber-600 font-semibold hover:underline"
-          >
-            Đăng ký ngay
-          </Link>
-        </p>
+      {/* Điều hướng sang đăng ký */}
+      <div className="text-center text-xs text-gray-500 pt-2 border-t border-gray-100">
+        Chưa có tài khoản?{' '}
+        <Link
+          href={`/register${redirectParam ? `?redirect=${encodeURIComponent(targetRedirect)}` : ''}`}
+          className="text-amber-600 font-semibold hover:underline"
+        >
+          Đăng ký ngay
+        </Link>
       </div>
     </div>
   );
@@ -251,4 +246,3 @@ export default function LoginPage() {
     </Suspense>
   );
 }
-

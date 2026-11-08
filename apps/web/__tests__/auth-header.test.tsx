@@ -18,7 +18,7 @@ vi.mock('next/navigation', () => ({
 
 const loggedInSession = {
   token: 'existing-jwt',
-  user: { id: 'u-1', email: 'an@brewlite.vn', fullName: 'Nguyễn Văn An', role: 'CUSTOMER' },
+  user: { id: 'u-1', email: 'an@brewlite.vn', displayName: 'Nguyễn Văn An', role: 'CUSTOMER' },
 };
 
 const cartData = JSON.stringify([
@@ -108,7 +108,7 @@ function ProtectedProbe() {
   const { isReady, isChecking, user } = useRequireAuth();
   if (isChecking) return <p>Đang kiểm tra đăng nhập...</p>;
   if (!isReady) return <p>Chưa đăng nhập</p>;
-  return <p>Nội dung riêng của {user?.fullName}</p>;
+  return <p>Nội dung riêng của {user?.displayName}</p>;
 }
 
 describe('Hook bảo vệ trang useRequireAuth', () => {

@@ -47,7 +47,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     });
 
-    // 2. Lắng nghe storage event để đồng bộ tức thì giữa các tab (tab A logout thì tab B cũng logout)
+    // 2. Lắng nghe storage event để đồng bộ tức thì giữa các tab với khóa brewlite_auth_v2
     const handleStorageChange = (e: StorageEvent) => {
       if (e.key === AUTH_STORAGE_KEY && isMounted) {
         const updated = loadAuthSession();
@@ -71,11 +71,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const login = useCallback(async (dto: LoginDto): Promise<AuthUser> => {
     const res = await loginApi(dto);
     saveAuthSession({
-      token: res.access_token,
+      token: res.accessToken,
       user: res.user,
     });
     setUser(res.user);
-    setToken(res.access_token);
+    setToken(res.accessToken);
     return res.user;
   }, []);
 
@@ -107,12 +107,8 @@ const defaultAuthContext: AuthContextValue = {
   token: null,
   isAuthenticated: false,
   isHydrated: true,
-  login: async () => {
-    throw new Error('AuthProvider is missing');
-  },
-  register: async () => {
-    throw new Error('AuthProvider is missing');
-  },
+  login: async () => ({ id: '', email: '', displayName: '', role: 'CUSTOMER' }),
+  register: async () => ({ id: '', email: '', displayName: '', role: 'CUSTOMER' }),
   logout: () => {},
 };
 
@@ -123,4 +119,3 @@ export function useAuth(): AuthContextValue {
   }
   return context;
 }
-

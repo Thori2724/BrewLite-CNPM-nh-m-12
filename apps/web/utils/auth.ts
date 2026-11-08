@@ -1,6 +1,7 @@
 import { AuthUser, AUTH_ERROR_MESSAGES } from '../services/auth-contract';
 
-export const AUTH_STORAGE_KEY = 'brewlite_auth_v1';
+export const AUTH_STORAGE_KEY = 'brewlite_auth_v2';
+export const LEGACY_AUTH_STORAGE_KEY = 'brewlite_auth_v1';
 
 export interface AuthSession {
   token: string;
@@ -9,7 +10,8 @@ export interface AuthSession {
 
 /**
  * Đọc phiên đăng nhập an toàn từ localStorage.
- * Trả về null nếu ở môi trường SSR, JSON hỏng, hoặc cấu trúc dữ liệu không hợp lệ.
+ * - Tự động dọn dẹp khóa cũ brewlite_auth_v1 nếu còn (không đọc, không migrate).
+ * - Trả về null nếu ở môi trường SSR, JSON hỏng, hoặc cấu trúc dữ liệu không hợp lệ.
  */
 export function loadAuthSession(): AuthSession | null {
   if (typeof window === 'undefined' || !window.localStorage) {
@@ -17,6 +19,12 @@ export function loadAuthSession(): AuthSession | null {
   }
 
   try {
+    // 1. Tự động xóa khóa cũ brewlite_auth_v1 nếu còn
+    if (window.localStorage.getItem(LEGACY_AUTH_STORAGE_KEY) !== null) {
+      window.localStorage.removeItem(LEGACY_AUTH_STORAGE_KEY);
+    }
+
+    // 2. Đọc khóa v2
     const raw = window.localStorage.getItem(AUTH_STORAGE_KEY);
     if (!raw) return null;
 
@@ -32,7 +40,7 @@ export function loadAuthSession(): AuthSession | null {
       typeof user !== 'object' ||
       typeof user.id !== 'string' ||
       typeof user.email !== 'string' ||
-      typeof user.fullName !== 'string' ||
+      typeof user.displayName !== 'string' ||
       typeof user.role !== 'string'
     ) {
       return null;
@@ -43,9 +51,8 @@ export function loadAuthSession(): AuthSession | null {
       user: {
         id: user.id,
         email: user.email,
-        fullName: user.fullName,
+        displayName: user.displayName,
         role: user.role,
-        loyaltyPoints: typeof user.loyaltyPoints === 'number' ? user.loyaltyPoints : undefined,
       },
     };
   } catch {
@@ -66,9 +73,8 @@ export function saveAuthSession(session: AuthSession): void {
       user: {
         id: session.user.id,
         email: session.user.email,
-        fullName: session.user.fullName,
+        displayName: session.user.displayName,
         role: session.user.role,
-        loyaltyPoints: session.user.loyaltyPoints,
       },
     };
     window.localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(cleanSession));
@@ -81,7 +87,7 @@ export function saveAuthSession(session: AuthSession): void {
 
 /**
  * Xóa phiên đăng nhập khỏi localStorage.
- * Giữ nguyên các dữ liệu khác như giỏ hàng (brewlite_cart_v1).
+ * Giữ nguyên các dữ liệu khác như giỏ hàng (brewlite_cart_v2).
  */
 export function clearAuthSession(): void {
   if (typeof window === 'undefined' || !window.localStorage) return;
@@ -145,7 +151,17 @@ export function validateEmail(email: string): { isValid: boolean; error?: string
 }
 
 /**
- * Validate Mật khẩu (tối thiểu 6 ký tự)
+ * Validate Mật khẩu cho form Đăng nhập: chỉ bắt buộc nhập, không áp tối thiểu 6 ký tự
+ */
+export function validateLoginPassword(password: string): { isValid: boolean; error?: string } {
+  if (!password) {
+    return { isValid: false, error: 'Vui lòng nhập mật khẩu' };
+  }
+  return { isValid: true };
+}
+
+/**
+ * Validate Mật khẩu cho form Đăng ký: tối thiểu 6 ký tự
  */
 export function validatePassword(password: string): { isValid: boolean; error?: string } {
   if (!password) {
@@ -160,16 +176,17 @@ export function validatePassword(password: string): { isValid: boolean; error?: 
 }
 
 /**
- * Validate Họ và tên (tối thiểu 2 ký tự)
+ * Validate Tên hiển thị (displayName):
+ * Hợp lệ khi 1 đến 50 ký tự sau khi trim; chuỗi toàn dấu cách bị báo lỗi tiếng Việt.
  */
-export function validateFullName(fullName: string): { isValid: boolean; error?: string } {
-  const trimmed = (fullName || '').trim();
+export function validateDisplayName(displayName: string): { isValid: boolean; error?: string } {
+  const trimmed = (displayName || '').trim();
   if (!trimmed) {
-    return { isValid: false, error: 'Vui lòng nhập họ và tên' };
+    return { isValid: false, error: 'Vui lòng nhập tên hiển thị' };
   }
 
-  if (trimmed.length < 2) {
-    return { isValid: false, error: 'Họ và tên phải có ít nhất 2 ký tự' };
+  if (trimmed.length > 50) {
+    return { isValid: false, error: 'Tên hiển thị không được vượt quá 50 ký tự' };
   }
 
   return { isValid: true };
@@ -194,7 +211,10 @@ export function validateConfirmPassword(
 }
 
 /**
- * Trích xuất thông báo lỗi dễ hiểu từ response API hoặc Error
+ * Trích xuất thông báo lỗi an toàn cho người dùng:
+ * - Nếu server trả về mảng chuỗi tiếng Anh (lỗi validate 400): chỉ hiện câu chung tiếng Việt,
+ *   tuyệt đối KHÔNG hiện nguyên văn chuỗi tiếng Anh lên màn hình.
+ * - Lỗi 401 hoặc 409: trả về đúng câu tiếng Việt theo hợp đồng.
  */
 export function extractErrorMessage(errorData: unknown, fallbackMessage?: string): string {
   const defaultFallback = fallbackMessage || AUTH_ERROR_MESSAGES.UNKNOWN_ERROR;
@@ -210,9 +230,9 @@ export function extractErrorMessage(errorData: unknown, fallbackMessage?: string
   if (typeof errorData === 'object' && errorData !== null) {
     const errorObj = errorData as Record<string, unknown>;
 
-    // Định dạng NestJS: message có thể là string hoặc mảng các string
+    // Định dạng NestJS validation: message là MẢNG chuỗi tiếng Anh -> chuyển thành câu chung tiếng Việt
     if (Array.isArray(errorObj.message) && errorObj.message.length > 0) {
-      return errorObj.message.join(', ');
+      return AUTH_ERROR_MESSAGES.VALIDATION_ERROR;
     }
 
     if (typeof errorObj.message === 'string' && errorObj.message.trim()) {
@@ -226,4 +246,3 @@ export function extractErrorMessage(errorData: unknown, fallbackMessage?: string
 
   return defaultFallback;
 }
-

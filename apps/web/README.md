@@ -58,6 +58,12 @@ NEXT_PUBLIC_USE_MOCK_ORDERS=true
 
 > **Lưu ý:** Khi chuyển công tắc sang `false` (hoặc xóa biến), ứng dụng sẽ tự động chuyển sang gọi trực tiếp API thật tới máy chủ NestJS tại `NEXT_PUBLIC_API_URL`.
 
+### Cơ chế kết nối API Xác thực (POST /auth/register & POST /auth/login):
+- Khi `NEXT_PUBLIC_USE_MOCK_AUTH=true`:
+  - Dùng tài khoản mẫu kiểm thử cố định: `khachhang@brewlite.vn` / `password123`.
+  - Tài khoản đăng ký mới trong mock chỉ sống trong bộ nhớ RAM (sẽ mất khi F5 hoặc mở tab mới).
+- Khi `NEXT_PUBLIC_USE_MOCK_AUTH=false`: gọi API thật qua `apiFetch` tới `NEXT_PUBLIC_API_URL` (`POST /auth/register`, `POST /auth/login`).
+
 ### Cơ chế kết nối API Sản phẩm (GET /products & GET /products/:id):
 - Khi `NEXT_PUBLIC_USE_MOCK_PRODUCTS=false`: gọi API thật qua `fetch` công khai (không qua redirect 401).
 - Tham số truy vấn `GET /products`:
@@ -108,7 +114,7 @@ NEXT_PUBLIC_USE_MOCK_ORDERS=true
 | Khóa lưu trữ | Mục đích |
 |---|---|
 | `brewlite_cart_v2` | Lưu trữ danh sách các món trong giỏ hàng phía Client. Tối đa 10 ly/món, giỏ chứa tối đa 20 dòng món khác nhau. Tự động dọn dẹp khóa cũ `brewlite_cart_v1` nếu tồn tại. Độc lập với phiên đăng nhập (đăng xuất không mất giỏ). |
-| `brewlite_auth_v1` | Lưu trữ JWT token và thông tin người dùng cơ bản (`id`, `email`, `displayName`, `role`). Tuyệt đối không lưu mật khẩu. *(Sẽ nâng lên `v2` ở Phần D)* |
+| `brewlite_auth_v2` | Lưu trữ JWT token (`accessToken`) và thông tin người dùng cơ bản (`id`, `email`, `displayName`, `role`). Tuyệt đối không lưu mật khẩu. Tự động dọn dẹp khóa cũ `brewlite_auth_v1` nếu tồn tại. |
 | `brewlite_pending_order_v1` | Lưu thông tin đơn hàng đang chờ thanh toán (`orderId`, `orderNumber`, `totalAmount`, `idempotencyKey`). Tuyệt đối không lưu số thẻ/ví. *(Sẽ nâng lên `v2` ở Phần E)* |
 | `brewlite_mock_orders_db_v1` | Dữ liệu cơ sở dữ liệu giả lập (chỉ hoạt động khi `NEXT_PUBLIC_USE_MOCK_ORDERS=true`) để dữ liệu sống qua F5. *(Sẽ nâng lên `v2` ở Phần E)* |
 

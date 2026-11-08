@@ -1,29 +1,23 @@
 /**
- * HỢP ĐỒNG TẠM: XÁC THỰC (AUTHENTICATION)
- *
- * LƯU Ý QUAN TRỌNG:
- * Đây là hợp đồng API tạm thời do frontend đề xuất trong khi chờ backend chốt chi tiết.
- * Toàn bộ tên endpoint, tên field và thông báo lỗi được gom vào file này.
- * Khi backend có thay đổi hoặc thống nhất hợp đồng chính thức, chỉ cần chỉnh sửa tại đây.
+ * HỢP ĐỒNG API: XÁC THỰC (AUTHENTICATION) - PHIÊN BẢN CHÍNH THỨC SPRINT 2
+ * Theo đúng chuẩn docs/api-contract.md (POST /auth/register và POST /auth/login)
  */
 
-// 1. Danh sách endpoint API
+// 1. Danh sách endpoint API chuẩn (không có /auth/me)
 export const AUTH_ENDPOINTS = {
   REGISTER: '/auth/register',
   LOGIN: '/auth/login',
-  ME: '/auth/me',
 } as const;
 
-// 2. Vai trò người dùng (Role) theo SRS FR-04
+// 2. Vai trò người dùng (Role) theo hợp đồng
 export type UserRole = 'CUSTOMER' | 'STAFF' | 'ADMIN';
 
-// 3. Thông tin người dùng cơ bản
+// 3. Thông tin người dùng cơ bản (không dùng fullName, không có loyaltyPoints)
 export interface AuthUser {
   id: string;
   email: string;
-  fullName: string;
+  displayName: string;
   role: UserRole;
-  loyaltyPoints?: number;
 }
 
 // 4. DTO gửi lên server
@@ -33,20 +27,23 @@ export interface LoginDto {
 }
 
 export interface RegisterDto {
-  fullName: string;
   email: string;
   password: string;
+  displayName: string;
 }
 
 // 5. Dữ liệu server trả về khi thành công
 export interface LoginResponse {
-  access_token: string;
+  accessToken: string;
   user: AuthUser;
 }
 
+// Response 201 Created của POST /auth/register trả thẳng thông tin user vừa tạo (không bọc message/user)
 export interface RegisterResponse {
-  message: string;
-  user: AuthUser;
+  id: string;
+  email: string;
+  displayName: string;
+  role: UserRole;
 }
 
 // 6. Định dạng lỗi chuẩn NestJS HttpException
@@ -56,24 +53,13 @@ export interface AuthErrorResponse {
   error?: string;
 }
 
-// 7. Tên các trường (Field names) để dễ thay đổi nếu backend dùng tên khác
-export const AUTH_FIELDS = {
-  TOKEN: 'access_token',
-  USER: 'user',
-  ID: 'id',
-  EMAIL: 'email',
-  FULL_NAME: 'fullName',
-  ROLE: 'role',
-  PASSWORD: 'password',
-} as const;
-
-// 8. Thông báo lỗi mặc định bằng tiếng Việt
+// 7. Thông báo lỗi chuẩn theo hợp đồng API
 export const AUTH_ERROR_MESSAGES = {
-  INVALID_CREDENTIALS: 'Email hoặc mật khẩu không chính xác',
-  EMAIL_ALREADY_EXISTS: 'Email này đã được sử dụng',
+  INVALID_CREDENTIALS: 'Email hoặc mật khẩu không chính xác', // 401
+  EMAIL_ALREADY_EXISTS: 'Email này đã được sử dụng', // 409
+  VALIDATION_ERROR: 'Dữ liệu không hợp lệ. Vui lòng kiểm tra lại.', // 400 mảng
   SESSION_EXPIRED: 'Phiên đăng nhập đã hết hạn, vui lòng đăng nhập lại.',
   NETWORK_ERROR: 'Không thể kết nối đến máy chủ. Vui lòng thử lại sau.',
   UNKNOWN_ERROR: 'Đã có lỗi xảy ra. Vui lòng thử lại.',
-  REGISTRATION_SUCCESS: 'Đăng ký tài khoản thành công! Vui lòng đăng nhập.',
+  REGISTRATION_SUCCESS: 'Đăng ký thành công',
 } as const;
-

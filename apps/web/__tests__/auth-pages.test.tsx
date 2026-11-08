@@ -94,7 +94,7 @@ describe('Giao diện và nghiệp vụ trang Đăng nhập (/login)', () => {
     });
   });
 
-  it('4. Validate phía client: Báo lỗi khi để trống hoặc nhập sai định dạng', async () => {
+  it('4. Validate phía client: Báo lỗi khi để trống hoặc nhập sai định dạng email (không áp >= 6 ở đăng nhập)', async () => {
     const user = userEvent.setup();
 
     render(
@@ -111,13 +111,11 @@ describe('Giao diện và nghiệp vụ trang Đăng nhập (/login)', () => {
     expect(await screen.findByText('Vui lòng nhập địa chỉ email')).toBeInTheDocument();
     expect(screen.getByText('Vui lòng nhập mật khẩu')).toBeInTheDocument();
 
-    // Nhập email sai định dạng và mật khẩu quá ngắn
+    // Nhập email sai định dạng
     await user.type(screen.getByLabelText(/địa chỉ email/i), 'sai-email');
-    await user.type(screen.getByLabelText(/^mật khẩu$/i), '123');
     await user.click(submitBtn);
 
     expect(await screen.findByText('Địa chỉ email không đúng định dạng')).toBeInTheDocument();
-    expect(screen.getByText('Mật khẩu phải có ít nhất 6 ký tự')).toBeInTheDocument();
 
     // Không được gọi loginApi khi validate lỗi
     expect(authService.loginApi).not.toHaveBeenCalled();
@@ -145,8 +143,8 @@ describe('Giao diện và nghiệp vụ trang Đăng nhập (/login)', () => {
   it('6. Nút Đăng nhập bị vô hiệu hóa trong khi đang gửi để chống bấm nhiều lần', async () => {
     const user = userEvent.setup();
 
-    let resolvePromise: (val: { access_token: string; user: { id: string; email: string; fullName: string; role: 'CUSTOMER' } }) => void = () => {};
-    const pendingPromise = new Promise<{ access_token: string; user: { id: string; email: string; fullName: string; role: 'CUSTOMER' } }>((resolve) => {
+    let resolvePromise: (val: { accessToken: string; user: { id: string; email: string; displayName: string; role: 'CUSTOMER' } }) => void = () => {};
+    const pendingPromise = new Promise<{ accessToken: string; user: { id: string; email: string; displayName: string; role: 'CUSTOMER' } }>((resolve) => {
       resolvePromise = resolve;
     });
 
@@ -170,8 +168,8 @@ describe('Giao diện và nghiệp vụ trang Đăng nhập (/login)', () => {
 
     // Hoàn tất promise
     resolvePromise({
-      access_token: 'fake-jwt',
-      user: { id: '1', email: 'user@brewlite.vn', fullName: 'User', role: 'CUSTOMER' },
+      accessToken: 'fake-jwt',
+      user: { id: '1', email: 'user@brewlite.vn', displayName: 'User', role: 'CUSTOMER' },
     });
 
     await waitFor(() => {
@@ -206,8 +204,8 @@ describe('Giao diện và nghiệp vụ trang Đăng nhập (/login)', () => {
     mockSearchParams = new URLSearchParams('redirect=/cart');
 
     vi.mocked(authService.loginApi).mockResolvedValue({
-      access_token: 'valid-jwt',
-      user: { id: 'user-1', email: 'khachhang@brewlite.vn', fullName: 'Khách Hàng', role: 'CUSTOMER' },
+      accessToken: 'valid-jwt',
+      user: { id: 'user-1', email: 'khachhang@brewlite.vn', displayName: 'Khách Hàng', role: 'CUSTOMER' },
     });
 
     render(
@@ -227,10 +225,10 @@ describe('Giao diện và nghiệp vụ trang Đăng nhập (/login)', () => {
 
   it('9. Người dùng đã đăng nhập từ trước vào /login thì tự động chuyển hướng về trang chủ', async () => {
     localStorage.setItem(
-      'brewlite_auth_v1',
+      'brewlite_auth_v2',
       JSON.stringify({
         token: 'existing-jwt',
-        user: { id: '1', email: 'logged@brewlite.vn', fullName: 'Logged In', role: 'CUSTOMER' },
+        user: { id: '1', email: 'logged@brewlite.vn', displayName: 'Logged In', role: 'CUSTOMER' },
       })
     );
 
@@ -264,7 +262,7 @@ describe('Giao diện và nghiệp vụ trang Đăng ký (/register)', () => {
     } as unknown as ReturnType<typeof navigation.useRouter>);
   });
 
-  it('10. Hiển thị đầy đủ các trường: họ tên, email, mật khẩu, nhập lại mật khẩu', async () => {
+  it('10. Hiển thị đầy đủ các trường: tên hiển thị, email, mật khẩu, nhập lại mật khẩu', async () => {
     render(
       <AuthProvider>
         <RegisterPage />
@@ -273,16 +271,16 @@ describe('Giao diện và nghiệp vụ trang Đăng ký (/register)', () => {
 
     await waitFor(() => {
       expect(screen.getByRole('heading', { name: /đăng ký tài khoản/i })).toBeInTheDocument();
-      expect(screen.getByLabelText(/họ và tên/i)).toBeInTheDocument();
+      expect(screen.getByLabelText(/tên hiển thị/i)).toBeInTheDocument();
       expect(screen.getByLabelText(/địa chỉ email/i)).toBeInTheDocument();
       expect(screen.getByLabelText(/^mật khẩu$/i)).toBeInTheDocument();
       expect(screen.getByLabelText(/nhập lại mật khẩu/i)).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: /tạo tài khoản/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /đăng ký tài khoản/i })).toBeInTheDocument();
       expect(screen.getByRole('link', { name: /đăng nhập ngay/i })).toBeInTheDocument();
     });
   });
 
-  it('11. Validate phía client: Báo lỗi khi thông tin không hợp lệ', async () => {
+  it('11. Validate phía client: Báo lỗi khi thông tin không hợp lệ (displayName rỗng hoặc toàn dấu cách, mật khẩu < 6)', async () => {
     const user = userEvent.setup();
 
     render(
@@ -291,24 +289,25 @@ describe('Giao diện và nghiệp vụ trang Đăng ký (/register)', () => {
       </AuthProvider>
     );
 
-    const submitBtn = await screen.findByRole('button', { name: /tạo tài khoản/i });
+    const submitBtn = await screen.findByRole('button', { name: /đăng ký tài khoản/i });
 
     // Submit form rỗng
     await user.click(submitBtn);
 
-    expect(await screen.findByText('Vui lòng nhập họ và tên')).toBeInTheDocument();
+    expect(await screen.findByText('Vui lòng nhập tên hiển thị')).toBeInTheDocument();
     expect(screen.getByText('Vui lòng nhập địa chỉ email')).toBeInTheDocument();
     expect(screen.getByText('Vui lòng nhập mật khẩu')).toBeInTheDocument();
     expect(screen.getByText('Vui lòng nhập lại mật khẩu')).toBeInTheDocument();
 
-    // Nhập họ tên 1 ký tự, mật khẩu < 6 ký tự, nhập lại không khớp
-    await user.type(screen.getByLabelText(/họ và tên/i), 'A');
+    // Nhập tên toàn dấu cách, mật khẩu < 6 ký tự, nhập lại không khớp
+    await user.type(screen.getByLabelText(/tên hiển thị/i), '    ');
     await user.type(screen.getByLabelText(/địa chỉ email/i), 'user@brewlite.vn');
-    await user.type(screen.getByLabelText(/^mật khẩu$/i), '123456');
+    await user.type(screen.getByLabelText(/^mật khẩu$/i), '12345');
     await user.type(screen.getByLabelText(/nhập lại mật khẩu/i), '654321');
     await user.click(submitBtn);
 
-    expect(await screen.findByText('Họ và tên phải có ít nhất 2 ký tự')).toBeInTheDocument();
+    expect(await screen.findByText('Vui lòng nhập tên hiển thị')).toBeInTheDocument();
+    expect(screen.getByText('Mật khẩu phải có ít nhất 6 ký tự')).toBeInTheDocument();
     expect(screen.getByText('Mật khẩu nhập lại không khớp')).toBeInTheDocument();
 
     expect(authService.registerApi).not.toHaveBeenCalled();
@@ -326,20 +325,22 @@ describe('Giao diện và nghiệp vụ trang Đăng ký (/register)', () => {
       </AuthProvider>
     );
 
-    await user.type(await screen.findByLabelText(/họ và tên/i), 'Nguyễn Văn A');
+    await user.type(await screen.findByLabelText(/tên hiển thị/i), 'Nguyễn Văn A');
     await user.type(screen.getByLabelText(/địa chỉ email/i), 'duplicate@brewlite.vn');
     await user.type(screen.getByLabelText(/^mật khẩu$/i), '123456');
     await user.type(screen.getByLabelText(/nhập lại mật khẩu/i), '123456');
-    await user.click(screen.getByRole('button', { name: /tạo tài khoản/i }));
+    await user.click(screen.getByRole('button', { name: /đăng ký tài khoản/i }));
 
     expect(await screen.findByText(AUTH_ERROR_MESSAGES.EMAIL_ALREADY_EXISTS)).toBeInTheDocument();
   });
 
-  it('13. Đăng ký thành công thì chuyển hướng sang /login kèm registered=true', async () => {
+  it('13. Đăng ký thành công thì chuyển hướng sang /login kèm registered=true (không tự đăng nhập)', async () => {
     const user = userEvent.setup();
     vi.mocked(authService.registerApi).mockResolvedValue({
-      message: AUTH_ERROR_MESSAGES.REGISTRATION_SUCCESS,
-      user: { id: 'new-id', email: 'new@brewlite.vn', fullName: 'Người Mới', role: 'CUSTOMER' },
+      id: 'new-id',
+      email: 'new@brewlite.vn',
+      displayName: 'Người Mới',
+      role: 'CUSTOMER',
     });
 
     render(
@@ -348,11 +349,11 @@ describe('Giao diện và nghiệp vụ trang Đăng ký (/register)', () => {
       </AuthProvider>
     );
 
-    await user.type(await screen.findByLabelText(/họ và tên/i), 'Nguyễn Văn A');
+    await user.type(await screen.findByLabelText(/tên hiển thị/i), 'Nguyễn Văn A');
     await user.type(screen.getByLabelText(/địa chỉ email/i), 'new@brewlite.vn');
     await user.type(screen.getByLabelText(/^mật khẩu$/i), '123456');
     await user.type(screen.getByLabelText(/nhập lại mật khẩu/i), '123456');
-    await user.click(screen.getByRole('button', { name: /tạo tài khoản/i }));
+    await user.click(screen.getByRole('button', { name: /đăng ký tài khoản/i }));
 
     await waitFor(() => {
       expect(mockPush).toHaveBeenCalledWith('/login?registered=true');
@@ -362,8 +363,8 @@ describe('Giao diện và nghiệp vụ trang Đăng ký (/register)', () => {
   it('14. Nút Đăng ký bị vô hiệu hóa trong khi đang gửi để chống bấm nhiều lần', async () => {
     const user = userEvent.setup();
 
-    let resolvePromise: (val: { message: string; user: { id: string; email: string; fullName: string; role: 'CUSTOMER' } }) => void = () => {};
-    const pendingPromise = new Promise<{ message: string; user: { id: string; email: string; fullName: string; role: 'CUSTOMER' } }>((resolve) => {
+    let resolvePromise: (val: { id: string; email: string; displayName: string; role: 'CUSTOMER' }) => void = () => {};
+    const pendingPromise = new Promise<{ id: string; email: string; displayName: string; role: 'CUSTOMER' }>((resolve) => {
       resolvePromise = resolve;
     });
 
@@ -375,24 +376,56 @@ describe('Giao diện và nghiệp vụ trang Đăng ký (/register)', () => {
       </AuthProvider>
     );
 
-    await user.type(await screen.findByLabelText(/họ và tên/i), 'Nguyễn Văn A');
+    await user.type(await screen.findByLabelText(/tên hiển thị/i), 'Nguyễn Văn A');
     await user.type(screen.getByLabelText(/địa chỉ email/i), 'new@brewlite.vn');
     await user.type(screen.getByLabelText(/^mật khẩu$/i), '123456');
     await user.type(screen.getByLabelText(/nhập lại mật khẩu/i), '123456');
 
-    const submitBtn = screen.getByRole('button', { name: /tạo tài khoản/i });
+    const submitBtn = screen.getByRole('button', { name: /đăng ký tài khoản/i });
     await user.click(submitBtn);
 
     expect(submitBtn).toBeDisabled();
     expect(screen.getByText('Đang tạo tài khoản...')).toBeInTheDocument();
 
     resolvePromise({
-      message: AUTH_ERROR_MESSAGES.REGISTRATION_SUCCESS,
-      user: { id: 'new-id', email: 'new@brewlite.vn', fullName: 'Nguyễn Văn A', role: 'CUSTOMER' },
+      id: 'new-id',
+      email: 'new@brewlite.vn',
+      displayName: 'Nguyễn Văn A',
+      role: 'CUSTOMER',
     });
 
     await waitFor(() => {
       expect(mockPush).toHaveBeenCalled();
     });
+  });
+
+  it('15. Lỗi 400 có message dạng mảng tiếng Anh từ server: giao diện chỉ hiện câu chung tiếng Việt, chuỗi tiếng Anh KHÔNG xuất hiện trên màn hình', async () => {
+    const user = userEvent.setup();
+    const rawEnglishMessages = ['email must be an email', 'password must be at least 6 characters'];
+    vi.mocked(authService.registerApi).mockRejectedValue(
+      new authService.AuthApiError(400, AUTH_ERROR_MESSAGES.VALIDATION_ERROR, {
+        statusCode: 400,
+        message: rawEnglishMessages,
+      })
+    );
+
+    render(
+      <AuthProvider>
+        <RegisterPage />
+      </AuthProvider>
+    );
+
+    await user.type(await screen.findByLabelText(/tên hiển thị/i), 'Nguyễn Văn A');
+    await user.type(screen.getByLabelText(/địa chỉ email/i), 'test@brewlite.vn');
+    await user.type(screen.getByLabelText(/^mật khẩu$/i), '123456');
+    await user.type(screen.getByLabelText(/nhập lại mật khẩu/i), '123456');
+    await user.click(screen.getByRole('button', { name: /đăng ký tài khoản/i }));
+
+    // Chỉ hiện thông báo chung tiếng Việt
+    expect(await screen.findByText(AUTH_ERROR_MESSAGES.VALIDATION_ERROR)).toBeInTheDocument();
+
+    // Khẳng định chuỗi tiếng Anh của server KHÔNG xuất hiện trên màn hình
+    expect(screen.queryByText('email must be an email')).not.toBeInTheDocument();
+    expect(screen.queryByText('password must be at least 6 characters')).not.toBeInTheDocument();
   });
 });

@@ -8,7 +8,7 @@ import {
   getSafeRedirectUrl,
   validateEmail,
   validatePassword,
-  validateFullName,
+  validateDisplayName,
   validateConfirmPassword,
   extractErrorMessage,
 } from '../../utils/auth';
@@ -19,7 +19,7 @@ function RegisterForm() {
   const searchParams = useSearchParams();
   const { register, isAuthenticated, isHydrated } = useAuth();
 
-  const [fullName, setFullName] = useState('');
+  const [displayName, setDisplayName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -27,7 +27,7 @@ function RegisterForm() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const [errors, setErrors] = useState<{
-    fullName?: string;
+    displayName?: string;
     email?: string;
     password?: string;
     confirmPassword?: string;
@@ -49,14 +49,14 @@ function RegisterForm() {
     if (isSubmitting) return;
 
     // 1. Validate toàn bộ form phía client
-    const nameVal = validateFullName(fullName);
+    const nameVal = validateDisplayName(displayName);
     const emailVal = validateEmail(email);
     const passVal = validatePassword(password);
     const confirmVal = validateConfirmPassword(password, confirmPassword);
 
     const newErrors: typeof errors = {};
 
-    if (!nameVal.isValid) newErrors.fullName = nameVal.error;
+    if (!nameVal.isValid) newErrors.displayName = nameVal.error;
     if (!emailVal.isValid) newErrors.email = emailVal.error;
     if (!passVal.isValid) newErrors.password = passVal.error;
     if (!confirmVal.isValid) newErrors.confirmPassword = confirmVal.error;
@@ -71,12 +71,12 @@ function RegisterForm() {
 
     try {
       await register({
-        fullName: fullName.trim(),
-        email: email.trim(),
+        displayName: displayName.trim(),
+        email: email.trim().toLowerCase(),
         password,
       });
 
-      // Đăng ký thành công -> chuyển sang trang /login kèm thông báo
+      // Đăng ký thành công -> chuyển sang trang /login kèm thông báo (không tự đăng nhập vì API không trả token)
       const loginUrl = `/login?registered=true${
         redirectParam ? `&redirect=${encodeURIComponent(targetRedirect)}` : ''
       }`;
@@ -106,10 +106,10 @@ function RegisterForm() {
       {/* Tiêu đề */}
       <div className="text-center space-y-1">
         <h1 className="text-2xl font-bold text-gray-900">Đăng ký tài khoản</h1>
-        <p className="text-sm text-gray-500">Tạo tài khoản để nhận ưu đãi và tích điểm BrewLite ☕</p>
+        <p className="text-sm text-gray-500">Tạo tài khoản để đặt món nhanh chóng cùng BrewLite ☕</p>
       </div>
 
-      {/* Thông báo lỗi tổng quát (409 email đã tồn tại hoặc lỗi server) */}
+      {/* Thông báo lỗi tổng quát (409 email đã tồn tại hoặc lỗi validate) */}
       {errors.general && (
         <div
           role="alert"
@@ -122,31 +122,31 @@ function RegisterForm() {
 
       {/* Form đăng ký */}
       <form onSubmit={handleSubmit} noValidate className="space-y-4 bg-white">
-        {/* Trường Họ và tên */}
+        {/* Trường Tên hiển thị */}
         <div className="space-y-1">
-          <label htmlFor="fullName" className="block text-sm font-medium text-gray-700">
-            Họ và tên
+          <label htmlFor="displayName" className="block text-sm font-medium text-gray-700">
+            Tên hiển thị
           </label>
           <input
-            id="fullName"
+            id="displayName"
             type="text"
-            name="fullName"
+            name="displayName"
             autoComplete="name"
-            placeholder="Ví dụ: Nguyễn Văn A"
-            value={fullName}
+            placeholder="Ví dụ: Nguyễn Văn An"
+            value={displayName}
             onChange={(e) => {
-              setFullName(e.target.value);
-              if (errors.fullName) setErrors((prev) => ({ ...prev, fullName: undefined }));
+              setDisplayName(e.target.value);
+              if (errors.displayName) setErrors((prev) => ({ ...prev, displayName: undefined }));
             }}
             className={`w-full px-3.5 py-2.5 bg-gray-50 border rounded-xl text-sm focus:outline-none focus:ring-2 ${
-              errors.fullName
+              errors.displayName
                 ? 'border-red-400 focus:ring-red-400 bg-red-50/20'
                 : 'border-gray-200 focus:ring-amber-500'
             }`}
           />
-          {errors.fullName && (
+          {errors.displayName && (
             <p role="alert" className="text-xs text-red-600 font-medium">
-              {errors.fullName}
+              {errors.displayName}
             </p>
           )}
         </div>
@@ -219,7 +219,7 @@ function RegisterForm() {
           )}
         </div>
 
-        {/* Trường Nhập lại mật khẩu */}
+        {/* Trường Xác nhận mật khẩu */}
         <div className="space-y-1">
           <label htmlFor="confirmPassword" className="block text-sm font-medium text-gray-700">
             Nhập lại mật khẩu
@@ -229,11 +229,13 @@ function RegisterForm() {
             type={showPassword ? 'text' : 'password'}
             name="confirmPassword"
             autoComplete="new-password"
-            placeholder="Khớp với mật khẩu đã nhập ở trên"
+            placeholder="Nhập lại chính xác mật khẩu trên"
             value={confirmPassword}
             onChange={(e) => {
               setConfirmPassword(e.target.value);
-              if (errors.confirmPassword) setErrors((prev) => ({ ...prev, confirmPassword: undefined }));
+              if (errors.confirmPassword) {
+                setErrors((prev) => ({ ...prev, confirmPassword: undefined }));
+              }
             }}
             className={`w-full px-3.5 py-2.5 bg-gray-50 border rounded-xl text-sm focus:outline-none focus:ring-2 ${
               errors.confirmPassword
@@ -248,34 +250,29 @@ function RegisterForm() {
           )}
         </div>
 
-        {/* Nút Đăng ký */}
+        {/* Nút gửi */}
         <button
           type="submit"
           disabled={isSubmitting}
-          className="w-full py-3 bg-amber-600 text-white font-medium rounded-xl text-sm shadow hover:bg-amber-700 active:scale-[0.99] transition disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2 cursor-pointer"
+          className={`w-full py-3 rounded-xl font-bold text-sm text-white transition shadow-sm ${
+            isSubmitting
+              ? 'bg-amber-400 cursor-not-allowed opacity-75'
+              : 'bg-amber-600 hover:bg-amber-700 active:scale-98 cursor-pointer'
+          }`}
         >
-          {isSubmitting ? (
-            <>
-              <div className="animate-spin inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full"></div>
-              <span>Đang tạo tài khoản...</span>
-            </>
-          ) : (
-            'Tạo tài khoản'
-          )}
+          {isSubmitting ? 'Đang tạo tài khoản...' : 'Đăng ký tài khoản'}
         </button>
       </form>
 
-      {/* Điều hướng sang trang Đăng nhập */}
-      <div className="text-center pt-2">
-        <p className="text-sm text-gray-600">
-          Đã có tài khoản?{' '}
-          <Link
-            href={`/login${redirectParam ? `?redirect=${encodeURIComponent(targetRedirect)}` : ''}`}
-            className="text-amber-600 font-semibold hover:underline"
-          >
-            Đăng nhập ngay
-          </Link>
-        </p>
+      {/* Điều hướng sang đăng nhập */}
+      <div className="text-center text-xs text-gray-500 pt-2 border-t border-gray-100">
+        Đã có tài khoản?{' '}
+        <Link
+          href={`/login${redirectParam ? `?redirect=${encodeURIComponent(targetRedirect)}` : ''}`}
+          className="text-amber-600 font-semibold hover:underline"
+        >
+          Đăng nhập ngay
+        </Link>
       </div>
     </div>
   );
@@ -295,4 +292,3 @@ export default function RegisterPage() {
     </Suspense>
   );
 }
-
