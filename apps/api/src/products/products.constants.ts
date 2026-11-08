@@ -35,4 +35,3 @@ export const DRINK_ICE_LEVELS = [
   { value: 'NORMAL', label: 'Đá vừa' },
   { value: 'FULL', label: 'Nhiều đá' },
 ];
-
