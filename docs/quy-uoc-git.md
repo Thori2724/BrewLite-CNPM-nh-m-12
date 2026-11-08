@@ -1,6 +1,6 @@
 # Quy ước làm việc với Git và Quy trình nhóm (BrewLite)
 
-Tài liệu này quy định cách quản lý nhánh, quy ước commit và tiêu chuẩn hoàn thành (Definition of Done) cho 3 vai trong nhóm (**FE**, **BE**, **Dev&Ops**). Mọi thành viên bắt buộc tuân thủ để tránh xung đột mã nguồn.
+Tài liệu này quy định cách quản lý nhánh, quy ước commit và tiêu chuẩn hoàn thành (Definition of Done) cho 3 vai trong nhóm (**FE**, **BE**, **Dev&Ops**)
 
 ---
 
