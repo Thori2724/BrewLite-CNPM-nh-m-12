@@ -33,8 +33,10 @@ Mở trình duyệt truy cập: [http://localhost:3000](http://localhost:3000)
 - **Trang Menu ([/](http://localhost:3000)):** Xem danh sách đồ uống và món bánh, lọc theo danh mục (`TEA`, `COFFEE`, `MILK_TEA`, `CAKE`), tìm kiếm món theo tên (debounce 300ms). Món có `stock = 0` hiển thị nhãn "Hết hàng" và khóa nút thêm.
 - **Trang Chi tiết món ([/menu/:id](http://localhost:3000/menu/11111111-0000-0000-0000-000000000001)):** Render động các tùy chọn từ server (`sizes`, `sugarLevels`, `iceLevels`, `toppings`). Tự động ẩn các phần tùy chọn có mảng rỗng (ví dụ món bánh `CAKE`). Lựa chọn mặc định: Size S, Đường P100, Đá NORMAL. Giới hạn tối đa 3 loại topping không trùng, số lượng 1..10. Món hết hàng (`stock = 0`) khóa nút thêm vào giỏ.
 - **Trang Giỏ hàng ([/cart](http://localhost:3000/cart)):** Quản lý các món đã chọn, tăng/giảm số lượng (tối đa 10 ly/món), xóa từng món hoặc xóa tất cả, tính tổng tiền tạm tính. Giới hạn tối đa 20 dòng món khác nhau.
-- **Trang Đăng nhập / Đăng ký ([/login](http://localhost:3000/login), [/register](http://localhost:3000/register)):** Đăng ký tài khoản khách hàng mới, đăng nhập nhận JWT Token lưu an toàn vào `localStorage`. Trên Header: hiển thị tên người dùng và nút "Đăng xuất" khi đã đăng nhập.
+- **Trang Đăng nhập / Đăng ký ([/login](http://localhost:3000/login), [/register](http://localhost:3000/register)):** Đăng ký tài khoản khách hàng mới, đăng nhập nhận JWT Token lưu an toàn vào `localStorage`. Trên Header: hiển thị liên kết **"Đơn của tôi"** (`/orders`), tên người dùng và nút "Đăng xuất" khi đã đăng nhập.
 - **Trang Đặt đơn & Thanh toán ([/checkout](http://localhost:3000/checkout)):** Bắt buộc đăng nhập (bảo vệ bởi `useRequireAuth`), chọn hình thức nhận (`AT_COUNTER` / `TAKE_AWAY`), đặt đơn khởi tạo trạng thái `PENDING` và thanh toán qua cổng mô phỏng (`POST /payments`). Khôi phục đơn khi F5, kiểm soát Idempotency chặt chẽ.
+- **Trang Lịch sử đơn hàng ([/orders](http://localhost:3000/orders)):** Bắt buộc đăng nhập (`GET /orders/me`), hiển thị toàn bộ danh sách đơn của người dùng theo đúng thứ tự mới nhất từ server (không phân trang), kèm nút "Tải lại", trạng thái loading / empty / error.
+- **Trang Xác nhận & Theo dõi chi tiết đơn hàng ([/orders/:id](http://localhost:3000/orders/33333333-0000-0000-0000-000000000001)):** Bắt buộc đăng nhập (`GET /orders/:id`), tải dữ liệu **1 lần khi mở trang** và khi bấm nút **"Tải lại"** (không dùng polling tự động). Hiển thị banner theo trạng thái đơn, mã `#orderNumber` nổi bật (không lộ UUID trên giao diện), thanh tiến trình (stepper) cho luồng chính (`PENDING → PAID → PREPARING → READY → COMPLETED`), danh sách món (ẩn hoàn toàn Size/Đường/Đá nếu giá trị là `null` đối với món bánh), tổng tiền từ server, lịch sử giao dịch thanh toán và nút **"Thanh toán" / "Thử lại thanh toán"** (với `Idempotency-Key` mới trên đúng `orderId` hiện tại) khi đơn ở `PENDING` hoặc `PAYMENT_FAILED`.
 
 ### Bố cục giao diện Desktop-First & Responsive:
 - **Khung trang chung (`app/layout.tsx`):** Bỏ giới hạn `max-w-md` kiểu điện thoại; Header trải toàn chiều rộng màn hình, nội dung chính căn giữa trong container `max-w-6xl` (`px-4 sm:px-6 lg:px-8`). Thanh điều hướng dưới cùng kiểu điện thoại đã được lược bỏ hoàn toàn (kèm ghi chú `TODO: Task 18 sẽ thêm liên kết "Đơn hàng" vào header`); liên kết chữ `Menu` trên Header tự động ẩn ở màn hình nhỏ (`< 640px`, breakpoint `sm`) để giữ gọn trên điện thoại 375px.
@@ -80,20 +82,27 @@ NEXT_PUBLIC_USE_MOCK_ORDERS=true
   - `q`: chuỗi từ khóa tìm kiếm được debounce 300ms bằng `setTimeout` và mã hóa qua `encodeURIComponent`.
 - Xử lý lỗi: lỗi 400 và 404 hiển thị thông báo lỗi bằng chuỗi tiếng Việt nhận từ server.
 
-### Cơ chế kết nối API Đơn hàng & Thanh toán (POST /orders & POST /payments & GET /orders/:id):
+### Cơ chế kết nối API Đơn hàng & Thanh toán (`POST /orders`, `POST /payments`, `GET /orders/me`, `GET /orders/:id`):
 - Khi `NEXT_PUBLIC_USE_MOCK_ORDERS=true`:
-  - Tạo đơn và lưu mock DB `brewlite_mock_orders_db_v2`, bộ đếm `lastOrderNumber` được lưu trữ để không bị trùng sau F5.
-  - Tài khoản thử nghiệm:
+  - Tự động nạp sẵn 4 đơn hàng mẫu đúng hình dạng hợp đồng (`MOCK_SEED_ORDERS`) vào `brewlite_mock_orders_db_v2`:
+    1. Đơn `#1001` (`33333333-0000-0000-0000-000000000001`): Trạng thái `PAID`, gồm 2 món (1 món nước có topping + 1 món bánh `Bánh Croissant` có `size/sugarLevel/iceLevel = null`), tổng tiền `136.000đ`.
+    2. Đơn `#1002` (`33333333-0000-0000-0000-000000000002`): Trạng thái `PENDING` (chờ thanh toán, mảng `payments` rỗng).
+    3. Đơn `#1003` (`33333333-0000-0000-0000-000000000003`): Trạng thái `PAYMENT_FAILED` (có giao dịch `FAILED` kèm `failureReason: "Giao dịch bị từ chối (mô phỏng)"`).
+    4. Đơn `#1004` (`33333333-0000-0000-0000-000000000004`): Trạng thái `READY` (kiểm tra giao diện trạng thái chưa có API kích hoạt).
+  - Giả lập trạng thái danh sách rỗng (`/orders` empty): đặt `localStorage.setItem('brewlite_mock_orders_empty', 'true')` và tải lại trang; xóa khóa này để quay lại danh sách có dữ liệu.
+  - Giả lập trạng thái 404 (`/orders/:id` not found): truy cập `/orders/404` hoặc một UUID bất kỳ không tồn tại.
+  - Tài khoản thử nghiệm thanh toán:
     * 8..19 chữ số thông thường (ví dụ: `12345678`, `9704123456789012`): Thanh toán THÀNH CÔNG (`status: 'SUCCESS'`).
-    * Số kết thúc `0000` (ví dụ: `12340000`, `9704000000000000`): Thanh toán THẤT BẠI (`status: 'FAILED'`, lý do không đủ số dư).
+    * Số kết thúc `0000` (ví dụ: `12340000`, `9704000000000000`): Thanh toán THẤT BẠI (`status: 'FAILED'`, lý do `"Giao dịch bị từ chối (mô phỏng)"`).
     * `9999999991`: Giả lập timeout.
     * `9999999992`: Giả lập lỗi mất mạng.
     * Ghi chú đơn chứa `hethang`: Giả lập lỗi hết hàng `409 Conflict` (trả về mảng `details`).
 - Khi `NEXT_PUBLIC_USE_MOCK_ORDERS=false`:
-  - Gọi fetch thật tới `NEXT_PUBLIC_API_URL`:
+  - Gọi fetch thật tới `NEXT_PUBLIC_API_URL` (kèm `Authorization: Bearer <accessToken>`):
     * `POST /orders` với body `{ receiveType, note, items }` (tuyệt đối không gửi giá, không gửi thông tin người nhận).
     * `POST /payments` kèm header `Idempotency-Key` (8..100 ký tự) và body `{ orderId, method, accountNumber }`.
-    * `GET /orders/:id` tra cứu trạng thái đơn khi tải lại trang.
+    * `GET /orders/me` lấy danh sách lịch sử đơn hàng của người dùng đang đăng nhập.
+    * `GET /orders/:id` tra cứu chi tiết đơn hàng và lịch sử thanh toán.
 
 ---
 
@@ -128,6 +137,9 @@ NEXT_PUBLIC_USE_MOCK_ORDERS=true
 | | `CANCELLED` | Đã hủy |
 | **PaymentMethod (Thanh toán)** | `WALLET` | Ví điện tử |
 | | `CARD` | Thẻ ngân hàng |
+| **PaymentStatus (Trạng thái TT)** *(nhãn FE tự đặt)* | `SUCCESS` | Thành công |
+| | `FAILED` | Thất bại |
+| | `PENDING` | Đang xử lý |
 
 ---
 

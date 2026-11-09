@@ -8,7 +8,7 @@ import {
   PaymentResponse,
 } from '../services/order-contract';
 import { OrderApiError } from '../services/orders';
-import { MOCK_PRODUCTS } from './mock-products';
+import { MOCK_PRODUCTS, MOCK_TOPPINGS } from './mock-products';
 
 /**
  * Kiểm tra xem có đang bật chế độ Mock Đơn hàng/Thanh toán hay không
@@ -22,7 +22,175 @@ export interface MockOrderRecord extends OrderResponse {
 }
 
 export const MOCK_ORDERS_STORAGE_KEY = 'brewlite_mock_orders_db_v2';
+export const MOCK_ORDERS_EMPTY_SIMULATION_KEY = 'brewlite_mock_orders_empty';
 const LEGACY_MOCK_ORDERS_STORAGE_KEY = 'brewlite_mock_orders_db_v1';
+
+/**
+ * Danh sách 4 đơn hàng mẫu mặc định đúng hình dạng hợp đồng (mục 2.8 & 2.9 docs/api-contract.md)
+ * Sắp xếp mới nhất lên trước (orderNumber 1004 -> 1001)
+ */
+export const MOCK_SEED_ORDERS: MockOrderRecord[] = [
+  // 1. Đơn PAID (2 món: 1 món nước có topping + 1 món bánh size/sugarLevel/iceLevel = null)
+  {
+    id: '33333333-0000-0000-0000-000000000001',
+    orderNumber: 1001,
+    status: 'PAID',
+    receiveType: 'TAKE_AWAY',
+    note: 'Cho xin thêm quai xách giấy',
+    totalAmount: 136000,
+    createdAt: '2026-11-05T03:00:00.000Z',
+    items: [
+      {
+        id: '88888888-0000-0000-0000-000000000001',
+        productId: '11111111-0000-0000-0000-000000000007',
+        productName: 'Trà sữa truyền thống',
+        size: 'M',
+        sugarLevel: 'P70',
+        iceLevel: 'NORMAL',
+        quantity: 2,
+        unitPrice: 53000,
+        lineTotal: 106000,
+        note: 'Ít ngọt vừa phải',
+        toppings: [
+          { id: '22222222-0000-0000-0000-000000000001', name: 'Trân châu đen', price: 5000 },
+          { id: '22222222-0000-0000-0000-000000000003', name: 'Pudding', price: 7000 },
+        ],
+      },
+      {
+        id: '88888888-0000-0000-0000-000000000002',
+        productId: '11111111-0000-0000-0000-000000000010',
+        productName: 'Bánh Croissant',
+        size: null,
+        sugarLevel: null,
+        iceLevel: null,
+        quantity: 1,
+        unitPrice: 30000,
+        lineTotal: 30000,
+        note: 'Hâm nóng bánh giúp mình',
+        toppings: [],
+      },
+    ],
+    payments: [
+      {
+        id: '44444444-0000-0000-0000-000000000001',
+        method: 'WALLET',
+        accountLast4: '4321',
+        status: 'SUCCESS',
+        failureReason: null,
+        createdAt: '2026-11-05T03:02:00.000Z',
+      },
+    ],
+  },
+  // 2. Đơn PENDING (chưa có giao dịch thanh toán)
+  {
+    id: '33333333-0000-0000-0000-000000000002',
+    orderNumber: 1002,
+    status: 'PENDING',
+    receiveType: 'AT_COUNTER',
+    note: null,
+    totalAmount: 29000,
+    createdAt: '2026-11-05T04:15:00.000Z',
+    items: [
+      {
+        id: '88888888-0000-0000-0000-000000000003',
+        productId: '11111111-0000-0000-0000-000000000001',
+        productName: 'Cà phê sữa đá',
+        size: 'S',
+        sugarLevel: 'P100',
+        iceLevel: 'NORMAL',
+        quantity: 1,
+        unitPrice: 29000,
+        lineTotal: 29000,
+        note: null,
+        toppings: [],
+      },
+    ],
+    payments: [],
+  },
+  // 3. Đơn PAYMENT_FAILED (có payment FAILED với failureReason: "Giao dịch bị từ chối (mô phỏng)")
+  {
+    id: '33333333-0000-0000-0000-000000000003',
+    orderNumber: 1003,
+    status: 'PAYMENT_FAILED',
+    receiveType: 'TAKE_AWAY',
+    note: 'Gọi điện khi tới sảnh',
+    totalAmount: 49000,
+    createdAt: '2026-11-05T05:30:00.000Z',
+    items: [
+      {
+        id: '88888888-0000-0000-0000-000000000004',
+        productId: '11111111-0000-0000-0000-000000000004',
+        productName: 'Trà đào cam sả',
+        size: 'L',
+        sugarLevel: 'P50',
+        iceLevel: 'LOW',
+        quantity: 1,
+        unitPrice: 49000,
+        lineTotal: 49000,
+        note: null,
+        toppings: [],
+      },
+    ],
+    payments: [
+      {
+        id: '44444444-0000-0000-0000-000000000002',
+        method: 'CARD',
+        accountLast4: '0000',
+        status: 'FAILED',
+        failureReason: 'Giao dịch bị từ chối (mô phỏng)',
+        createdAt: '2026-11-05T05:31:00.000Z',
+      },
+    ],
+  },
+  // 4. Đơn READY (để kiểm tra giao diện trạng thái chưa có API kích hoạt)
+  {
+    id: '33333333-0000-0000-0000-000000000004',
+    orderNumber: 1004,
+    status: 'READY',
+    receiveType: 'AT_COUNTER',
+    note: null,
+    totalAmount: 65000,
+    createdAt: '2026-11-05T06:45:00.000Z',
+    items: [
+      {
+        id: '88888888-0000-0000-0000-000000000005',
+        productId: '11111111-0000-0000-0000-000000000001',
+        productName: 'Cà phê sữa đá',
+        size: 'M',
+        sugarLevel: 'P70',
+        iceLevel: 'NORMAL',
+        quantity: 1,
+        unitPrice: 35000,
+        lineTotal: 35000,
+        note: null,
+        toppings: [],
+      },
+      {
+        id: '88888888-0000-0000-0000-000000000006',
+        productId: '11111111-0000-0000-0000-000000000010',
+        productName: 'Bánh Croissant',
+        size: null,
+        sugarLevel: null,
+        iceLevel: null,
+        quantity: 1,
+        unitPrice: 30000,
+        lineTotal: 30000,
+        note: null,
+        toppings: [],
+      },
+    ],
+    payments: [
+      {
+        id: '44444444-0000-0000-0000-000000000003',
+        method: 'WALLET',
+        accountLast4: '8888',
+        status: 'SUCCESS',
+        failureReason: null,
+        createdAt: '2026-11-05T06:46:00.000Z',
+      },
+    ],
+  },
+];
 
 export interface StoredMockDatabase {
   lastOrderNumber: number;
@@ -101,9 +269,51 @@ export function persistMockDatabaseToStorage(): void {
 
 // Cờ giả lập lỗi mạng để phục vụ kiểm thử
 let mockNetworkSimulation: 'timeout' | 'offline' | null = null;
+// Cờ giả lập danh sách đơn hàng rỗng (phục vụ kiểm thử trạng thái empty)
+let mockEmptyOrdersSimulation = false;
 
 export function setMockNetworkSimulation(type: 'timeout' | 'offline' | null): void {
   mockNetworkSimulation = type;
+}
+
+export function setMockEmptyOrdersSimulation(isEmpty: boolean): void {
+  mockEmptyOrdersSimulation = isEmpty;
+  if (typeof window !== 'undefined') {
+    try {
+      if (isEmpty) {
+        window.localStorage.setItem(MOCK_ORDERS_EMPTY_SIMULATION_KEY, 'true');
+      } else {
+        window.localStorage.removeItem(MOCK_ORDERS_EMPTY_SIMULATION_KEY);
+      }
+    } catch {
+      // Bỏ qua lỗi truy cập storage
+    }
+  }
+}
+
+export function isMockEmptyOrdersSimulated(): boolean {
+  if (mockEmptyOrdersSimulation) return true;
+  if (typeof window !== 'undefined') {
+    try {
+      return window.localStorage.getItem(MOCK_ORDERS_EMPTY_SIMULATION_KEY) === 'true';
+    } catch {
+      return false;
+    }
+  }
+  return false;
+}
+
+/**
+ * Đảm bảo 4 đơn hàng mẫu mặc định được nạp sẵn vào Mock DB để người dùng có thể xem ngay
+ * tại /orders và /orders/[id] khi chưa chạy Backend
+ */
+export function ensureSeedMockOrders(): void {
+  for (const seed of MOCK_SEED_ORDERS) {
+    if (!mockOrdersDatabase.has(seed.id)) {
+      // Sao chép sâu để tránh đột biến dữ liệu gốc
+      mockOrdersDatabase.set(seed.id, JSON.parse(JSON.stringify(seed)));
+    }
+  }
 }
 
 export function resetMockOrdersDatabase(): void {
@@ -111,11 +321,13 @@ export function resetMockOrdersDatabase(): void {
   mockOrdersDatabase.clear();
   mockPaymentsDatabase.clear();
   mockNetworkSimulation = null;
+  mockEmptyOrdersSimulation = false;
 
   if (typeof window !== 'undefined') {
     try {
       window.localStorage.removeItem(MOCK_ORDERS_STORAGE_KEY);
       window.localStorage.removeItem(LEGACY_MOCK_ORDERS_STORAGE_KEY);
+      window.localStorage.removeItem(MOCK_ORDERS_EMPTY_SIMULATION_KEY);
     } catch {
       // Bỏ qua lỗi truy cập storage
     }
@@ -206,35 +418,45 @@ export async function mockCreateOrder(dto: CreateOrderDto): Promise<OrderRespons
 
   // 2. SERVER TỰ TÍNH TIỀN (tuyệt đối không nhận giá từ client)
   let calculatedTotal = 0;
-  const processedItems: OrderItemResponse[] = dto.items.map((item) => {
+  const processedItems: OrderItemResponse[] = dto.items.map((item, idx) => {
     const product = MOCK_PRODUCTS.find(
       (p) =>
         p.id === item.productId ||
         (item.productId === '1' && p.id === '11111111-0000-0000-0000-000000000001')
     );
+    const isCake = product?.category === 'CAKE';
     const basePrice = product ? product.basePrice : 29000;
     let unitPrice = basePrice;
 
-    if (item.size === 'M') unitPrice += 6000;
-    if (item.size === 'L') unitPrice += 10000;
+    if (!isCake && item.size === 'M') unitPrice += 6000;
+    if (!isCake && item.size === 'L') unitPrice += 10000;
 
-    if (item.toppingIds && item.toppingIds.length > 0) {
-      unitPrice += item.toppingIds.length * 10000;
+    const resolvedToppings = !isCake && item.toppingIds
+      ? item.toppingIds.map((tId) => {
+          const found = MOCK_TOPPINGS.find((mt) => mt.id === tId);
+          return found ? { ...found } : { id: tId, name: 'Topping', price: 10000 };
+        })
+      : [];
+
+    for (const t of resolvedToppings) {
+      unitPrice += t.price;
     }
 
     const lineTotal = unitPrice * item.quantity;
     calculatedTotal += lineTotal;
 
     return {
+      id: `item-${Date.now()}-${idx}`,
       productId: item.productId,
       productName: product ? product.name : 'Đồ uống BrewLite',
-      size: item.size,
-      sugarLevel: item.sugarLevel,
-      iceLevel: item.iceLevel,
+      size: isCake ? null : (item.size ?? null),
+      sugarLevel: isCake ? null : (item.sugarLevel ?? null),
+      iceLevel: isCake ? null : (item.iceLevel ?? null),
       quantity: item.quantity,
       unitPrice,
       lineTotal,
-      note: item.note,
+      note: item.note ?? null,
+      toppings: resolvedToppings,
     };
   });
 
@@ -267,8 +489,9 @@ export async function mockPayOrder(
   dtoOrKey: PaymentDto | string,
   maybeKey?: string
 ): Promise<PaymentResponse> {
-  // Đồng bộ dữ liệu mock từ storage
+  // Đồng bộ dữ liệu mock từ storage và đảm bảo seed đơn mẫu có sẵn
   loadMockDatabaseFromStorage();
+  ensureSeedMockOrders();
 
   let actualDto: PaymentDto;
   let idempotencyKey: string;
@@ -350,7 +573,6 @@ export async function mockPayOrder(
       id: failedPayment.id,
       method: failedPayment.method,
       accountLast4: failedPayment.accountLast4,
-      amount: failedPayment.amount,
       status: 'FAILED',
       failureReason: failedPayment.failureReason,
       createdAt: failedPayment.createdAt,
@@ -383,8 +605,8 @@ export async function mockPayOrder(
     id: successPayment.id,
     method: successPayment.method,
     accountLast4: successPayment.accountLast4,
-    amount: successPayment.amount,
     status: 'SUCCESS',
+    failureReason: null,
     createdAt: successPayment.createdAt,
   });
 
@@ -397,10 +619,23 @@ export async function mockPayOrder(
  * Giả lập tra cứu đơn hàng theo ID GET /orders/:id
  */
 export async function mockGetOrderById(orderId: string): Promise<OrderResponse> {
-  // Đồng bộ dữ liệu mock từ storage
+  // Đồng bộ dữ liệu mock từ storage và đảm bảo 4 đơn mẫu luôn sẵn có
   loadMockDatabaseFromStorage();
+  ensureSeedMockOrders();
 
   await new Promise((resolve) => setTimeout(resolve, 50));
+
+  if (mockNetworkSimulation === 'timeout') {
+    throw new OrderApiError(0, ORDER_ERROR_MESSAGES.NETWORK_TIMEOUT);
+  }
+  if (mockNetworkSimulation === 'offline') {
+    throw new OrderApiError(0, ORDER_ERROR_MESSAGES.NETWORK_ERROR);
+  }
+
+  // Cho phép giả lập 404 dễ dàng qua ID chứa '404' hoặc 'not-found' hoặc không tồn tại trong DB
+  if (orderId === '404' || orderId === 'not-found') {
+    throw new OrderApiError(404, ORDER_ERROR_MESSAGES.ORDER_NOT_FOUND);
+  }
 
   const order = mockOrdersDatabase.get(orderId);
   if (!order) {
@@ -408,4 +643,48 @@ export async function mockGetOrderById(orderId: string): Promise<OrderResponse> 
   }
 
   return order;
+}
+
+/**
+ * Giả lập lấy danh sách đơn hàng của tôi GET /orders/me
+ * Server trả về sắp xếp từ mới nhất đến cũ nhất (createdAt giảm dần / orderNumber giảm dần)
+ * Không bao gồm trường payments[] trong danh sách GET /orders/me theo đúng hợp đồng mục 2.8
+ */
+export async function mockGetMyOrders(): Promise<OrderResponse[]> {
+  loadMockDatabaseFromStorage();
+  ensureSeedMockOrders();
+
+  await new Promise((resolve) => setTimeout(resolve, 50));
+
+  if (mockNetworkSimulation === 'timeout') {
+    throw new OrderApiError(0, ORDER_ERROR_MESSAGES.NETWORK_TIMEOUT);
+  }
+  if (mockNetworkSimulation === 'offline') {
+    throw new OrderApiError(0, ORDER_ERROR_MESSAGES.NETWORK_ERROR);
+  }
+
+  if (isMockEmptyOrdersSimulated()) {
+    return [];
+  }
+
+  const allOrders = Array.from(mockOrdersDatabase.values());
+
+  // Server sắp xếp mới nhất lên trước (theo thời gian tạo, nếu bằng nhau thì theo orderNumber giảm dần)
+  allOrders.sort((a, b) => {
+    const timeDiff = new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    if (timeDiff !== 0) return timeDiff;
+    return b.orderNumber - a.orderNumber;
+  });
+
+  // Trả về danh sách theo đúng hợp đồng GET /orders/me (mục 2.8)
+  return allOrders.map((order) => ({
+    id: order.id,
+    orderNumber: order.orderNumber,
+    status: order.status,
+    receiveType: order.receiveType,
+    note: order.note ?? null,
+    totalAmount: order.totalAmount,
+    createdAt: order.createdAt,
+    items: order.items,
+  }));
 }

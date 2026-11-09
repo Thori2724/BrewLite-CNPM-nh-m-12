@@ -23,6 +23,7 @@ export interface PendingOrderRecord {
   method?: PaymentMethod;
   createdAt: string;
   itemCount: number;
+  createdFromCart?: boolean;
 }
 
 /**
@@ -63,6 +64,9 @@ export function savePendingOrder(record: PendingOrderRecord): void {
       method: record.method,
       createdAt: record.createdAt || new Date().toISOString(),
       itemCount: Math.max(1, record.itemCount || 1),
+      ...(record.createdFromCart !== undefined
+        ? { createdFromCart: Boolean(record.createdFromCart) }
+        : {}),
     };
     window.localStorage.setItem(PENDING_ORDER_STORAGE_KEY, JSON.stringify(cleanRecord));
   } catch (err) {
@@ -116,6 +120,7 @@ export function loadPendingOrder(): PendingOrderRecord | null {
       method,
       createdAt,
       itemCount,
+      createdFromCart,
     } = parsed as Partial<PendingOrderRecord>;
 
     if (
@@ -139,6 +144,7 @@ export function loadPendingOrder(): PendingOrderRecord | null {
       method: method as PaymentMethod | undefined,
       createdAt: createdAt || new Date().toISOString(),
       itemCount: typeof itemCount === 'number' ? itemCount : 1,
+      ...(typeof createdFromCart === 'boolean' ? { createdFromCart } : {}),
     };
 
     return record;

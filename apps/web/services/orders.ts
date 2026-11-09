@@ -13,10 +13,15 @@ import {
   mockCreateOrder,
   mockPayOrder,
   mockGetOrderById,
+  mockGetMyOrders,
   setMockNetworkSimulation,
+  setMockEmptyOrdersSimulation,
+  isMockEmptyOrdersSimulated,
   resetMockOrdersDatabase,
   clearMockMemoryOnlyForTesting,
   MOCK_ORDERS_STORAGE_KEY,
+  MOCK_ORDERS_EMPTY_SIMULATION_KEY,
+  MOCK_SEED_ORDERS,
 } from '../mocks/mock-orders';
 
 export class OrderApiError extends Error {
@@ -47,9 +52,13 @@ export class OrderApiError extends Error {
 export {
   isMockOrdersActive,
   setMockNetworkSimulation,
+  setMockEmptyOrdersSimulation,
+  isMockEmptyOrdersSimulated,
   resetMockOrdersDatabase,
   clearMockMemoryOnlyForTesting,
   MOCK_ORDERS_STORAGE_KEY,
+  MOCK_ORDERS_EMPTY_SIMULATION_KEY,
+  MOCK_SEED_ORDERS,
 };
 
 // =========================================================================
@@ -171,6 +180,30 @@ export async function getOrderByIdApi(orderId: string): Promise<OrderResponse> {
           : typeof err.message === 'string'
             ? err.message
             : ORDER_ERROR_MESSAGES.UNKNOWN_ERROR;
+      throw new OrderApiError(err.statusCode, msg, { errorData: err.errorData });
+    }
+    throw new OrderApiError(0, ORDER_ERROR_MESSAGES.NETWORK_ERROR, { errorData: err });
+  }
+}
+
+/**
+ * Lấy danh sách lịch sử đơn hàng của người dùng đang đăng nhập GET /orders/me
+ */
+export async function getMyOrdersApi(): Promise<OrderResponse[]> {
+  if (isMockOrdersActive()) {
+    return mockGetMyOrders();
+  }
+
+  try {
+    return await apiFetch<OrderResponse[]>(ORDER_ENDPOINTS.MY_ORDERS, {
+      method: 'GET',
+    });
+  } catch (err: unknown) {
+    if (err instanceof AuthApiError) {
+      const msg =
+        typeof err.message === 'string' && err.message.trim()
+          ? err.message
+          : ORDER_ERROR_MESSAGES.UNKNOWN_ERROR;
       throw new OrderApiError(err.statusCode, msg, { errorData: err.errorData });
     }
     throw new OrderApiError(0, ORDER_ERROR_MESSAGES.NETWORK_ERROR, { errorData: err });

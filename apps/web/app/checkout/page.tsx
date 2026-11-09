@@ -2,7 +2,7 @@
 
 import React, { Suspense, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useRequireAuth } from '../../context/useRequireAuth';
 import { useCart } from '../../context/CartContext';
 import {
@@ -48,28 +48,34 @@ function getIceLabel(ice?: IceLevel): string {
 
 function CheckoutContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const queryOrderId = (searchParams?.get('orderId') || '').trim();
   const { isChecking, isReady } = useRequireAuth();
   const { items, totalAmount, clearAll, isHydrated } = useCart();
 
   // Trạng thái các bước trên trang
   const [step, setStep] = useState<'order' | 'payment' | 'success'>('order');
 
-  // Quản lý đơn chờ thanh toán (khởi tạo an toàn từ localStorage một lần duy nhất)
-  const [initialPendingOrder] = useState<PendingOrderRecord | null>(() => {
+  // Quản lý đơn chờ thanh toán
+  const [pendingOrder, setPendingOrder] = useState<PendingOrderRecord | null>(() => {
     if (typeof window === 'undefined') return null;
     return loadPendingOrder();
   });
-  const [pendingOrder, setPendingOrder] = useState<PendingOrderRecord | null>(initialPendingOrder);
+  const [isCheckingQueryOrder, setIsCheckingQueryOrder] = useState<boolean>(() =>
+    Boolean(queryOrderId)
+  );
 
   // Thông tin đơn hàng đang xử lý
   const [createdOrder, setCreatedOrder] = useState<OrderResponse | null>(null);
+  // Đánh dấu đơn được tạo mới từ giỏ hàng ở Bước 1 trong cùng phiên làm việc (chỉ xóa giỏ khi thanh toán đơn này)
+  const [sessionCreatedOrderId, setSessionCreatedOrderId] = useState<string | null>(null);
   const [currentIdempotencyKey, setCurrentIdempotencyKey] = useState<string>(
-    () => initialPendingOrder?.idempotencyKey || ''
+    () => pendingOrder?.idempotencyKey || ''
   );
 
   // Thông tin giao nhận
   const [receiveType, setReceiveType] = useState<ReceiveType>(
-    () => initialPendingOrder?.receiveType || 'AT_COUNTER'
+    () => pendingOrder?.receiveType || 'AT_COUNTER'
   );
   const [note, setNote] = useState<string>('');
 
@@ -80,7 +86,7 @@ function CheckoutContent() {
 
   // Thông tin thanh toán (bảo mật: không bao giờ lưu storage hay log)
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>(
-    () => initialPendingOrder?.method || 'WALLET'
+    () => pendingOrder?.method || 'WALLET'
   );
   const [accountNumber, setAccountNumber] = useState<string>('');
   const [accountNumberError, setAccountNumberError] = useState<string | null>(null);
@@ -95,52 +101,133 @@ function CheckoutContent() {
   } | null>(null);
 
   const clearAllRef = React.useRef(clearAll);
+  const itemsLengthRef = React.useRef(items.length);
+  const routerRef = React.useRef(router);
+  const sessionCreatedOrderIdRef = React.useRef(sessionCreatedOrderId);
+  const stepRef = React.useRef(step);
   useEffect(() => {
     clearAllRef.current = clearAll;
+    itemsLengthRef.current = items.length;
+    routerRef.current = router;
+    sessionCreatedOrderIdRef.current = sessionCreatedOrderId;
+    stepRef.current = step;
   });
 
-  // Kiểm tra đơn chờ khi mount (hỗ trợ F5 / mở lại trang)
+  // Kiểm tra đơn chờ khi mount / khi queryOrderId đổi / khi Activity của Next.js 16 hiện lại trang
   useEffect(() => {
-    const orderIdToCheck = initialPendingOrder?.orderId;
-    if (!orderIdToCheck) return;
+    if (!isHydrated) return;
 
     let isMounted = true;
+    const storedPending = loadPendingOrder();
+
+    // Nếu vào /checkout không có ?orderId mà state cũ đang ở màn 'success' (do Cache Components giữ state)
+    // thì reset toàn bộ state màn thành công về Bước 1
+    if (!queryOrderId && stepRef.current === 'success') {
+      queueMicrotask(() => {
+        if (!isMounted) return;
+        setStep('order');
+        setPaymentSuccessData(null);
+        setSuccessOrderNumber(null);
+        setCreatedOrder(null);
+        setSessionCreatedOrderId(null);
+        setLastSubmittedPayment(null);
+        setPaymentError(null);
+        setPendingOrder(storedPending);
+      });
+    }
+
+    const orderIdToCheck = queryOrderId || storedPending?.orderId;
+    if (!orderIdToCheck) {
+      queueMicrotask(() => {
+        if (!isMounted) return;
+        setIsCheckingQueryOrder(false);
+        setPendingOrder(null);
+      });
+      return () => {
+        isMounted = false;
+      };
+    }
+
     getOrderByIdApi(orderIdToCheck)
       .then((order) => {
         if (!isMounted) return;
+        setIsCheckingQueryOrder(false);
+
         if (order.status === 'PAID') {
+          const isCreatedFromCart = Boolean(
+            storedPending &&
+              storedPending.orderId === order.id &&
+              storedPending.createdFromCart === true
+          );
           clearPendingOrder();
-          clearAllRef.current();
-          setSuccessOrderNumber(order.orderNumber);
-          setCreatedOrder(order);
           setPendingOrder(null);
-          setPaymentSuccessData({
-            id: `paid-${order.id}`,
-            orderId: order.id,
-            amount: order.totalAmount,
-            method: initialPendingOrder?.method || 'WALLET',
-            accountLast4: '••••',
-            status: 'SUCCESS',
-            createdAt: order.createdAt,
-            order: {
-              id: order.id,
-              orderNumber: order.orderNumber,
-              status: 'PAID',
-            },
-          });
-          setStep('success');
+
+          // Nếu pendingOrder có cờ createdFromCart: true thì coi là đơn của giỏ này: xóa giỏ và chuyển sang /orders/<id>
+          if (isCreatedFromCart) {
+            clearAllRef.current();
+            routerRef.current.replace(`/orders/${order.id}`);
+            return;
+          }
+
+          // Nếu mở /checkout?orderId=<id> mà đơn đã PAID thì chuyển sang /orders/<id>, không xóa giỏ
+          if (queryOrderId) {
+            routerRef.current.replace(`/orders/${order.id}`);
+            return;
+          }
+
+          // Mở /checkout không có ?orderId mà pendingOrder cũ đã PAID (không có cờ createdFromCart):
+          // chỉ xóa pendingOrder, giữ nguyên giỏ, ở lại Bước 1 (tuyệt đối không hiện màn thành công lúc mount)
+          setCreatedOrder(null);
+          setStep('order');
+          return;
         } else if (order.status === 'PENDING' || order.status === 'PAYMENT_FAILED') {
+          // Giữ lại key cũ nếu cùng đơn và đang PENDING; sinh key mới nếu chưa có (đổi trình duyệt) hoặc đơn đang PAYMENT_FAILED
+          const matchedStored =
+            storedPending && storedPending.orderId === order.id ? storedPending : null;
+          const effectiveKey =
+            matchedStored && order.status === 'PENDING' && matchedStored.idempotencyKey
+              ? matchedStored.idempotencyKey
+              : generateIdempotencyKey();
+
+          const syncedRecord: PendingOrderRecord = {
+            orderId: order.id,
+            orderNumber: order.orderNumber,
+            totalAmount: order.totalAmount,
+            receiveType: order.receiveType,
+            idempotencyKey: effectiveKey,
+            method: matchedStored?.method || 'WALLET',
+            createdAt: order.createdAt,
+            itemCount: order.items?.length || matchedStored?.itemCount || 1,
+            ...(matchedStored?.createdFromCart ? { createdFromCart: true } : {}),
+          };
+
+          savePendingOrder(syncedRecord);
+          setPendingOrder(syncedRecord);
           setCreatedOrder(order);
-          setStep('payment');
+          setCurrentIdempotencyKey(effectiveKey);
+
+          // Chỉ nhảy thẳng sang Bước 2 (payment) khi:
+          // (a) Có ?orderId= trên URL (đi từ /orders/[id] hoặc F5 tại Bước 2); HOẶC
+          // (b) Giỏ hàng đang rỗng (items.length === 0) nhưng còn đơn chờ
+          // Nếu giỏ có món và không có ?orderId=: giữ nguyên Bước 1 (order) và hiện banner nhắc đơn chờ
+          if (Boolean(queryOrderId) || itemsLengthRef.current === 0) {
+            setStep('payment');
+          } else {
+            setStep('order');
+          }
         }
       })
       .catch((err: unknown) => {
         if (!isMounted) return;
+        setIsCheckingQueryOrder(false);
         if (err instanceof OrderApiError && err.statusCode === 404) {
           clearPendingOrder();
           setPendingOrder(null);
           setCreatedOrder(null);
           setStep('order');
+          if (queryOrderId) {
+            routerRef.current.replace('/checkout');
+          }
           setCreateOrderError(
             'Đơn hàng trước đó không còn tồn tại trên hệ thống. Vui lòng tiến hành đặt lại.'
           );
@@ -150,7 +237,7 @@ function CheckoutContent() {
     return () => {
       isMounted = false;
     };
-  }, [initialPendingOrder]);
+  }, [queryOrderId, isHydrated]);
 
   // Bảo mật: Xóa ô số tài khoản khi component unmount
   useEffect(() => {
@@ -159,8 +246,8 @@ function CheckoutContent() {
     };
   }, []);
 
-  // 1. Đang kiểm tra đăng nhập hoặc chưa nạp xong giỏ hàng
-  if (isChecking || !isReady || !isHydrated) {
+  // 1. Đang kiểm tra đăng nhập, chưa nạp xong giỏ hàng hoặc đang kiểm tra đơn từ ?orderId=
+  if (isChecking || !isReady || !isHydrated || isCheckingQueryOrder) {
     return (
       <div className="max-w-md mx-auto py-20 text-center text-gray-500 text-sm">
         <div className="animate-spin inline-block w-8 h-8 border-3 border-amber-600 border-t-transparent rounded-full mb-3" />
@@ -176,6 +263,11 @@ function CheckoutContent() {
       paymentSuccessData.order?.orderNumber ??
       createdOrder?.orderNumber ??
       pendingOrder?.orderNumber;
+    const finalOrderId =
+      paymentSuccessData.orderId ||
+      paymentSuccessData.order?.id ||
+      createdOrder?.id ||
+      pendingOrder?.orderId;
 
     return (
       <div className="max-w-lg mx-auto my-6 bg-white border border-gray-100 rounded-2xl p-6 sm:p-8 shadow-xs text-center">
@@ -220,10 +312,24 @@ function CheckoutContent() {
           </div>
         </div>
 
-        <div className="flex flex-col sm:flex-row gap-3 justify-center">
+        <div className="flex flex-col sm:flex-row flex-wrap gap-3 justify-center">
+          {finalOrderId && (
+            <Link
+              href={`/orders/${finalOrderId}`}
+              className="w-full sm:w-auto px-5 py-3 bg-amber-600 hover:bg-amber-700 text-white font-semibold rounded-xl text-sm transition shadow-sm text-center"
+            >
+              Xem chi tiết & Theo dõi đơn
+            </Link>
+          )}
+          <Link
+            href="/orders"
+            className="w-full sm:w-auto px-5 py-3 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 font-semibold rounded-xl text-sm transition text-center"
+          >
+            Xem lịch sử đơn
+          </Link>
           <Link
             href="/"
-            className="w-full sm:w-auto px-6 py-3 bg-amber-600 hover:bg-amber-700 text-white font-semibold rounded-xl text-sm transition shadow-sm text-center"
+            className="w-full sm:w-auto px-5 py-3 bg-white hover:bg-gray-50 text-gray-700 border border-gray-200 font-semibold rounded-xl text-sm transition text-center"
           >
             ← Quay lại Thực đơn
           </Link>
@@ -233,7 +339,7 @@ function CheckoutContent() {
   }
 
   // 3. Giỏ hàng rỗng và không có đơn chờ thanh toán
-  if (items.length === 0 && !pendingOrder && step === 'order') {
+  if (items.length === 0 && !pendingOrder && !queryOrderId && step === 'order') {
     return (
       <div className="max-w-md mx-auto my-6 bg-white border border-gray-100 rounded-2xl py-12 px-6 text-center shadow-xs">
         <div className="w-20 h-20 bg-amber-50 rounded-full flex items-center justify-center mx-auto mb-4 text-3xl">
@@ -276,14 +382,17 @@ function CheckoutContent() {
         method: paymentMethod,
         createdAt: order.createdAt,
         itemCount: items.length,
+        createdFromCart: true,
       };
 
       savePendingOrder(newPendingRecord);
       setPendingOrder(newPendingRecord);
       setCreatedOrder(order);
+      setSessionCreatedOrderId(order.id);
       setCurrentIdempotencyKey(idempotencyKey);
       setLastSubmittedPayment(null);
       setStep('payment');
+      router.replace(`/checkout?orderId=${encodeURIComponent(order.id)}`);
     } catch (err: unknown) {
       if (err instanceof OrderApiError) {
         if (err.statusCode === 401) {
@@ -351,6 +460,13 @@ function CheckoutContent() {
 
     setCurrentIdempotencyKey(effectiveKey);
 
+    const storedBeforePay = loadPendingOrder();
+    const isCreatedFromCart = Boolean(
+      sessionCreatedOrderId === targetOrderId ||
+        (pendingOrder?.orderId === targetOrderId && pendingOrder.createdFromCart === true) ||
+        (storedBeforePay?.orderId === targetOrderId && storedBeforePay.createdFromCart === true)
+    );
+
     const activeOrder = createdOrder || pendingOrder;
     if (activeOrder) {
       const updatedRecord: PendingOrderRecord = {
@@ -362,6 +478,7 @@ function CheckoutContent() {
         method: paymentMethod,
         createdAt: activeOrder.createdAt,
         itemCount: 'itemCount' in activeOrder ? activeOrder.itemCount : items.length,
+        ...(isCreatedFromCart ? { createdFromCart: true } : {}),
       };
       savePendingOrder(updatedRecord);
       setPendingOrder(updatedRecord);
@@ -385,7 +502,12 @@ function CheckoutContent() {
           pendingOrder?.orderNumber ||
           null;
         setSuccessOrderNumber(resolvedOrderNumber);
-        clearAll();
+
+        // Chỉ xóa giỏ hàng khi đơn vừa thanh toán trùng với pendingOrder có cờ createdFromCart: true
+        if (isCreatedFromCart) {
+          clearAll();
+        }
+
         clearPendingOrder();
         setPendingOrder(null);
         setLastSubmittedPayment(null);
@@ -413,6 +535,7 @@ function CheckoutContent() {
             method: paymentMethod,
             createdAt: activeOrder.createdAt,
             itemCount: 'itemCount' in activeOrder ? activeOrder.itemCount : items.length,
+            ...(isCreatedFromCart ? { createdFromCart: true } : {}),
           };
           savePendingOrder(nextRecord);
           setPendingOrder(nextRecord);
@@ -446,7 +569,9 @@ function CheckoutContent() {
           try {
             const checkOrder = await getOrderByIdApi(targetOrderId);
             if (checkOrder.status === 'PAID') {
-              clearAll();
+              if (isCreatedFromCart) {
+                clearAll();
+              }
               clearPendingOrder();
               setPendingOrder(null);
               setSuccessOrderNumber(checkOrder.orderNumber);
@@ -512,6 +637,7 @@ function CheckoutContent() {
     setCurrentIdempotencyKey(pendingOrder.idempotencyKey);
     setLastSubmittedPayment(null);
     setStep('payment');
+    router.replace(`/checkout?orderId=${encodeURIComponent(pendingOrder.orderId)}`);
   };
 
   const handleCancelPendingOrder = () => {
@@ -753,8 +879,26 @@ function CheckoutContent() {
           <div className="lg:col-span-7 space-y-5">
             {/* Thông báo lỗi thanh toán nếu có */}
             {paymentError && (
-              <div className="max-w-xl mx-auto lg:max-w-none bg-red-50 border border-red-200 text-red-700 p-4 sm:p-5 rounded-2xl text-xs sm:text-sm shadow-xs">
-                <strong>Lỗi thanh toán:</strong> {paymentError}
+              <div className="max-w-xl mx-auto lg:max-w-none bg-red-50 border border-red-200 text-red-700 p-4 sm:p-5 rounded-2xl text-xs sm:text-sm shadow-xs space-y-3">
+                <div>
+                  <strong>Lỗi thanh toán:</strong> {paymentError}
+                </div>
+                <div className="flex flex-wrap gap-2 pt-1">
+                  {(createdOrder?.id || pendingOrder?.orderId) && (
+                    <Link
+                      href={`/orders/${createdOrder?.id || pendingOrder?.orderId}`}
+                      className="inline-block px-3.5 py-1.5 bg-white hover:bg-red-100/50 text-red-700 border border-red-300 font-semibold rounded-xl text-xs transition"
+                    >
+                      Xem chi tiết & Theo dõi đơn
+                    </Link>
+                  )}
+                  <Link
+                    href="/orders"
+                    className="inline-block px-3.5 py-1.5 bg-white hover:bg-red-100/50 text-red-700 border border-red-300 font-semibold rounded-xl text-xs transition"
+                  >
+                    Xem lịch sử đơn
+                  </Link>
+                </div>
               </div>
             )}
 
