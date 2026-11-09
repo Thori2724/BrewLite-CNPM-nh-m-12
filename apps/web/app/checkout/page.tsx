@@ -165,7 +165,7 @@ function CheckoutContent() {
   // 1. Đang kiểm tra đăng nhập hoặc chưa nạp xong giỏ hàng
   if (isChecking || !isReady || !isHydrated) {
     return (
-      <div className="py-20 text-center text-gray-500 text-sm">
+      <div className="max-w-md mx-auto py-20 text-center text-gray-500 text-sm">
         <div className="animate-spin inline-block w-8 h-8 border-3 border-amber-600 border-t-transparent rounded-full mb-3" />
         <p>Đang chuẩn bị trang thanh toán...</p>
       </div>
@@ -181,7 +181,7 @@ function CheckoutContent() {
       pendingOrder?.orderNumber;
 
     return (
-      <div className="max-w-lg mx-auto py-10 px-4 text-center">
+      <div className="max-w-lg mx-auto my-6 bg-white border border-gray-100 rounded-2xl p-6 sm:p-8 shadow-xs text-center">
         <div className="w-20 h-20 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto mb-5 text-4xl shadow-xs">
           ✓
         </div>
@@ -190,20 +190,26 @@ function CheckoutContent() {
           Cảm ơn bạn đã đặt món tại BrewLite. Quán đang chuẩn bị đồ uống cho bạn.
         </p>
 
-        <div className="bg-white border border-gray-100 rounded-2xl p-5 shadow-xs text-left text-sm space-y-3 mb-6">
-          <div className="flex justify-between items-center pb-2 border-b border-gray-100">
+        <div className="bg-gray-50/80 border border-gray-100 rounded-2xl p-5 text-left text-sm space-y-3 mb-6">
+          <div className="flex justify-between items-center pb-2 border-b border-gray-200/60">
             <span className="text-gray-500">Mã đơn hàng:</span>
             <span className="font-bold text-gray-900">
               {finalOrderNum !== undefined ? `#${finalOrderNum}` : 'Đơn hàng'}
             </span>
           </div>
-          <div className="flex justify-between items-center pb-2 border-b border-gray-100">
+          <div className="flex justify-between items-center pb-2 border-b border-gray-200/60">
+            <span className="text-gray-500">Trạng thái:</span>
+            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-green-100 text-green-800">
+              Đã thanh toán
+            </span>
+          </div>
+          <div className="flex justify-between items-center pb-2 border-b border-gray-200/60">
             <span className="text-gray-500">Số tiền đã trả:</span>
             <span className="font-bold text-amber-600">
               {paymentSuccessData.amount.toLocaleString('vi-VN')} đ
             </span>
           </div>
-          <div className="flex justify-between items-center pb-2 border-b border-gray-100">
+          <div className="flex justify-between items-center pb-2 border-b border-gray-200/60">
             <span className="text-gray-500">Phương thức:</span>
             <span className="font-medium text-gray-800">
               {PAYMENT_METHOD_LABELS[paymentSuccessData.method] || paymentSuccessData.method}
@@ -232,7 +238,7 @@ function CheckoutContent() {
   // 3. Giỏ hàng rỗng và không có đơn chờ thanh toán
   if (items.length === 0 && !pendingOrder && step === 'order') {
     return (
-      <div className="py-16 px-4 text-center max-w-md mx-auto">
+      <div className="max-w-md mx-auto my-6 bg-white border border-gray-100 rounded-2xl py-12 px-6 text-center shadow-xs">
         <div className="w-20 h-20 bg-amber-50 rounded-full flex items-center justify-center mx-auto mb-4 text-3xl">
           🛒
         </div>
@@ -520,25 +526,27 @@ function CheckoutContent() {
   const activeAmount = createdOrder?.totalAmount ?? pendingOrder?.totalAmount ?? totalAmount;
   const activeOrderNumber =
     createdOrder?.orderNumber ?? pendingOrder?.orderNumber ?? null;
+  const activeReceiveType =
+    createdOrder?.receiveType ?? pendingOrder?.receiveType ?? receiveType;
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
+    <div className="max-w-5xl mx-auto space-y-6">
       {/* Tiêu đề & Nút quay lại */}
-      <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+      <div className="flex items-center justify-between border-b border-gray-200 pb-4">
         <Link
           href="/cart"
           className="inline-flex items-center text-xs sm:text-sm font-medium text-gray-600 hover:text-amber-600 transition"
         >
           <span className="mr-1">←</span> Quay lại Giỏ hàng
         </Link>
-        <span className="text-xs text-gray-400">
+        <span className="text-xs sm:text-sm font-medium text-gray-500">
           {step === 'order' ? 'Bước 1/2: Đặt đơn' : 'Bước 2/2: Thanh toán'}
         </span>
       </div>
 
       {/* Banner đơn chờ thanh toán nếu có và đang ở bước tạo đơn */}
       {pendingOrder && step === 'order' && (
-        <div className="bg-blue-50 border border-blue-200 text-blue-900 p-4 rounded-2xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 shadow-xs">
+        <div className="max-w-3xl mx-auto bg-blue-50 border border-blue-200 text-blue-900 p-4 sm:p-5 rounded-2xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 shadow-xs">
           <div>
             <div className="font-bold text-sm">
               Bạn có đơn hàng đang chờ thanh toán: #{pendingOrder.orderNumber}
@@ -548,18 +556,18 @@ function CheckoutContent() {
               thức: {RECEIVE_TYPE_LABELS[pendingOrder.receiveType]})
             </div>
           </div>
-          <div className="flex gap-2 w-full sm:w-auto">
+          <div className="flex gap-2 w-full sm:w-auto shrink-0">
             <button
               type="button"
               onClick={handleResumePendingOrder}
-              className="flex-1 sm:flex-none px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold transition"
+              className="flex-1 sm:flex-none px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold transition cursor-pointer"
             >
               Tiếp tục thanh toán
             </button>
             <button
               type="button"
               onClick={handleCancelPendingOrder}
-              className="px-3 py-2 bg-white hover:bg-gray-50 text-gray-700 border border-gray-200 rounded-xl text-xs font-medium transition"
+              className="px-3 py-2 bg-white hover:bg-gray-50 text-gray-700 border border-gray-200 rounded-xl text-xs font-medium transition cursor-pointer"
             >
               Hủy đơn này
             </button>
@@ -569,17 +577,17 @@ function CheckoutContent() {
 
       {/* ======================= BƯỚC 1: XÁC NHẬN ĐẶT HÀNG ======================= */}
       {step === 'order' && (
-        <form onSubmit={handleCreateOrder} className="grid grid-cols-1 md:grid-cols-12 gap-6">
+        <form onSubmit={handleCreateOrder} className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 items-start">
           {/* CỘT TRÁI (7 CỘT): Hình thức & Ghi chú */}
-          <div className="md:col-span-7 space-y-5">
-            {/* Lỗi hết hàng 409 hoặc lỗi tạo đơn */}
+          <div className="lg:col-span-7 space-y-5">
+            {/* Lỗi hết hàng 409 hoặc lỗi tạo đơn (ví dụ 404 đơn cũ không còn tồn tại) */}
             {createOrderError && (
-              <div className="bg-red-50 border border-red-200 text-red-700 p-4 rounded-xl text-sm space-y-2">
+              <div className="max-w-xl mx-auto lg:max-w-none bg-red-50 border border-red-200 text-red-700 p-4 sm:p-5 rounded-2xl text-sm space-y-2 shadow-xs">
                 <div className="font-semibold">{createOrderError}</div>
                 {outOfStockDetails.length > 0 && (
                   <div>
                     <p className="text-xs text-red-600 mb-1">Món hiện không đủ tồn kho:</p>
-                    <ul className="list-disc list-inside text-xs font-medium">
+                    <ul className="list-disc list-inside text-xs font-medium space-y-0.5">
                       {outOfStockDetails.map((item, idx) => (
                         <li key={idx}>
                           {item.name} {item.available !== undefined ? `(còn ${item.available})` : ''}
@@ -589,7 +597,7 @@ function CheckoutContent() {
                     <div className="mt-3">
                       <Link
                         href="/cart"
-                        className="inline-block px-3 py-1.5 bg-red-600 text-white text-xs font-medium rounded-lg hover:bg-red-700 transition"
+                        className="inline-block px-3.5 py-2 bg-red-600 text-white text-xs font-semibold rounded-xl hover:bg-red-700 transition"
                       >
                         Quay lại giỏ hàng
                       </Link>
@@ -600,11 +608,11 @@ function CheckoutContent() {
             )}
 
             {/* 1. Hình thức nhận hàng */}
-            <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-xs space-y-3">
+            <div className="bg-white p-5 sm:p-6 rounded-2xl border border-gray-100 shadow-xs space-y-3.5">
               <h2 className="text-base font-bold text-gray-900">1. Hình thức nhận hàng</h2>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <label
-                  className={`flex items-center gap-3 p-3.5 rounded-xl border-2 cursor-pointer transition ${
+                  className={`flex items-center gap-3 p-4 rounded-xl border-2 cursor-pointer transition ${
                     receiveType === 'AT_COUNTER'
                       ? 'border-amber-600 bg-amber-50/50'
                       : 'border-gray-100 hover:border-gray-200 bg-white'
@@ -616,7 +624,7 @@ function CheckoutContent() {
                     value="AT_COUNTER"
                     checked={receiveType === 'AT_COUNTER'}
                     onChange={() => setReceiveType('AT_COUNTER')}
-                    className="accent-amber-600 w-4 h-4"
+                    className="accent-amber-600 w-4 h-4 shrink-0"
                   />
                   <div>
                     <div className="text-sm font-semibold text-gray-800">Tại quầy</div>
@@ -625,7 +633,7 @@ function CheckoutContent() {
                 </label>
 
                 <label
-                  className={`flex items-center gap-3 p-3.5 rounded-xl border-2 cursor-pointer transition ${
+                  className={`flex items-center gap-3 p-4 rounded-xl border-2 cursor-pointer transition ${
                     receiveType === 'TAKE_AWAY'
                       ? 'border-amber-600 bg-amber-50/50'
                       : 'border-gray-100 hover:border-gray-200 bg-white'
@@ -637,7 +645,7 @@ function CheckoutContent() {
                     value="TAKE_AWAY"
                     checked={receiveType === 'TAKE_AWAY'}
                     onChange={() => setReceiveType('TAKE_AWAY')}
-                    className="accent-amber-600 w-4 h-4"
+                    className="accent-amber-600 w-4 h-4 shrink-0"
                   />
                   <div>
                     <div className="text-sm font-semibold text-gray-800">Mang đi</div>
@@ -648,7 +656,7 @@ function CheckoutContent() {
             </div>
 
             {/* 2. Ghi chú đơn hàng */}
-            <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-xs space-y-3">
+            <div className="bg-white p-5 sm:p-6 rounded-2xl border border-gray-100 shadow-xs space-y-3">
               <label htmlFor="orderNote" className="block text-sm font-bold text-gray-900">
                 2. Ghi chú đơn hàng (không bắt buộc)
               </label>
@@ -665,9 +673,9 @@ function CheckoutContent() {
             </div>
           </div>
 
-          {/* CỘT PHẢI (5 CỘT): Tóm tắt đơn hàng & Nút đặt đơn */}
-          <div className="md:col-span-5 space-y-4">
-            <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-xs space-y-4">
+          {/* CỘT PHẢI (5 CỘT): Tóm tắt đơn hàng & Nút đặt đơn (dính khi cuộn trên màn lớn) */}
+          <div className="lg:col-span-5 lg:sticky lg:top-24 space-y-4">
+            <div className="bg-white p-5 sm:p-6 rounded-2xl border border-gray-100 shadow-xs space-y-4">
               <h2 className="text-base font-bold text-gray-900 border-b border-gray-100 pb-3">
                 Tóm tắt đơn hàng ({items.length} món)
               </h2>
@@ -677,9 +685,9 @@ function CheckoutContent() {
                 {items.map((item) => (
                   <div
                     key={item.id}
-                    className="flex justify-between items-start text-xs border-b border-gray-50 pb-2"
+                    className="flex justify-between items-start text-xs border-b border-gray-50 pb-2.5"
                   >
-                    <div className="pr-2 flex-1">
+                    <div className="pr-2 flex-1 min-w-0">
                       <div className="font-semibold text-gray-800">
                         {item.name} <span className="text-amber-700">x{item.quantity}</span>
                       </div>
@@ -739,146 +747,164 @@ function CheckoutContent() {
 
       {/* ======================= BƯỚC 2: THANH TOÁN ======================= */}
       {step === 'payment' && (
-        <form onSubmit={handlePayOrder} className="max-w-xl mx-auto space-y-5">
-          {/* Thông tin đơn hàng cần thanh toán */}
-          <div className="bg-amber-50/70 border border-amber-200 rounded-2xl p-5 shadow-xs space-y-2">
-            <div className="flex justify-between items-center">
-              <span className="text-xs text-amber-900 font-semibold">Mã đơn hàng:</span>
-              <span className="font-extrabold text-amber-900 text-base">
-                {activeOrderNumber !== null ? `#${activeOrderNumber}` : 'Đơn hàng mới'}
-              </span>
-            </div>
-            <div className="flex justify-between items-baseline pt-1 border-t border-amber-200/50">
-              <span className="text-xs text-amber-900 font-semibold">Số tiền thanh toán:</span>
-              <span className="text-2xl font-black text-amber-600">
-                {activeAmount.toLocaleString('vi-VN')} đ
-              </span>
-            </div>
-          </div>
+        <form onSubmit={handlePayOrder} className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 items-start">
+          {/* CỘT TRÁI (7 CỘT): Chọn phương thức thanh toán & Nhập số tài khoản */}
+          <div className="lg:col-span-7 space-y-5">
+            {/* Thông báo lỗi thanh toán nếu có */}
+            {paymentError && (
+              <div className="max-w-xl mx-auto lg:max-w-none bg-red-50 border border-red-200 text-red-700 p-4 sm:p-5 rounded-2xl text-xs sm:text-sm shadow-xs">
+                <strong>Lỗi thanh toán:</strong> {paymentError}
+              </div>
+            )}
 
-          {/* Thông báo lỗi thanh toán nếu có */}
-          {paymentError && (
-            <div className="bg-red-50 border border-red-200 text-red-700 p-4 rounded-xl text-xs sm:text-sm">
-              <strong>Lỗi thanh toán:</strong> {paymentError}
-            </div>
-          )}
+            {/* Chọn phương thức thanh toán */}
+            <div className="bg-white p-5 sm:p-6 rounded-2xl border border-gray-100 shadow-xs space-y-3.5">
+              <h2 className="text-base font-bold text-gray-900">Chọn phương thức thanh toán</h2>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <label
+                  className={`flex items-center gap-3 p-4 rounded-xl border-2 cursor-pointer transition ${
+                    paymentMethod === 'WALLET'
+                      ? 'border-amber-600 bg-amber-50/50'
+                      : 'border-gray-100 hover:border-gray-200 bg-white'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="paymentMethod"
+                    value="WALLET"
+                    checked={paymentMethod === 'WALLET'}
+                    onChange={() => {
+                      setPaymentMethod('WALLET');
+                      setAccountNumberError(null);
+                    }}
+                    className="accent-amber-600 w-4 h-4 shrink-0"
+                  />
+                  <div>
+                    <div className="text-sm font-semibold text-gray-800">Ví điện tử</div>
+                    <div className="text-[11px] text-gray-500">Momo, ZaloPay (8 - 19 số)</div>
+                  </div>
+                </label>
 
-          {/* Chọn phương thức thanh toán */}
-          <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-xs space-y-3">
-            <h2 className="text-base font-bold text-gray-900">Chọn phương thức thanh toán</h2>
-            <div className="grid grid-cols-2 gap-3">
-              <label
-                className={`flex items-center gap-3 p-3.5 rounded-xl border-2 cursor-pointer transition ${
-                  paymentMethod === 'WALLET'
-                    ? 'border-amber-600 bg-amber-50/50'
-                    : 'border-gray-100 hover:border-gray-200 bg-white'
-                }`}
-              >
+                <label
+                  className={`flex items-center gap-3 p-4 rounded-xl border-2 cursor-pointer transition ${
+                    paymentMethod === 'CARD'
+                      ? 'border-amber-600 bg-amber-50/50'
+                      : 'border-gray-100 hover:border-gray-200 bg-white'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="paymentMethod"
+                    value="CARD"
+                    checked={paymentMethod === 'CARD'}
+                    onChange={() => {
+                      setPaymentMethod('CARD');
+                      setAccountNumberError(null);
+                    }}
+                    className="accent-amber-600 w-4 h-4 shrink-0"
+                  />
+                  <div>
+                    <div className="text-sm font-semibold text-gray-800">Thẻ ngân hàng</div>
+                    <div className="text-[11px] text-gray-500">ATM, Visa (8 - 19 số)</div>
+                  </div>
+                </label>
+              </div>
+            </div>
+
+            {/* Nhập số thẻ/ví - Bảo mật cao */}
+            <div className="bg-white p-5 sm:p-6 rounded-2xl border border-gray-100 shadow-xs space-y-3">
+              <h2 className="text-base font-bold text-gray-900">
+                {paymentMethod === 'WALLET' ? 'Số ví điện tử' : 'Số thẻ ngân hàng'}
+              </h2>
+
+              <div>
                 <input
-                  type="radio"
-                  name="paymentMethod"
-                  value="WALLET"
-                  checked={paymentMethod === 'WALLET'}
-                  onChange={() => {
-                    setPaymentMethod('WALLET');
-                    setAccountNumberError(null);
+                  id="accountNumber"
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="off"
+                  value={accountNumber}
+                  onChange={(e) => {
+                    setAccountNumber(e.target.value);
+                    if (accountNumberError) setAccountNumberError(null);
                   }}
-                  className="accent-amber-600 w-4 h-4"
+                  placeholder={
+                    paymentMethod === 'WALLET'
+                      ? 'Nhập số ví điện tử (8 - 19 chữ số)...'
+                      : 'Nhập số thẻ ngân hàng (8 - 19 chữ số)...'
+                  }
+                  className={`w-full px-3.5 py-2.5 rounded-xl border text-sm focus:outline-none ${
+                    accountNumberError
+                      ? 'border-red-400 bg-red-50/20'
+                      : 'border-gray-200 focus:border-amber-600'
+                  }`}
+                  aria-invalid={Boolean(accountNumberError)}
+                  aria-describedby={accountNumberError ? 'acc-error' : undefined}
                 />
-                <div>
-                  <div className="text-sm font-semibold text-gray-800">Ví điện tử</div>
-                  <div className="text-[11px] text-gray-500">Momo, ZaloPay (8 - 19 số)</div>
-                </div>
-              </label>
-
-              <label
-                className={`flex items-center gap-3 p-3.5 rounded-xl border-2 cursor-pointer transition ${
-                  paymentMethod === 'CARD'
-                    ? 'border-amber-600 bg-amber-50/50'
-                    : 'border-gray-100 hover:border-gray-200 bg-white'
-                }`}
-              >
-                <input
-                  type="radio"
-                  name="paymentMethod"
-                  value="CARD"
-                  checked={paymentMethod === 'CARD'}
-                  onChange={() => {
-                    setPaymentMethod('CARD');
-                    setAccountNumberError(null);
-                  }}
-                  className="accent-amber-600 w-4 h-4"
-                />
-                <div>
-                  <div className="text-sm font-semibold text-gray-800">Thẻ ngân hàng</div>
-                  <div className="text-[11px] text-gray-500">ATM, Visa (8 - 19 số)</div>
-                </div>
-              </label>
-            </div>
-          </div>
-
-          {/* Nhập số thẻ/ví - Bảo mật cao */}
-          <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-xs space-y-3">
-            <h2 className="text-base font-bold text-gray-900">
-              {paymentMethod === 'WALLET' ? 'Số ví điện tử' : 'Số thẻ ngân hàng'}
-            </h2>
-
-            <div>
-              <input
-                id="accountNumber"
-                type="text"
-                inputMode="numeric"
-                autoComplete="off"
-                value={accountNumber}
-                onChange={(e) => {
-                  setAccountNumber(e.target.value);
-                  if (accountNumberError) setAccountNumberError(null);
-                }}
-                placeholder={
-                  paymentMethod === 'WALLET'
-                    ? 'Nhập số ví điện tử (8 - 19 chữ số)...'
-                    : 'Nhập số thẻ ngân hàng (8 - 19 chữ số)...'
-                }
-                className={`w-full px-3.5 py-2.5 rounded-xl border text-sm focus:outline-none ${
-                  accountNumberError
-                    ? 'border-red-400 bg-red-50/20'
-                    : 'border-gray-200 focus:border-amber-600'
-                }`}
-                aria-invalid={Boolean(accountNumberError)}
-                aria-describedby={accountNumberError ? 'acc-error' : undefined}
-              />
-              {accountNumberError && (
-                <p id="acc-error" className="text-xs text-red-600 mt-1">
-                  {accountNumberError}
+                {accountNumberError && (
+                  <p id="acc-error" className="text-xs text-red-600 mt-1">
+                    {accountNumberError}
+                  </p>
+                )}
+                <p className="text-[11px] text-gray-400 mt-2">
+                  🔒 Thanh toán mô phỏng, không dùng thẻ thật. Thông tin thanh toán được gửi trực tiếp
+                  và không bao giờ lưu trữ trên thiết bị.
                 </p>
-              )}
-              <p className="text-[11px] text-gray-400 mt-2">
-                🔒 Thanh toán mô phỏng, không dùng thẻ thật. Thông tin thanh toán được gửi trực tiếp
-                và không bao giờ lưu trữ trên thiết bị.
-              </p>
+              </div>
             </div>
           </div>
 
-          {/* Nút hành động */}
-          <div className="space-y-2">
-            <button
-              type="submit"
-              disabled={isSubmittingPayment}
-              className="w-full py-3.5 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-xl text-sm transition shadow-sm disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
-            >
-              {isSubmittingPayment
-                ? 'Đang xử lý giao dịch...'
-                : `Xác nhận thanh toán (${activeAmount.toLocaleString('vi-VN')} đ)`}
-            </button>
+          {/* CỘT PHẢI (5 CỘT): Tóm tắt đơn cần thanh toán & Nút hành động (dính khi cuộn trên màn lớn) */}
+          <div className="lg:col-span-5 lg:sticky lg:top-24 space-y-4">
+            <div className="bg-white p-5 sm:p-6 rounded-2xl border border-gray-100 shadow-xs space-y-4">
+              <h2 className="text-base font-bold text-gray-900 border-b border-gray-100 pb-3">
+                Thông tin thanh toán
+              </h2>
 
-            <button
-              type="button"
-              onClick={() => setStep('order')}
-              disabled={isSubmittingPayment}
-              className="w-full py-2.5 text-xs text-gray-500 hover:text-gray-700 transition"
-            >
-              ← Thay đổi thông tin đơn hàng
-            </button>
+              {/* Thông tin đơn hàng cần thanh toán */}
+              <div className="bg-amber-50/70 border border-amber-200 rounded-xl p-4 space-y-2.5">
+                <div className="flex justify-between items-center text-xs sm:text-sm">
+                  <span className="text-amber-900 font-semibold">Mã đơn hàng:</span>
+                  <span className="font-extrabold text-amber-900 text-base">
+                    {activeOrderNumber !== null ? `#${activeOrderNumber}` : 'Đơn hàng mới'}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center text-xs sm:text-sm">
+                  <span className="text-amber-900 font-semibold">Hình thức nhận:</span>
+                  <span className="font-semibold text-amber-900">
+                    {RECEIVE_TYPE_LABELS[activeReceiveType]}
+                  </span>
+                </div>
+                <div className="flex justify-between items-baseline pt-2 border-t border-amber-200/60">
+                  <span className="text-xs sm:text-sm text-amber-900 font-semibold">Số tiền thanh toán:</span>
+                  <span className="text-xl sm:text-2xl font-black text-amber-600">
+                    {activeAmount.toLocaleString('vi-VN')} đ
+                  </span>
+                </div>
+              </div>
+
+              {/* Nút hành động */}
+              <div className="space-y-2.5 pt-1">
+                <button
+                  type="submit"
+                  disabled={isSubmittingPayment}
+                  className="w-full py-3.5 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-xl text-sm transition shadow-sm disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                >
+                  {isSubmittingPayment
+                    ? 'Đang xử lý giao dịch...'
+                    : `Xác nhận thanh toán (${activeAmount.toLocaleString('vi-VN')} đ)`}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setStep('order')}
+                  disabled={isSubmittingPayment}
+                  className="w-full py-2.5 text-xs text-gray-500 hover:text-gray-700 transition cursor-pointer"
+                >
+                  ← Thay đổi thông tin đơn hàng
+                </button>
+              </div>
+            </div>
           </div>
         </form>
       )}
@@ -890,7 +916,7 @@ export default function CheckoutPage() {
   return (
     <Suspense
       fallback={
-        <div className="py-20 text-center text-gray-500 text-sm">
+        <div className="max-w-md mx-auto py-20 text-center text-gray-500 text-sm">
           Đang tải trang đặt đơn và thanh toán...
         </div>
       }
