@@ -153,9 +153,10 @@ function ProductDetailContent() {
 
   // Tính giá tạm tính phía client
   const isOutOfStock = !product || product.stock <= 0;
-  const currentSizeOption = product?.sizes?.find((s) => s.value === selectedSize);
+  const isCake = product?.category === 'CAKE';
+  const currentSizeOption = !isCake ? product?.sizes?.find((s) => s.value === selectedSize) : undefined;
   const sizeExtraPrice = currentSizeOption ? currentSizeOption.extraPrice : 0;
-  const activeToppings = (product?.toppings && product.toppings.length > 0) ? selectedToppings : [];
+  const activeToppings = !isCake && product?.toppings && product.toppings.length > 0 ? selectedToppings : [];
 
   const estimatedPrice = product
     ? calculatePrice({
@@ -189,9 +190,9 @@ function ProductDetailContent() {
       productId: product.id,
       name: product.name,
       imageUrl: product.imageUrl,
-      size: product.sizes && product.sizes.length > 0 ? selectedSize : undefined,
-      sugarLevel: product.sugarLevels && product.sugarLevels.length > 0 ? selectedSugar : undefined,
-      iceLevel: product.iceLevels && product.iceLevels.length > 0 ? selectedIce : undefined,
+      size: !isCake && product.sizes && product.sizes.length > 0 ? selectedSize : undefined,
+      sugarLevel: !isCake && product.sugarLevels && product.sugarLevels.length > 0 ? selectedSugar : undefined,
+      iceLevel: !isCake && product.iceLevels && product.iceLevels.length > 0 ? selectedIce : undefined,
       toppings: activeToppings,
       note: note.trim(),
       unitPrice,
@@ -256,10 +257,10 @@ function ProductDetailContent() {
     );
   }
 
-  const hasSizes = product.sizes && product.sizes.length > 0;
-  const hasIceLevels = product.iceLevels && product.iceLevels.length > 0;
-  const hasSugarLevels = product.sugarLevels && product.sugarLevels.length > 0;
-  const hasToppings = product.toppings && product.toppings.length > 0;
+  const hasSizes = !isCake && Boolean(product.sizes && product.sizes.length > 0);
+  const hasIceLevels = !isCake && Boolean(product.iceLevels && product.iceLevels.length > 0);
+  const hasSugarLevels = !isCake && Boolean(product.sugarLevels && product.sugarLevels.length > 0);
+  const hasToppings = !isCake && Boolean(product.toppings && product.toppings.length > 0);
 
   return (
     <div className="max-w-5xl mx-auto space-y-6">

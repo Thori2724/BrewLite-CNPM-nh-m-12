@@ -309,7 +309,7 @@ describe('Giao diện và luồng xử lý trang Checkout (/checkout)', () => {
       method: 'WALLET',
       accountLast4: '0000',
       status: 'FAILED',
-      failureReason: 'Tài khoản không đủ số dư (mô phỏng)',
+      failureReason: 'Giao dịch bị từ chối (mô phỏng)',
       createdAt: new Date().toISOString(),
       order: {
         id: 'order-pending-2',
@@ -350,10 +350,11 @@ describe('Giao diện và luồng xử lý trang Checkout (/checkout)', () => {
     const payBtn = screen.getByRole('button', { name: /xác nhận thanh toán/i });
     await user.click(payBtn);
 
-    // Hiện thông báo lỗi lần 1
+    // Hiện thông báo lỗi lần 1 và nút đổi thành "Thử lại thanh toán"
     await waitFor(() => {
       expect(screen.getByText(/lỗi thanh toán:/i)).toBeInTheDocument();
-      expect(screen.getByText(/không đủ số dư/i)).toBeInTheDocument();
+      expect(screen.getByText(/giao dịch bị từ chối/i)).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /thử lại thanh toán/i })).toBeInTheDocument();
     });
 
     expect(ordersService.payOrderApi).toHaveBeenCalledTimes(1);

@@ -3,11 +3,18 @@
 import Link from 'next/link';
 import { useCart } from '../../context/CartContext';
 import { getLineTotal, MAX_ITEM_QUANTITY } from '../../utils/cart';
-import { SUGAR_LABELS, ICE_LABELS, SugarLevel, IceLevel } from '../../services/api';
+import {
+  SIZE_LABELS,
+  SUGAR_LABELS,
+  ICE_LABELS,
+  SizeId,
+  SugarLevel,
+  IceLevel,
+} from '../../services/api';
 
-function getSizeLabel(size?: string): string {
+function getSizeLabel(size?: SizeId): string {
   if (!size) return '';
-  return `Size ${size}`;
+  return SIZE_LABELS[size] || `Size ${size}`;
 }
 
 function getSugarLabel(sugar?: SugarLevel): string {

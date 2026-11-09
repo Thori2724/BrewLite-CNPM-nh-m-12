@@ -125,7 +125,7 @@ describe('Trang Giỏ hàng (CartPage)', () => {
 
     // Món 1: Đồ uống
     expect(screen.getByRole('heading', { level: 2, name: 'Cà phê sữa đá' })).toBeInTheDocument();
-    expect(screen.getByText('Size M')).toBeInTheDocument();
+    expect(screen.getByText('Size M (+6.000đ)')).toBeInTheDocument();
     expect(screen.getByText('50%')).toBeInTheDocument();
     expect(screen.getByText('Đá vừa')).toBeInTheDocument();
     expect(screen.getByText(/Trân châu đen/)).toBeInTheDocument();

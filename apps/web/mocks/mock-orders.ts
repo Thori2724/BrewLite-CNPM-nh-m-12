@@ -336,7 +336,7 @@ export async function mockPayOrder(
       accountLast4: last4,
       amount: order.totalAmount,
       status: 'FAILED',
-      failureReason: 'Tài khoản không đủ số dư (mô phỏng)',
+      failureReason: 'Giao dịch bị từ chối (mô phỏng)',
       createdAt: new Date().toISOString(),
       order: {
         id: order.id,

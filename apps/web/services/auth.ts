@@ -123,6 +123,7 @@ export async function apiFetch<T>(
   if (!response.ok) {
     let errorData: unknown;
     let message: string = AUTH_ERROR_MESSAGES.UNKNOWN_ERROR;
+    let hasServerStringMessage = false;
 
     try {
       errorData = await response.json();
@@ -131,8 +132,9 @@ export async function apiFetch<T>(
         if (Array.isArray(errorObj.message) && errorObj.message.length > 0) {
           // Lỗi validate 400 mảng tiếng Anh -> câu chung tiếng Việt
           message = AUTH_ERROR_MESSAGES.VALIDATION_ERROR;
-        } else if (typeof errorObj.message === 'string') {
+        } else if (typeof errorObj.message === 'string' && errorObj.message.trim()) {
           message = errorObj.message;
+          hasServerStringMessage = true;
         }
       }
     } catch {
@@ -140,7 +142,13 @@ export async function apiFetch<T>(
     }
 
     if (response.status === 409) {
-      message = AUTH_ERROR_MESSAGES.EMAIL_ALREADY_EXISTS;
+      if (endpoint.includes(AUTH_ENDPOINTS.REGISTER)) {
+        if (!hasServerStringMessage || message === 'Email đã tồn tại') {
+          message = AUTH_ERROR_MESSAGES.EMAIL_ALREADY_EXISTS;
+        }
+      } else if (!hasServerStringMessage) {
+        message = '';
+      }
     }
 
     throw new AuthApiError(response.status, message, errorData);

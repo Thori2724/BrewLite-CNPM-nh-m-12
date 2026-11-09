@@ -15,7 +15,14 @@ import {
   OutOfStockDetail,
   ORDER_ERROR_MESSAGES,
 } from '../../services/order-contract';
-import { SUGAR_LABELS, SugarLevel } from '../../services/api';
+import {
+  SUGAR_LABELS,
+  ICE_LABELS,
+  SIZE_LABELS,
+  SugarLevel,
+  IceLevel,
+  SizeId,
+} from '../../services/api';
 import {
   createOrderApi,
   payOrderApi,
@@ -34,19 +41,9 @@ import {
 } from '../../utils/checkout';
 import { getLineTotal } from '../../utils/cart';
 
-function getIceLabel(ice?: string): string {
-  switch (ice) {
-    case 'NONE':
-      return 'Không đá';
-    case 'LOW':
-      return 'Ít đá';
-    case 'NORMAL':
-      return 'Bình thường';
-    case 'FULL':
-      return 'Nhiều đá';
-    default:
-      return ice || '';
-  }
+function getIceLabel(ice?: IceLevel): string {
+  if (!ice) return '';
+  return ICE_LABELS[ice] || ice;
 }
 
 function CheckoutContent() {
@@ -375,7 +372,7 @@ function CheckoutContent() {
         {
           orderId: targetOrderId,
           method: paymentMethod,
-          accountNumber: tempAccount,
+          accountNumber: cleanAccount,
         },
         effectiveKey
       );
@@ -692,13 +689,17 @@ function CheckoutContent() {
                         {item.name} <span className="text-amber-700">x{item.quantity}</span>
                       </div>
                       <div className="text-[11px] text-gray-500 space-x-1">
-                        {item.size && <span>Size {item.size}</span>}
+                        {item.size && (
+                          <span>{SIZE_LABELS[item.size as SizeId] || `Size ${item.size}`}</span>
+                        )}
                         {item.sugarLevel && (
                           <span>
                             • Đường: {SUGAR_LABELS[item.sugarLevel as SugarLevel] || item.sugarLevel}
                           </span>
                         )}
-                        {item.iceLevel && <span>• Đá: {getIceLabel(item.iceLevel)}</span>}
+                        {item.iceLevel && (
+                          <span>• Đá: {getIceLabel(item.iceLevel as IceLevel)}</span>
+                        )}
                       </div>
                       {item.toppings && item.toppings.length > 0 && (
                         <div className="text-[11px] text-gray-400">
@@ -892,7 +893,9 @@ function CheckoutContent() {
                 >
                   {isSubmittingPayment
                     ? 'Đang xử lý giao dịch...'
-                    : `Xác nhận thanh toán (${activeAmount.toLocaleString('vi-VN')} đ)`}
+                    : lastSubmittedPayment?.isFailed || createdOrder?.status === 'PAYMENT_FAILED'
+                      ? `Thử lại thanh toán (${activeAmount.toLocaleString('vi-VN')} đ)`
+                      : `Xác nhận thanh toán (${activeAmount.toLocaleString('vi-VN')} đ)`}
                 </button>
 
                 <button

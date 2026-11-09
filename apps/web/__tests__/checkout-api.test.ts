@@ -153,7 +153,7 @@ describe('Lớp gọi API Đơn hàng và Thanh toán (services/orders.ts)', () 
       const res = await payOrderApi(paymentDto, key);
 
       expect(res.status).toBe('FAILED');
-      expect(res.failureReason).toContain('không đủ số dư');
+      expect(res.failureReason).toBe('Giao dịch bị từ chối (mô phỏng)');
       expect(res.order.status).toBe('PAYMENT_FAILED');
 
       // Đơn hàng ở trạng thái PAYMENT_FAILED (để khách có thể thử lại)
@@ -443,6 +443,41 @@ describe('Lớp gọi API Đơn hàng và Thanh toán (services/orders.ts)', () 
       expect(url).toContain('/orders/server-order-1');
       expect(options.method).toBe('GET');
       expect(res.status).toBe('PAID');
+    });
+
+    it('5.4. createOrderApi nhận 409 từ server thật: giữ nguyên message tiếng Việt và mảng details của server', async () => {
+      const server409Body = {
+        statusCode: 409,
+        message: "Sản phẩm 'Bạc xỉu' không đủ số lượng trong kho",
+        error: 'Conflict',
+        details: [
+          {
+            productId: '11111111-0000-0000-0000-000000000003',
+            name: 'Bạc xỉu',
+            available: 0,
+          },
+        ],
+      };
+
+      globalThis.fetch = vi.fn().mockResolvedValue({
+        ok: false,
+        status: 409,
+        json: async () => server409Body,
+      });
+
+      try {
+        await createOrderApi({
+          receiveType: 'AT_COUNTER',
+          items: [{ productId: '11111111-0000-0000-0000-000000000003', quantity: 1 }],
+        });
+        expect.unreachable('Phải ném lỗi 409');
+      } catch (err) {
+        expect(err).toBeInstanceOf(OrderApiError);
+        const orderErr = err as OrderApiError;
+        expect(orderErr.statusCode).toBe(409);
+        expect(orderErr.message).toBe("Sản phẩm 'Bạc xỉu' không đủ số lượng trong kho");
+        expect(orderErr.details).toEqual(server409Body.details);
+      }
     });
   });
 });
