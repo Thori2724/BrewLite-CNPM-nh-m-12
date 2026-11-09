@@ -96,51 +96,54 @@ export default function MenuPage() {
   };
 
   return (
-    <div className="space-y-4">
-      {/* Ô tìm kiếm */}
-      <div className="relative">
-        <input
-          type="text"
-          placeholder="Tìm kiếm món ăn, đồ uống..."
-          value={searchInput}
-          onChange={(e) => setSearchInput(e.target.value)}
-          className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
-        />
-      </div>
+    <div className="space-y-6">
+      {/* Thanh lọc danh mục và Ô tìm kiếm (cùng một hàng trên desktop) */}
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 bg-white p-4 rounded-2xl border border-gray-100 shadow-xs">
+        {/* Thanh lọc danh mục */}
+        <div className="flex gap-2 overflow-x-auto pb-1 md:pb-0 scrollbar-none">
+          {CATEGORIES.map((cat) => (
+            <button
+              key={cat.id}
+              onClick={() => setSelectedCategory(cat.id)}
+              className={`px-4 py-2 text-xs sm:text-sm font-medium rounded-full whitespace-nowrap transition cursor-pointer ${
+                selectedCategory === cat.id
+                  ? 'bg-amber-600 text-white shadow-sm'
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              }`}
+            >
+              {cat.name}
+            </button>
+          ))}
+        </div>
 
-      {/* Thanh lọc danh mục */}
-      <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-none">
-        {CATEGORIES.map((cat) => (
-          <button
-            key={cat.id}
-            onClick={() => setSelectedCategory(cat.id)}
-            className={`px-3 py-1.5 text-xs font-medium rounded-full whitespace-nowrap transition ${
-              selectedCategory === cat.id
-                ? 'bg-amber-600 text-white shadow-sm'
-                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-            }`}
-          >
-            {cat.name}
-          </button>
-        ))}
+        {/* Ô tìm kiếm */}
+        <div className="relative w-full md:w-72 lg:w-80 shrink-0">
+          <input
+            type="text"
+            placeholder="Tìm kiếm món ăn, đồ uống..."
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+          />
+        </div>
       </div>
 
       {/* Trạng thái Loading (Đang tải) */}
       {loading && (
-        <div className="text-center py-12 text-gray-500 text-sm">
-          <div className="animate-spin inline-block w-6 h-6 border-2 border-amber-600 border-t-transparent rounded-full mb-2" />
+        <div className="max-w-md mx-auto text-center py-16 text-gray-500 text-sm">
+          <div className="animate-spin inline-block w-7 h-7 border-2 border-amber-600 border-t-transparent rounded-full mb-3" />
           <p>Đang tải danh sách món...</p>
         </div>
       )}
 
       {/* Trạng thái Error (Lỗi) */}
       {error && !loading && (
-        <div className="bg-red-50 text-red-600 p-4 rounded-xl text-center text-sm space-y-3">
+        <div className="max-w-md mx-auto bg-red-50 border border-red-100 text-red-600 p-6 rounded-2xl text-center text-sm space-y-3">
           <p>{error}</p>
           <button
             type="button"
             onClick={handleRetry}
-            className="px-4 py-1.5 bg-red-600 text-white text-xs font-medium rounded-lg hover:bg-red-700 transition"
+            className="px-5 py-2 bg-red-600 text-white text-xs sm:text-sm font-medium rounded-xl hover:bg-red-700 transition cursor-pointer"
           >
             Thử lại
           </button>
@@ -149,15 +152,15 @@ export default function MenuPage() {
 
       {/* Trạng thái Empty (Không có sản phẩm) */}
       {!loading && !error && products.length === 0 && (
-        <div className="text-center py-12 text-gray-400 text-sm">
-          <span className="text-3xl block mb-2">🔍</span>
+        <div className="max-w-md mx-auto bg-white border border-gray-100 rounded-2xl text-center py-14 px-4 text-gray-400 text-sm shadow-xs">
+          <span className="text-4xl block mb-2">🔍</span>
           <p>Không tìm thấy món phù hợp</p>
         </div>
       )}
 
-      {/* Lưới hiển thị sản phẩm */}
+      {/* Lưới hiển thị sản phẩm: 2 cột điện thoại, 3 cột tablet, 4 cột desktop */}
       {!loading && !error && products.length > 0 && (
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-5">
           {products.map((product) => (
             <ProductCard key={product.id} product={product} />
           ))}
