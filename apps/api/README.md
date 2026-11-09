@@ -57,6 +57,32 @@ $ npm run test:e2e
 $ npm run test:cov
 ```
 
+## Endpoints Sản phẩm (Sprint 1)
+
+- `GET /products`: Lấy danh sách món đang hiển thị (`isVisible = true`), sắp xếp theo `category` rồi `name`. Hỗ trợ query tùy chọn `category` (`TEA`, `COFFEE`, `MILK_TEA`, `CAKE`) và `q` (tìm theo tên không phân biệt hoa/thường, có dấu).
+- `GET /products/:id`: Xem chi tiết một sản phẩm theo UUID kèm cấu hình `sizes`, `sugarLevels`, `iceLevels`, `toppings` (món `CAKE` trả 4 mảng rỗng `[]`).
+
+## Logic nghiệp vụ Đơn hàng (`src/orders`, chưa mở endpoint)
+
+- `validateTransition(from, to)` (`order-status.ts`): Kiểm tra chuyển đổi trạng thái đơn hàng theo máy trạng thái hợp đồng; ném `409 Conflict` nếu chuyển không hợp lệ.
+- `calculateOrderTotal(items)` (`order-pricing.ts`): Tính `unitPrice`, `lineTotal` từng dòng và `totalAmount` toàn đơn (dùng hằng số phụ thu size từ `products.constants.ts`).
+
+Chạy unit test trên PowerShell (từ thư mục `apps/api`):
+```powershell
+npm.cmd run test
+```
+
+## Database Migration (Prisma)
+
+- Chạy migration ở môi trường dev (từ `apps/api`): `npm.cmd run prisma -- migrate dev` (hoặc `npx.cmd prisma migrate dev` / `npx.cmd prisma migrate deploy` nếu đã cấu hình biến `DATABASE_URL` trong `apps/api/.env`).
+- **Lưu ý khi pull code mới về:** Bắt buộc chạy `npm.cmd run prisma -- migrate dev` (hoặc `npx.cmd prisma migrate deploy`) và `npx.cmd prisma generate` trong thư mục `apps/api` để cập nhật 6 bảng mới (`User`, `Topping`, `Order`, `OrderItem`, `OrderItemTopping`, `Payment`) vào database.
+
+## Endpoints Xác thực (Sprint 2 - Việc 4b)
+
+- Biến môi trường bắt buộc trong `.env`: `JWT_SECRET=<chuỗi-bí-mật>` (nếu thiếu ứng dụng sẽ báo lỗi ngay khi khởi động).
+- `POST /auth/register`: Đăng ký tài khoản khách hàng (`CUSTOMER`), băm mật khẩu bcrypt (10 vòng), chuẩn hóa email chữ thường. Trả `201 Created` gồm `{ id, email, displayName, role }`; trùng email trả `409 Conflict` (`"Email này đã được sử dụng"`).
+- `POST /auth/login`: Đăng nhập bằng `email` và `password`. Trả `200 OK` gồm `{ accessToken, user: { id, email, displayName, role } }` (JWT có hạn 24 giờ); sai email hoặc mật khẩu trả `401 Unauthorized` (`"Email hoặc mật khẩu không chính xác"`).
+
 ## Deployment
 
 When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
