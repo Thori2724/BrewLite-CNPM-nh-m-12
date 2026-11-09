@@ -36,6 +36,15 @@ Mở trình duyệt truy cập: [http://localhost:3000](http://localhost:3000)
 - **Trang Đăng nhập / Đăng ký ([/login](http://localhost:3000/login), [/register](http://localhost:3000/register)):** Đăng ký tài khoản khách hàng mới, đăng nhập nhận JWT Token lưu an toàn vào `localStorage`. Trên Header: hiển thị tên người dùng và nút "Đăng xuất" khi đã đăng nhập.
 - **Trang Đặt đơn & Thanh toán ([/checkout](http://localhost:3000/checkout)):** Bắt buộc đăng nhập (bảo vệ bởi `useRequireAuth`), chọn hình thức nhận (`AT_COUNTER` / `TAKE_AWAY`), đặt đơn khởi tạo trạng thái `PENDING` và thanh toán qua cổng mô phỏng (`POST /payments`). Khôi phục đơn khi F5, kiểm soát Idempotency chặt chẽ.
 
+### Bố cục giao diện Desktop-First & Responsive:
+- **Khung trang chung (`app/layout.tsx`):** Bỏ giới hạn `max-w-md` kiểu điện thoại; Header trải toàn chiều rộng màn hình, nội dung chính căn giữa trong container `max-w-6xl` (`px-4 sm:px-6 lg:px-8`). Thanh điều hướng dưới cùng kiểu điện thoại đã được lược bỏ hoàn toàn (kèm ghi chú `TODO: Task 18 sẽ thêm liên kết "Đơn hàng" vào header`); liên kết chữ `Menu` trên Header tự động ẩn ở màn hình nhỏ (`< 640px`, breakpoint `sm`) để giữ gọn trên điện thoại 375px.
+- **Lưới Menu (`/`):** Thanh lọc danh mục và ô tìm kiếm nằm trên cùng một hàng từ breakpoint `md` (`>= 768px`). Lưới sản phẩm hiển thị 2 cột trên điện thoại (`grid-cols-2`), 3 cột trên tablet (`md:grid-cols-3`) và 4 cột trên desktop (`lg:grid-cols-4`, `>= 1024px`).
+- **Các trang chia bố cục 2 cột trên Desktop:**
+  - **Chi tiết món (`/menu/:id`):** Chia 2 cột từ breakpoint `md` (`md:grid-cols-12`): cột trái (`md:col-span-5`, dính `md:sticky`) hiển thị ảnh, tên và giá gốc; cột phải (`md:col-span-7`) hiển thị các tùy chọn, số lượng, giá tạm tính và nút Thêm vào giỏ.
+  - **Giỏ hàng (`/cart`):** Chia 2 cột từ breakpoint `lg` (`lg:grid-cols-12`): cột trái (`lg:col-span-8`) là danh sách dòng món; cột phải (`lg:col-span-4`, dính `lg:sticky`) là khung tóm tắt tổng tiền và nút Tiến hành đặt đơn.
+  - **Đặt đơn & Thanh toán (`/checkout`):** Chia 2 cột từ breakpoint `lg` (`lg:grid-cols-12`) ở cả bước Đặt đơn và bước Thanh toán: cột trái (`lg:col-span-7`) là form chọn hình thức/thanh toán; cột phải (`lg:col-span-5`, dính `lg:sticky`) là tóm tắt đơn hàng và nút xác nhận.
+- **Các trang và trạng thái căn giữa gọn (`max-w-md` / `max-w-lg`):** Trang Đăng nhập (`/login`), Đăng ký (`/register`), màn hình Thanh toán thành công, giỏ hàng trống và các trạng thái đang tải / báo lỗi / không tìm thấy món đều đặt trong thẻ căn giữa vừa phải, không bị kéo dãn toàn màn hình.
+
 ---
 
 ## 3. Cấu hình biến môi trường & Bật/Tắt Mock

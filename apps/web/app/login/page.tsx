@@ -86,7 +86,7 @@ function LoginForm() {
   // Tránh nhấp nháy form nếu đã đăng nhập và đang chuyển hướng
   if (!isHydrated || (isHydrated && isAuthenticated)) {
     return (
-      <div className="py-16 text-center text-gray-500 text-sm">
+      <div className="max-w-md mx-auto py-16 text-center text-gray-500 text-sm">
         <div className="animate-spin inline-block w-6 h-6 border-2 border-amber-600 border-t-transparent rounded-full mb-2"></div>
         <p>Đang kiểm tra trạng thái đăng nhập...</p>
       </div>
@@ -94,7 +94,7 @@ function LoginForm() {
   }
 
   return (
-    <div className="max-w-md mx-auto py-4 space-y-6">
+    <div className="max-w-md w-full mx-auto my-6 sm:my-10 bg-white p-6 sm:p-8 rounded-2xl border border-gray-100 shadow-xs space-y-6">
       {/* Tiêu đề */}
       <div className="text-center space-y-1">
         <h1 className="text-2xl font-bold text-gray-900">Đăng nhập tài khoản</h1>
@@ -135,7 +135,7 @@ function LoginForm() {
       )}
 
       {/* Form đăng nhập */}
-      <form onSubmit={handleSubmit} noValidate className="space-y-4 bg-white">
+      <form onSubmit={handleSubmit} noValidate className="space-y-4">
         {/* Trường Email */}
         <div className="space-y-1">
           <label htmlFor="email" className="block text-sm font-medium text-gray-700">
@@ -192,7 +192,7 @@ function LoginForm() {
               type="button"
               onClick={() => setShowPassword(!showPassword)}
               aria-label={showPassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-1 text-sm font-medium"
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-1 text-sm font-medium cursor-pointer"
             >
               {showPassword ? 'Ẩn' : 'Hiện'}
             </button>
@@ -219,7 +219,7 @@ function LoginForm() {
       </form>
 
       {/* Điều hướng sang đăng ký */}
-      <div className="text-center text-xs text-gray-500 pt-2 border-t border-gray-100">
+      <div className="text-center text-xs sm:text-sm text-gray-500 pt-3 border-t border-gray-100">
         Chưa có tài khoản?{' '}
         <Link
           href={`/register${redirectParam ? `?redirect=${encodeURIComponent(targetRedirect)}` : ''}`}
@@ -236,7 +236,7 @@ export default function LoginPage() {
   return (
     <Suspense
       fallback={
-        <div className="py-16 text-center text-gray-500 text-sm">
+        <div className="max-w-md mx-auto py-16 text-center text-gray-500 text-sm">
           <div className="animate-spin inline-block w-6 h-6 border-2 border-amber-600 border-t-transparent rounded-full mb-2"></div>
           <p>Đang tải trang đăng nhập...</p>
         </div>
