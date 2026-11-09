@@ -1,15 +1,11 @@
 /**
- * HỢP ĐỒNG TẠM: ĐẶT ĐƠN HÀNG VÀ THANH TOÁN (ORDERS & PAYMENTS)
- *
- * LƯU Ý QUAN TRỌNG:
- * Đây là hợp đồng API tạm thời do phía Frontend đề xuất trong khi chờ Backend hoàn thiện.
- * Toàn bộ tên endpoint, kiểu dữ liệu, enum trạng thái và thông báo lỗi được gom vào file này.
- * Khi Backend chốt hợp đồng chính thức, chỉ cần chỉnh sửa tại file này.
+ * HỢP ĐỒNG API: ĐẶT ĐƠN HÀNG VÀ THANH TOÁN (ORDERS & PAYMENTS)
+ * Phiên bản chính thức chuẩn hóa theo docs/api-contract.md (Sprint 2)
  */
 
 import { IceLevel, SizeId, SugarLevel } from './api';
 
-// 1. Enum Hình thức nhận hàng (theo class diagram ReceiveType)
+// 1. Enum Hình thức nhận hàng (ReceiveType)
 export type ReceiveType = 'AT_COUNTER' | 'TAKE_AWAY';
 
 export const RECEIVE_TYPE_LABELS: Record<ReceiveType, string> = {
@@ -17,135 +13,161 @@ export const RECEIVE_TYPE_LABELS: Record<ReceiveType, string> = {
   TAKE_AWAY: 'Mang đi',
 };
 
-// 2. Enum Phương thức thanh toán (theo class diagram PaymentMethod)
-export type PaymentMethod = 'E_WALLET' | 'BANK_CARD';
+// 2. Enum Phương thức thanh toán (PaymentMethod)
+export type PaymentMethod = 'WALLET' | 'CARD';
 
 export const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
-  E_WALLET: 'Ví điện tử',
-  BANK_CARD: 'Thẻ ngân hàng',
+  WALLET: 'Ví điện tử',
+  CARD: 'Thẻ ngân hàng',
 };
 
-// 3. Enum Trạng thái đơn hàng (theo class diagram OrderStatus)
+// 3. Enum Trạng thái đơn hàng (OrderStatus)
 export type OrderStatus =
   | 'PENDING'
-  | 'PAYMENT_FAILED'
   | 'PAID'
   | 'PREPARING'
   | 'READY'
   | 'COMPLETED'
+  | 'PAYMENT_FAILED'
   | 'CANCELLED';
 
-// 4. Enum Trạng thái thanh toán (theo class diagram PaymentStatus)
+export const ORDER_STATUS_LABELS: Record<OrderStatus, string> = {
+  PENDING: 'Chờ thanh toán',
+  PAID: 'Đã thanh toán',
+  PREPARING: 'Đang pha chế',
+  READY: 'Sẵn sàng nhận',
+  COMPLETED: 'Hoàn thành',
+  PAYMENT_FAILED: 'Thanh toán lỗi',
+  CANCELLED: 'Đã hủy',
+};
+
+// 4. Enum Trạng thái thanh toán (PaymentStatus)
 export type PaymentStatus = 'PENDING' | 'SUCCESS' | 'FAILED';
 
-// 5. DTO từng món trong đơn khi gửi lên server (TUYỆT ĐỐI KHÔNG GỬI GIÁ TIỀN TỪ CLIENT)
+// 5. DTO từng món khi gửi lên POST /orders
+// TUYỆT ĐỐI KHÔNG GỬI GIÁ TIỀN (unitPrice, lineTotal, totalAmount) TỪ CLIENT
 export interface CreateOrderItemDto {
   productId: string;
-  size?: SizeId;
-  sugarLevel?: SugarLevel;
-  iceLevel?: IceLevel | string;
-  toppingIds?: string[];
-  note?: string;
-  quantity: number;
+  quantity: number; // 1..10
+  size?: SizeId; // Món nước: S, M, L. Món bánh: không gửi
+  sugarLevel?: SugarLevel; // Món nước: P0..P100. Món bánh: không gửi
+  iceLevel?: IceLevel; // Món nước: NONE..FULL. Món bánh: không gửi
+  toppingIds?: string[]; // Món nước: tối đa 3 UUID. Món bánh: không gửi
+  note?: string; // Tối đa 200 ký tự
 }
 
-// 6. DTO tạo đơn hàng
+// 6. DTO tạo đơn hàng POST /orders
+// KHÔNG có customerName và customerPhone
 export interface CreateOrderDto {
-  receiveType: ReceiveType;
-  items: CreateOrderItemDto[];
-  note?: string;
-
-  // =========================================================================
-  // [CHỜ XÁC NHẬN TỪ BACKEND]:
-  // Hai trường dưới đây dùng cho form giao diện nhận nước tại quầy/mang đi.
-  // Nếu Backend không lưu vào Order, có thể dễ dàng bỏ qua hoặc chuyển vào note.
-  // =========================================================================
-  customerName?: string;
-  customerPhone?: string;
+  receiveType?: ReceiveType; // Mặc định: AT_COUNTER
+  note?: string; // Tối đa 200 ký tự
+  items: CreateOrderItemDto[]; // 1..20 dòng món
 }
 
-// 7. Dữ liệu đơn hàng chi tiết trả về từ server
+// 7. Dữ liệu chi tiết topping trong đơn hàng
+export interface OrderItemToppingResponse {
+  id: string;
+  name: string;
+  price: number;
+}
+
+// 8. Dữ liệu chi tiết từng món trong đơn hàng trả về từ server
 export interface OrderItemResponse {
   id?: string;
   productId: string;
   productName: string;
-  unitPrice: number;
+  size?: SizeId | null;
+  sugarLevel?: SugarLevel | null;
+  iceLevel?: IceLevel | null;
   quantity: number;
-  size?: SizeId;
-  sugarLevel?: SugarLevel;
-  iceLevel?: IceLevel | string;
-  toppings?: Array<{ id: string; name: string; price: number }>;
-  note?: string;
+  unitPrice: number;
   lineTotal: number;
+  note?: string | null;
+  toppings?: OrderItemToppingResponse[];
 }
 
+// 9. Lịch sử thanh toán kèm theo đơn
+export interface PaymentDetailResponse {
+  id: string;
+  method: PaymentMethod;
+  accountLast4: string;
+  amount?: number;
+  status: PaymentStatus;
+  failureReason?: string | null;
+  createdAt: string;
+}
+
+// 10. Dữ liệu đơn hàng chi tiết trả về từ POST /orders, GET /orders/:id, GET /orders/me
 export interface OrderResponse {
   id: string;
-  orderNumber: string;
+  orderNumber: number; // SỐ NGUYÊN (ví dụ: 1001) -> UI hiển thị `#${orderNumber}`
   status: OrderStatus;
   receiveType: ReceiveType;
+  note?: string | null;
   totalAmount: number;
-  subtotal?: number;
-  discountAmount?: number;
-  note?: string;
-  customerName?: string;
-  customerPhone?: string;
-  expiresAt: string; // ISO 8601 string
   createdAt: string;
   items: OrderItemResponse[];
+  payments?: PaymentDetailResponse[];
 }
 
-// 8. DTO yêu cầu thanh toán
+// 11. DTO thanh toán gửi lên POST /payments
 export interface PaymentDto {
+  orderId: string;
   method: PaymentMethod;
-  accountNumber: string;
-  cardHolderName?: string;
+  accountNumber: string; // Chỉ gồm chữ số, 8..19 ký tự
 }
 
-// 9. Dữ liệu kết quả thanh toán trả về
+// 12. Dữ liệu kết quả thanh toán trả về từ POST /payments (mã 201 hoặc 200)
 export interface PaymentResponse {
   id: string;
   orderId: string;
-  amount: number;
   method: PaymentMethod;
-  status: PaymentStatus;
-  orderStatus: OrderStatus;
-  idempotencyKey: string;
-  gatewayRef?: string;
+  accountLast4: string;
+  amount: number;
+  status: PaymentStatus; // 'SUCCESS' hoặc 'FAILED'
+  failureReason?: string | null;
   createdAt: string;
-  message?: string;
+  order: {
+    id: string;
+    orderNumber: number;
+    status: OrderStatus;
+  };
 }
 
-// 10. Định dạng lỗi server trả về
+// 13. Chi tiết món thiếu khi lỗi 409 hết hàng
+export interface OutOfStockDetail {
+  productId: string;
+  name: string;
+  available: number;
+}
+
+// 14. Định dạng lỗi server trả về
 export interface OrderErrorResponse {
   statusCode: number;
   message: string | string[];
   error?: string;
-  outOfStockItems?: string[];
+  details?: OutOfStockDetail[];
 }
 
-// 11. Danh sách endpoint API
+// 15. Danh sách endpoint API chuẩn theo hợp đồng
 export const ORDER_ENDPOINTS = {
   CREATE: '/orders',
-  PAY: (orderId: string) => `/orders/${orderId}/payments`,
-  // [CHỜ XÁC NHẬN TỪ BACKEND]: Endpoint tra cứu trạng thái đơn chờ khi mở lại trang
+  PAY: '/payments', // POST /payments trực tiếp
   GET_BY_ID: (orderId: string) => `/orders/${orderId}`,
+  MY_ORDERS: '/orders/me',
 } as const;
 
-// 12. Danh sách thông báo lỗi tiếng Việt chuẩn hóa
+// 16. Danh sách thông báo lỗi tiếng Việt chuẩn hóa
 export const ORDER_ERROR_MESSAGES = {
   CART_EMPTY: 'Giỏ hàng của bạn đang trống. Vui lòng chọn món trước khi đặt đơn.',
-  PHONE_REQUIRED: 'Vui lòng nhập số điện thoại nhận hàng.',
-  PHONE_INVALID: 'Số điện thoại không hợp lệ (cần 10 chữ số, ví dụ 0901234567).',
   ACCOUNT_NUMBER_REQUIRED: 'Vui lòng nhập số thẻ hoặc số ví.',
-  ACCOUNT_NUMBER_INVALID_WALLET: 'Số ví điện tử không hợp lệ (cần 10 chữ số).',
-  ACCOUNT_NUMBER_INVALID_CARD: 'Số thẻ ngân hàng không hợp lệ (cần 16 chữ số).',
-  OUT_OF_STOCK: 'Một số món trong giỏ hàng đã hết hàng.',
-  PAYMENT_REJECTED: 'Thanh toán không thành công. Thẻ hoặc ví bị từ chối (tài khoản không đủ số dư hoặc thông tin không hợp lệ).',
-  ORDER_EXPIRED: 'Đơn hàng đã hết hạn thanh toán (quá thời hạn 15 phút).',
+  ACCOUNT_NUMBER_INVALID: 'Số tài khoản không hợp lệ (chỉ gồm 8 đến 19 chữ số).',
+  OUT_OF_STOCK: 'Một số món trong giỏ hàng không đủ số lượng trong kho.',
+  PAYMENT_REJECTED: 'Giao dịch bị từ chối (mô phỏng).',
+  ORDER_NOT_PAYABLE: 'Đơn hàng không ở trạng thái cho phép thanh toán.',
   IDEMPOTENCY_MISMATCH: 'Yêu cầu thanh toán không khớp với dữ liệu giao dịch trước đó. Vui lòng thử lại.',
   NETWORK_TIMEOUT: 'Yêu cầu bị quá thời gian chờ (timeout). Vui lòng thử lại.',
   NETWORK_ERROR: 'Không thể kết nối đến máy chủ. Vui lòng kiểm tra đường truyền và thử lại.',
   UNKNOWN_ERROR: 'Đã có lỗi xảy ra trong quá trình xử lý đơn hàng. Vui lòng thử lại.',
+  ORDER_NOT_FOUND: 'Không tìm thấy đơn hàng.',
 } as const;
-

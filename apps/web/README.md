@@ -32,9 +32,9 @@ Mở trình duyệt truy cập: [http://localhost:3000](http://localhost:3000)
 
 - **Trang Menu ([/](http://localhost:3000)):** Xem danh sách đồ uống và món bánh, lọc theo danh mục (`TEA`, `COFFEE`, `MILK_TEA`, `CAKE`), tìm kiếm món theo tên (debounce 300ms). Món có `stock = 0` hiển thị nhãn "Hết hàng" và khóa nút thêm.
 - **Trang Chi tiết món ([/menu/:id](http://localhost:3000/menu/11111111-0000-0000-0000-000000000001)):** Render động các tùy chọn từ server (`sizes`, `sugarLevels`, `iceLevels`, `toppings`). Tự động ẩn các phần tùy chọn có mảng rỗng (ví dụ món bánh `CAKE`). Lựa chọn mặc định: Size S, Đường P100, Đá NORMAL. Giới hạn tối đa 3 loại topping không trùng, số lượng 1..10. Món hết hàng (`stock = 0`) khóa nút thêm vào giỏ.
-- **Trang Giỏ hàng ([/cart](http://localhost:3000/cart)):** Quản lý các món đã chọn, tăng/giảm số lượng (tối đa 10 ly/món), xóa từng món hoặc xóa tất cả, tính tổng tiền tạm tính.
+- **Trang Giỏ hàng ([/cart](http://localhost:3000/cart)):** Quản lý các món đã chọn, tăng/giảm số lượng (tối đa 10 ly/món), xóa từng món hoặc xóa tất cả, tính tổng tiền tạm tính. Giới hạn tối đa 20 dòng món khác nhau.
 - **Trang Đăng nhập / Đăng ký ([/login](http://localhost:3000/login), [/register](http://localhost:3000/register)):** Đăng ký tài khoản khách hàng mới, đăng nhập nhận JWT Token lưu an toàn vào `localStorage`. Trên Header: hiển thị tên người dùng và nút "Đăng xuất" khi đã đăng nhập.
-- **Trang Đặt đơn & Thanh toán ([/checkout](http://localhost:3000/checkout)):** Bắt buộc đăng nhập (bảo vệ bởi `useRequireAuth`), chọn hình thức nhận (Tại quầy / Mang đi), đặt đơn khởi tạo trạng thái `PENDING` và thanh toán qua cổng mô phỏng (Ví điện tử / Thẻ ngân hàng).
+- **Trang Đặt đơn & Thanh toán ([/checkout](http://localhost:3000/checkout)):** Bắt buộc đăng nhập (bảo vệ bởi `useRequireAuth`), chọn hình thức nhận (`AT_COUNTER` / `TAKE_AWAY`), đặt đơn khởi tạo trạng thái `PENDING` và thanh toán qua cổng mô phỏng (`POST /payments`). Khôi phục đơn khi F5, kiểm soát Idempotency chặt chẽ.
 
 ---
 
@@ -70,6 +70,21 @@ NEXT_PUBLIC_USE_MOCK_ORDERS=true
   - `category`: `TEA`, `COFFEE`, `MILK_TEA`, `CAKE`. Khi chọn "Tất cả", ứng dụng không truyền tham số `category`.
   - `q`: chuỗi từ khóa tìm kiếm được debounce 300ms bằng `setTimeout` và mã hóa qua `encodeURIComponent`.
 - Xử lý lỗi: lỗi 400 và 404 hiển thị thông báo lỗi bằng chuỗi tiếng Việt nhận từ server.
+
+### Cơ chế kết nối API Đơn hàng & Thanh toán (POST /orders & POST /payments & GET /orders/:id):
+- Khi `NEXT_PUBLIC_USE_MOCK_ORDERS=true`:
+  - Tạo đơn và lưu mock DB `brewlite_mock_orders_db_v2`, bộ đếm `lastOrderNumber` được lưu trữ để không bị trùng sau F5.
+  - Tài khoản thử nghiệm:
+    * 8..19 chữ số thông thường (ví dụ: `12345678`, `9704123456789012`): Thanh toán THÀNH CÔNG (`status: 'SUCCESS'`).
+    * Số kết thúc `0000` (ví dụ: `12340000`, `9704000000000000`): Thanh toán THẤT BẠI (`status: 'FAILED'`, lý do không đủ số dư).
+    * `9999999991`: Giả lập timeout.
+    * `9999999992`: Giả lập lỗi mất mạng.
+    * Ghi chú đơn chứa `hethang`: Giả lập lỗi hết hàng `409 Conflict` (trả về mảng `details`).
+- Khi `NEXT_PUBLIC_USE_MOCK_ORDERS=false`:
+  - Gọi fetch thật tới `NEXT_PUBLIC_API_URL`:
+    * `POST /orders` với body `{ receiveType, note, items }` (tuyệt đối không gửi giá, không gửi thông tin người nhận).
+    * `POST /payments` kèm header `Idempotency-Key` (8..100 ký tự) và body `{ orderId, method, accountNumber }`.
+    * `GET /orders/:id` tra cứu trạng thái đơn khi tải lại trang.
 
 ---
 
@@ -113,20 +128,22 @@ NEXT_PUBLIC_USE_MOCK_ORDERS=true
 
 | Khóa lưu trữ | Mục đích |
 |---|---|
-| `brewlite_cart_v2` | Lưu trữ danh sách các món trong giỏ hàng phía Client. Tối đa 10 ly/món, giỏ chứa tối đa 20 dòng món khác nhau. Tự động dọn dẹp khóa cũ `brewlite_cart_v1` nếu tồn tại. Độc lập với phiên đăng nhập (đăng xuất không mất giỏ). |
+| `brewlite_cart_v2` | Lưu trữ danh sách các món trong giỏ hàng phía Client. Tối đa 10 ly/món, giỏ chứa tối đa 20 dòng món khác nhau. Tự động dọn dẹp khóa cũ `brewlite_cart_v1` nếu tồn tại. Độc lập với phiên đăng nhập (đăng xuất không mất giỏ). Chỉ xóa sạch khi thanh toán thành công (`status: 'SUCCESS'`). |
 | `brewlite_auth_v2` | Lưu trữ JWT token (`accessToken`) và thông tin người dùng cơ bản (`id`, `email`, `displayName`, `role`). Tuyệt đối không lưu mật khẩu. Tự động dọn dẹp khóa cũ `brewlite_auth_v1` nếu tồn tại. |
-| `brewlite_pending_order_v1` | Lưu thông tin đơn hàng đang chờ thanh toán (`orderId`, `orderNumber`, `totalAmount`, `idempotencyKey`). Tuyệt đối không lưu số thẻ/ví. *(Sẽ nâng lên `v2` ở Phần E)* |
-| `brewlite_mock_orders_db_v1` | Dữ liệu cơ sở dữ liệu giả lập (chỉ hoạt động khi `NEXT_PUBLIC_USE_MOCK_ORDERS=true`) để dữ liệu sống qua F5. *(Sẽ nâng lên `v2` ở Phần E)* |
+| `brewlite_pending_order_v2` | Lưu thông tin đơn hàng đang chờ thanh toán (`orderId`, `orderNumber` dạng số nguyên, `totalAmount`, `receiveType`, `idempotencyKey`, `method`, `createdAt`, `itemCount`). Tuyệt đối không lưu số thẻ/ví, không lưu `expiresAt`. Tự động dọn dẹp khóa cũ `brewlite_pending_order_v1` nếu tồn tại. |
+| `brewlite_mock_orders_db_v2` | Dữ liệu cơ sở dữ liệu giả lập (chỉ hoạt động khi `NEXT_PUBLIC_USE_MOCK_ORDERS=true`), lưu danh sách đơn hàng, kết quả thanh toán theo `idempotencyKey` và bộ đếm `lastOrderNumber` để không trùng mã sau F5. Tự động dọn dẹp khóa cũ `brewlite_mock_orders_db_v1`. |
 
 ---
 
 ## 6. Quy tắc Kiểm soát Idempotency & Bảo mật Thanh toán
 
 - **Quy tắc Idempotency-Key (UUID v4):**
-  - Mỗi giao dịch thanh toán sinh một khóa định danh duy nhất gửi qua header `Idempotency-Key`.
-  - **Kết quả chưa rõ ràng** (mất mạng, timeout, gửi lại): BẮT BUỘC **GIỮ NGUYÊN** key cũ để tránh trừ tiền 2 lần.
-  - **Thông tin thanh toán thay đổi** (đổi Ví/Thẻ, đổi số tài khoản) hoặc **bị từ chối rõ ràng** (`PAYMENT_FAILED`): BẮT BUỘC **ĐỔI SANG KEY MỚI** để thử lại.
-  - Phía server/mock: Nếu gửi lại cùng key nhưng khác dữ liệu thanh toán, server từ chối bằng lỗi `409 Conflict`.
+  - Mỗi giao dịch thanh toán sinh một khóa định danh duy nhất (8..100 ký tự) gửi qua header `Idempotency-Key`.
+  - **Kết quả chưa rõ ràng** (mất mạng, timeout, lỗi 5xx): BẮT BUỘC **GIỮ NGUYÊN** key cũ và đơn chờ để khách bấm thử lại an toàn, tránh trừ tiền 2 lần.
+  - **Thông tin thanh toán thay đổi** (đổi phương thức Ví/Thẻ, đổi số tài khoản) hoặc **thất bại rõ ràng** (`status: 'FAILED'`): BẮT BUỘC **ĐỔI SANG KEY MỚI** cho lượt thử lại.
+  - Phía server/mock:
+    * Cùng key + cùng `orderId`: luôn trả lại kết quả giao dịch cũ với mã HTTP 200, bất kể body.
+    * Cùng key + khác `orderId`: server từ chối bằng lỗi `409 Conflict`.
 - **Bảo mật thông tin thẻ / ví:**
   - Ô nhập số thẻ / ví có thuộc tính `autoComplete="off"`.
   - Số thẻ / ví chỉ tồn tại tạm thời trong state của form khi người dùng đang nhập; xóa sạch khỏi state ngay khi gửi API hoặc khi unmount component.

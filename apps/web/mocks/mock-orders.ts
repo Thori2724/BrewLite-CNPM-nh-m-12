@@ -1,7 +1,9 @@
 import {
   CreateOrderDto,
   ORDER_ERROR_MESSAGES,
+  OrderItemResponse,
   OrderResponse,
+  OutOfStockDetail,
   PaymentDto,
   PaymentResponse,
 } from '../services/order-contract';
@@ -19,46 +21,41 @@ export interface MockOrderRecord extends OrderResponse {
   userId?: string;
 }
 
-export const MOCK_ORDERS_STORAGE_KEY = 'brewlite_mock_orders_db_v1';
-
-export interface StoredMockPayload {
-  orderId: string;
-  method: string;
-  last4: string;
-}
+export const MOCK_ORDERS_STORAGE_KEY = 'brewlite_mock_orders_db_v2';
+const LEGACY_MOCK_ORDERS_STORAGE_KEY = 'brewlite_mock_orders_db_v1';
 
 export interface StoredMockDatabase {
+  lastOrderNumber: number;
   orders: Record<string, MockOrderRecord>;
   payments: Record<string, PaymentResponse>;
-  payloads: Record<string, StoredMockPayload>;
 }
 
+let mockLastOrderNumber = 1000;
 export const mockOrdersDatabase: Map<string, MockOrderRecord> = new Map();
 export const mockPaymentsDatabase: Map<string, PaymentResponse> = new Map();
-export const mockPaymentsPayloadDatabase: Map<string, StoredMockPayload> = new Map();
 
 /**
  * Nạp dữ liệu mock từ localStorage (phục vụ F5 / reload trang khi bật mock)
  */
 export function loadMockDatabaseFromStorage(): void {
-  if (!isMockOrdersActive() || typeof window === 'undefined') return;
+  if (typeof window === 'undefined') return;
 
   try {
-    const raw = localStorage.getItem(MOCK_ORDERS_STORAGE_KEY);
+    // Tự động dọn dẹp key cũ v1
+    window.localStorage.removeItem(LEGACY_MOCK_ORDERS_STORAGE_KEY);
+
+    const raw = window.localStorage.getItem(MOCK_ORDERS_STORAGE_KEY);
     if (!raw) return;
 
     const parsed: StoredMockDatabase = JSON.parse(raw);
-    const now = Date.now();
-    let hasExpiredItems = false;
+
+    if (typeof parsed.lastOrderNumber === 'number' && parsed.lastOrderNumber >= 1000) {
+      mockLastOrderNumber = Math.max(mockLastOrderNumber, parsed.lastOrderNumber);
+    }
 
     if (parsed.orders && typeof parsed.orders === 'object') {
       for (const [id, order] of Object.entries(parsed.orders)) {
-        // Tự động dọn dẹp các đơn hàng mock đã quá 15 phút
-        if (new Date(order.expiresAt).getTime() <= now) {
-          hasExpiredItems = true;
-        } else {
-          mockOrdersDatabase.set(id, order);
-        }
+        mockOrdersDatabase.set(id, order);
       }
     }
 
@@ -67,17 +64,6 @@ export function loadMockDatabaseFromStorage(): void {
         mockPaymentsDatabase.set(key, payment);
       }
     }
-
-    if (parsed.payloads && typeof parsed.payloads === 'object') {
-      for (const [key, payload] of Object.entries(parsed.payloads)) {
-        mockPaymentsPayloadDatabase.set(key, payload);
-      }
-    }
-
-    // Nếu có đơn hết hạn thì ghi lại storage sạch
-    if (hasExpiredItems) {
-      persistMockDatabaseToStorage();
-    }
   } catch {
     // Dữ liệu storage bị hỏng thì bỏ qua
   }
@@ -85,18 +71,15 @@ export function loadMockDatabaseFromStorage(): void {
 
 /**
  * Đồng bộ dữ liệu mock vào localStorage
- * BẢO MẬT: Chỉ lưu 4 số cuối của số thẻ/ví để đối chiếu Idempotency mock, tuyệt đối không lưu trọn vẹn số thẻ/ví.
+ * BẢO MẬT: Chỉ lưu 4 số cuối của số thẻ/ví trong PaymentResponse, không lưu trọn vẹn số thẻ/ví.
  */
 export function persistMockDatabaseToStorage(): void {
-  if (!isMockOrdersActive() || typeof window === 'undefined') return;
+  if (typeof window === 'undefined') return;
 
   try {
-    const now = Date.now();
     const ordersObj: Record<string, MockOrderRecord> = {};
     mockOrdersDatabase.forEach((val, key) => {
-      if (new Date(val.expiresAt).getTime() > now) {
-        ordersObj[key] = val;
-      }
+      ordersObj[key] = val;
     });
 
     const paymentsObj: Record<string, PaymentResponse> = {};
@@ -104,23 +87,13 @@ export function persistMockDatabaseToStorage(): void {
       paymentsObj[key] = val;
     });
 
-    // Lưu ý bảo mật: Chỉ lưu 4 số cuối (last4) của số ví/thẻ vào localStorage.
-    const payloadsObj: Record<string, StoredMockPayload> = {};
-    mockPaymentsPayloadDatabase.forEach((val, key) => {
-      payloadsObj[key] = {
-        orderId: val.orderId,
-        method: val.method,
-        last4: val.last4,
-      };
-    });
-
     const data: StoredMockDatabase = {
+      lastOrderNumber: mockLastOrderNumber,
       orders: ordersObj,
       payments: paymentsObj,
-      payloads: payloadsObj,
     };
 
-    localStorage.setItem(MOCK_ORDERS_STORAGE_KEY, JSON.stringify(data));
+    window.localStorage.setItem(MOCK_ORDERS_STORAGE_KEY, JSON.stringify(data));
   } catch {
     // Bỏ qua nếu storage đầy hoặc bị chặn
   }
@@ -134,14 +107,15 @@ export function setMockNetworkSimulation(type: 'timeout' | 'offline' | null): vo
 }
 
 export function resetMockOrdersDatabase(): void {
+  mockLastOrderNumber = 1000;
   mockOrdersDatabase.clear();
   mockPaymentsDatabase.clear();
-  mockPaymentsPayloadDatabase.clear();
   mockNetworkSimulation = null;
 
   if (typeof window !== 'undefined') {
     try {
-      localStorage.removeItem(MOCK_ORDERS_STORAGE_KEY);
+      window.localStorage.removeItem(MOCK_ORDERS_STORAGE_KEY);
+      window.localStorage.removeItem(LEGACY_MOCK_ORDERS_STORAGE_KEY);
     } catch {
       // Bỏ qua lỗi truy cập storage
     }
@@ -154,18 +128,18 @@ export function resetMockOrdersDatabase(): void {
 export function clearMockMemoryOnlyForTesting(): void {
   mockOrdersDatabase.clear();
   mockPaymentsDatabase.clear();
-  mockPaymentsPayloadDatabase.clear();
+  mockLastOrderNumber = 1000;
 }
 
 /**
- * Giả lập tạo đơn hàng phía server
+ * Giả lập tạo đơn hàng phía server POST /orders
  */
 export async function mockCreateOrder(dto: CreateOrderDto): Promise<OrderResponse> {
-  // Đồng bộ dữ liệu mock từ storage (nếu vừa F5 hoặc mở tab mới)
+  // Đồng bộ dữ liệu mock từ storage
   loadMockDatabaseFromStorage();
 
-  // Giả lập độ trễ mạng 200ms
-  await new Promise((resolve) => setTimeout(resolve, 200));
+  // Giả lập độ trễ mạng
+  await new Promise((resolve) => setTimeout(resolve, 50));
 
   if (mockNetworkSimulation === 'timeout') {
     throw new OrderApiError(0, ORDER_ERROR_MESSAGES.NETWORK_TIMEOUT);
@@ -174,44 +148,65 @@ export async function mockCreateOrder(dto: CreateOrderDto): Promise<OrderRespons
     throw new OrderApiError(0, ORDER_ERROR_MESSAGES.NETWORK_ERROR);
   }
 
-  // Hỗ trợ kiểm thử thủ công qua ghi chú hoặc số điện thoại giả lập
+  // Giả lập qua ghi chú
   const lowerNote = (dto.note || '').toLowerCase();
   if (lowerNote.includes('hethang') || lowerNote.includes('hết hàng')) {
+    const details: OutOfStockDetail[] = [
+      {
+        productId: 'mock-p-out',
+        name: 'Trà đào cam sả',
+        available: 0,
+      },
+    ];
     throw new OrderApiError(409, ORDER_ERROR_MESSAGES.OUT_OF_STOCK, {
+      details,
       outOfStockItems: ['Trà đào cam sả'],
-      errorData: { statusCode: 409, outOfStockItems: ['Trà đào cam sả'] },
+      errorData: { statusCode: 409, message: ORDER_ERROR_MESSAGES.OUT_OF_STOCK, details },
     });
   }
-  if (lowerNote.includes('timeout') || dto.customerPhone === '0900000001') {
+  if (lowerNote.includes('timeout')) {
     throw new OrderApiError(0, ORDER_ERROR_MESSAGES.NETWORK_TIMEOUT);
   }
-  if (lowerNote.includes('offline') || dto.customerPhone === '0900000002') {
+  if (lowerNote.includes('offline')) {
     throw new OrderApiError(0, ORDER_ERROR_MESSAGES.NETWORK_ERROR);
   }
 
-  // 1. Kiểm tra tồn kho (stock <= 0 là hết hàng theo hợp đồng, hỗ trợ legacy id '3' cho test cũ)
-  const outOfStockNames: string[] = [];
+  // 1. Kiểm tra tồn kho (stock <= 0 là hết hàng)
+  const outOfStockDetails: OutOfStockDetail[] = [];
   for (const item of dto.items) {
     if (item.productId === '3') {
-      outOfStockNames.push('Trà đào cam sả');
+      outOfStockDetails.push({
+        productId: '3',
+        name: 'Trà đào cam sả',
+        available: 0,
+      });
       continue;
     }
     const product = MOCK_PRODUCTS.find((p) => p.id === item.productId);
     if (product && product.stock <= 0) {
-      outOfStockNames.push(product.name);
+      outOfStockDetails.push({
+        productId: product.id,
+        name: product.name,
+        available: product.stock,
+      });
     }
   }
 
-  if (outOfStockNames.length > 0) {
+  if (outOfStockDetails.length > 0) {
     throw new OrderApiError(409, ORDER_ERROR_MESSAGES.OUT_OF_STOCK, {
-      outOfStockItems: outOfStockNames,
-      errorData: { statusCode: 409, outOfStockItems: outOfStockNames },
+      details: outOfStockDetails,
+      outOfStockItems: outOfStockDetails.map((d) => d.name),
+      errorData: {
+        statusCode: 409,
+        message: ORDER_ERROR_MESSAGES.OUT_OF_STOCK,
+        details: outOfStockDetails,
+      },
     });
   }
 
   // 2. SERVER TỰ TÍNH TIỀN (tuyệt đối không nhận giá từ client)
   let calculatedTotal = 0;
-  const processedItems = dto.items.map((item) => {
+  const processedItems: OrderItemResponse[] = dto.items.map((item) => {
     const product = MOCK_PRODUCTS.find(
       (p) =>
         p.id === item.productId ||
@@ -220,8 +215,12 @@ export async function mockCreateOrder(dto: CreateOrderDto): Promise<OrderRespons
     const basePrice = product ? product.basePrice : 29000;
     let unitPrice = basePrice;
 
-    if (item.size === 'M') unitPrice += (item.productId === '1' ? 5000 : 6000);
+    if (item.size === 'M') unitPrice += 6000;
     if (item.size === 'L') unitPrice += 10000;
+
+    if (item.toppingIds && item.toppingIds.length > 0) {
+      unitPrice += item.toppingIds.length * 10000;
+    }
 
     const lineTotal = unitPrice * item.quantity;
     calculatedTotal += lineTotal;
@@ -229,35 +228,30 @@ export async function mockCreateOrder(dto: CreateOrderDto): Promise<OrderRespons
     return {
       productId: item.productId,
       productName: product ? product.name : 'Đồ uống BrewLite',
-      unitPrice,
-      quantity: item.quantity,
       size: item.size,
       sugarLevel: item.sugarLevel,
       iceLevel: item.iceLevel,
-      note: item.note,
+      quantity: item.quantity,
+      unitPrice,
       lineTotal,
+      note: item.note,
     };
   });
 
-  const now = new Date();
+  mockLastOrderNumber += 1;
+  const orderNumber = mockLastOrderNumber;
   const orderId = `order-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-  const orderNumber = `#BL-${Math.floor(1000 + Math.random() * 9000)}`;
-  const expiresAt = new Date(now.getTime() + 15 * 60 * 1000).toISOString(); // 15 phút
 
   const orderRecord: MockOrderRecord = {
     id: orderId,
     orderNumber,
     status: 'PENDING',
-    receiveType: dto.receiveType,
-    totalAmount: calculatedTotal,
-    subtotal: calculatedTotal,
-    discountAmount: 0,
+    receiveType: dto.receiveType || 'AT_COUNTER',
     note: dto.note,
-    customerName: dto.customerName,
-    customerPhone: dto.customerPhone,
-    expiresAt,
-    createdAt: now.toISOString(),
+    totalAmount: calculatedTotal,
+    createdAt: new Date().toISOString(),
     items: processedItems,
+    payments: [],
   };
 
   mockOrdersDatabase.set(orderId, orderRecord);
@@ -266,17 +260,30 @@ export async function mockCreateOrder(dto: CreateOrderDto): Promise<OrderRespons
 }
 
 /**
- * Giả lập thanh toán phía server với kiểm soát Idempotency
+ * Giả lập thanh toán phía server POST /payments với kiểm soát Idempotency
  */
 export async function mockPayOrder(
-  orderId: string,
-  dto: PaymentDto,
-  idempotencyKey: string
+  orderIdOrDto: string | PaymentDto,
+  dtoOrKey: PaymentDto | string,
+  maybeKey?: string
 ): Promise<PaymentResponse> {
-  // Đồng bộ dữ liệu mock từ storage (nếu vừa F5 hoặc mở tab mới)
+  // Đồng bộ dữ liệu mock từ storage
   loadMockDatabaseFromStorage();
 
-  await new Promise((resolve) => setTimeout(resolve, 250));
+  let actualDto: PaymentDto;
+  let idempotencyKey: string;
+
+  if (typeof orderIdOrDto === 'string') {
+    actualDto = { ...(dtoOrKey as PaymentDto), orderId: orderIdOrDto };
+    idempotencyKey = maybeKey || '';
+  } else {
+    actualDto = orderIdOrDto;
+    idempotencyKey = (dtoOrKey as string) || '';
+  }
+
+  const orderId = actualDto.orderId;
+
+  await new Promise((resolve) => setTimeout(resolve, 50));
 
   if (mockNetworkSimulation === 'timeout') {
     throw new OrderApiError(0, ORDER_ERROR_MESSAGES.NETWORK_TIMEOUT);
@@ -285,143 +292,120 @@ export async function mockPayOrder(
     throw new OrderApiError(0, ORDER_ERROR_MESSAGES.NETWORK_ERROR);
   }
 
-  // 1. KIỂM TRA IDEMPOTENCY & GIẢ LẬP SỰ CỐ QUA SỐ TÀI KHOẢN:
-  const cleanNumber = (dto.accountNumber || '').replace(/[\s-]+/g, '');
-  if (cleanNumber === '0900000001' || cleanNumber === '9704000000000001') {
+  // 1. Kiểm tra tài khoản mô phỏng đặc biệt
+  const cleanNumber = (actualDto.accountNumber || '').replace(/[\s-]+/g, '');
+  if (cleanNumber === '9999999991') {
     throw new OrderApiError(0, ORDER_ERROR_MESSAGES.NETWORK_TIMEOUT);
   }
-  if (cleanNumber === '0900000002' || cleanNumber === '9704000000000002') {
+  if (cleanNumber === '9999999992') {
     throw new OrderApiError(0, ORDER_ERROR_MESSAGES.NETWORK_ERROR);
   }
 
-  const last4 = cleanNumber.slice(-4);
-  const existingPayload = mockPaymentsPayloadDatabase.get(idempotencyKey);
-
-  // Nếu cùng key nhưng body thanh toán khác (đổi orderId, đổi Ví/Thẻ hoặc đổi số tài khoản):
-  // Server từ chối (409 Conflict), không xử lý giao dịch lần hai.
-  if (existingPayload) {
-    if (
-      existingPayload.orderId !== orderId ||
-      existingPayload.method !== dto.method ||
-      existingPayload.last4 !== last4
-    ) {
-      throw new OrderApiError(409, ORDER_ERROR_MESSAGES.IDEMPOTENCY_MISMATCH);
-    }
-  }
-
-  // Nếu đã xử lý với key này trước đó và body khớp -> trả lại kết quả cũ (không trừ tiền lần 2)
+  // 2. IDEMPOTENCY:
   const existingPayment = mockPaymentsDatabase.get(idempotencyKey);
   if (existingPayment) {
-    if (existingPayment.status === 'SUCCESS') {
-      return existingPayment;
+    if (existingPayment.orderId !== orderId) {
+      // Cùng key nhưng khác orderId -> 409 Conflict
+      throw new OrderApiError(409, ORDER_ERROR_MESSAGES.IDEMPOTENCY_MISMATCH);
     }
-    // Nếu lần trước thất bại với cùng key này
-    throw new OrderApiError(402, ORDER_ERROR_MESSAGES.PAYMENT_REJECTED, {
-      errorData: existingPayment,
-    });
+    // Cùng key + cùng orderId -> Luôn trả 200 với kết quả cũ
+    return existingPayment;
   }
 
-  // Lưu payload của lần gửi đầu tiên với key này (chỉ lưu 4 số cuối)
-  if (!existingPayload) {
-    mockPaymentsPayloadDatabase.set(idempotencyKey, {
-      orderId,
-      method: dto.method,
-      last4,
-    });
-    persistMockDatabaseToStorage();
-  }
-
+  // 3. Kiểm tra đơn hàng tồn tại
   const order = mockOrdersDatabase.get(orderId);
   if (!order) {
-    throw new OrderApiError(404, 'Không tìm thấy thông tin đơn hàng');
+    throw new OrderApiError(404, ORDER_ERROR_MESSAGES.ORDER_NOT_FOUND);
   }
 
-  // Nếu đơn đã quá hạn
-  if (new Date(order.expiresAt).getTime() <= Date.now()) {
-    order.status = 'CANCELLED';
-    persistMockDatabaseToStorage();
-    throw new OrderApiError(410, ORDER_ERROR_MESSAGES.ORDER_EXPIRED);
+  // 4. Kiểm tra trạng thái cho phép thanh toán (chỉ PENDING và PAYMENT_FAILED)
+  if (order.status !== 'PENDING' && order.status !== 'PAYMENT_FAILED') {
+    throw new OrderApiError(409, ORDER_ERROR_MESSAGES.ORDER_NOT_PAYABLE);
   }
 
-  // Nếu đơn đã được thanh toán trước đó
-  if (order.status === 'PAID') {
-    const successResult: PaymentResponse = {
-      id: `pay-${Date.now()}`,
-      orderId,
-      amount: order.totalAmount,
-      method: dto.method,
-      status: 'SUCCESS',
-      orderStatus: 'PAID',
-      idempotencyKey,
-      gatewayRef: `GW-${Date.now()}`,
-      createdAt: new Date().toISOString(),
-    };
-    mockPaymentsDatabase.set(idempotencyKey, successResult);
-    persistMockDatabaseToStorage();
-    return successResult;
-  }
+  const last4 = cleanNumber.slice(-4);
 
-  // 2. QUY TẮC MÔ PHỎNG: số kết thúc bằng 0 -> THẤT BẠI
-  if (cleanNumber.endsWith('0')) {
+  // 5. QUY TẮC MÔ PHỎNG: số kết thúc bằng '0000' -> THẤT BẠI (201 status: 'FAILED')
+  if (cleanNumber.endsWith('0000')) {
     order.status = 'PAYMENT_FAILED';
 
     const failedPayment: PaymentResponse = {
       id: `pay-failed-${Date.now()}`,
       orderId,
+      method: actualDto.method,
+      accountLast4: last4,
       amount: order.totalAmount,
-      method: dto.method,
       status: 'FAILED',
-      orderStatus: 'PAYMENT_FAILED',
-      idempotencyKey,
+      failureReason: 'Tài khoản không đủ số dư (mô phỏng)',
       createdAt: new Date().toISOString(),
-      message: ORDER_ERROR_MESSAGES.PAYMENT_REJECTED,
+      order: {
+        id: order.id,
+        orderNumber: order.orderNumber,
+        status: 'PAYMENT_FAILED',
+      },
     };
+
+    if (!order.payments) order.payments = [];
+    order.payments.push({
+      id: failedPayment.id,
+      method: failedPayment.method,
+      accountLast4: failedPayment.accountLast4,
+      amount: failedPayment.amount,
+      status: 'FAILED',
+      failureReason: failedPayment.failureReason,
+      createdAt: failedPayment.createdAt,
+    });
+
     mockPaymentsDatabase.set(idempotencyKey, failedPayment);
     persistMockDatabaseToStorage();
-
-    throw new OrderApiError(402, ORDER_ERROR_MESSAGES.PAYMENT_REJECTED, {
-      errorData: failedPayment,
-    });
+    return failedPayment;
   }
 
-  // 3. THANH TOÁN THÀNH CÔNG
+  // 6. THANH TOÁN THÀNH CÔNG (201 status: 'SUCCESS')
   order.status = 'PAID';
   const successPayment: PaymentResponse = {
     id: `pay-${Date.now()}`,
     orderId,
+    method: actualDto.method,
+    accountLast4: last4,
     amount: order.totalAmount,
-    method: dto.method,
     status: 'SUCCESS',
-    orderStatus: 'PAID',
-    idempotencyKey,
-    gatewayRef: `MOCK-GW-${Date.now()}`,
     createdAt: new Date().toISOString(),
+    order: {
+      id: order.id,
+      orderNumber: order.orderNumber,
+      status: 'PAID',
+    },
   };
+
+  if (!order.payments) order.payments = [];
+  order.payments.push({
+    id: successPayment.id,
+    method: successPayment.method,
+    accountLast4: successPayment.accountLast4,
+    amount: successPayment.amount,
+    status: 'SUCCESS',
+    createdAt: successPayment.createdAt,
+  });
+
   mockPaymentsDatabase.set(idempotencyKey, successPayment);
   persistMockDatabaseToStorage();
   return successPayment;
 }
 
 /**
- * Giả lập tra cứu đơn hàng theo ID
+ * Giả lập tra cứu đơn hàng theo ID GET /orders/:id
  */
 export async function mockGetOrderById(orderId: string): Promise<OrderResponse> {
   // Đồng bộ dữ liệu mock từ storage
   loadMockDatabaseFromStorage();
 
-  await new Promise((resolve) => setTimeout(resolve, 100));
+  await new Promise((resolve) => setTimeout(resolve, 50));
 
   const order = mockOrdersDatabase.get(orderId);
   if (!order) {
-    throw new OrderApiError(404, 'Không tìm thấy đơn hàng');
-  }
-
-  // Tự động chuyển CANCELLED nếu hết hạn
-  if (order.status === 'PENDING' && new Date(order.expiresAt).getTime() <= Date.now()) {
-    order.status = 'CANCELLED';
-    persistMockDatabaseToStorage();
+    throw new OrderApiError(404, ORDER_ERROR_MESSAGES.ORDER_NOT_FOUND);
   }
 
   return order;
 }
-

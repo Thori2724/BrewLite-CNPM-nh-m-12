@@ -37,40 +37,40 @@ describe('Lớp gọi API Đơn hàng và Thanh toán (services/orders.ts)', () 
       receiveType: 'AT_COUNTER',
       items: [
         {
-          productId: '1', // Cà phê sữa đá (29.000đ)
-          size: 'M', // +5.000đ -> 34.000đ
+          productId: '11111111-0000-0000-0000-000000000001', // Cà phê sữa đá (29.000đ)
+          size: 'M', // +6.000đ -> 35.000đ
           sugarLevel: 'P50',
           iceLevel: 'NORMAL',
-          quantity: 2, // 34.000 x 2 = 68.000đ
+          quantity: 2, // 35.000 x 2 = 70.000đ
         },
       ],
-      customerName: 'Nguyễn Văn A',
-      customerPhone: '0901234567',
+      note: 'Mang đi giúp mình',
     };
 
-    it('1.1. Tạo đơn thành công: Server tự tính tổng tiền, trạng thái ban đầu PENDING và có hạn 15 phút', async () => {
+    it('1.1. Tạo đơn thành công: Server tự tính tổng tiền, trạng thái ban đầu PENDING và orderNumber là số nguyên', async () => {
       const order = await createOrderApi(validDto);
 
       expect(order.id).toBeDefined();
-      expect(order.orderNumber).toMatch(/^#BL-\d+$/);
+      expect(typeof order.orderNumber).toBe('number');
+      expect(order.orderNumber).toBeGreaterThanOrEqual(1001);
       expect(order.status).toBe('PENDING');
       expect(order.receiveType).toBe('AT_COUNTER');
-      expect(order.totalAmount).toBe(68000); // 34.000 x 2
+      expect(order.totalAmount).toBe(70000); // (29.000 + 6.000) x 2
       expect(order.items).toHaveLength(1);
       expect(order.items[0].productName).toBe('Cà phê sữa đá');
 
-      // Hạn thanh toán sau 15 phút
-      const expiry = new Date(order.expiresAt).getTime();
-      const created = new Date(order.createdAt).getTime();
-      expect(expiry - created).toBe(15 * 60 * 1000);
+      // TUYỆT ĐỐI không có expiresAt, customerName, customerPhone
+      expect((order as unknown as Record<string, unknown>).expiresAt).toBeUndefined();
+      expect((order as unknown as Record<string, unknown>).customerName).toBeUndefined();
+      expect((order as unknown as Record<string, unknown>).customerPhone).toBeUndefined();
     });
 
-    it('1.2. Hết hàng (409 Conflict): Server trả về lỗi kèm danh sách món hết hàng outOfStockItems', async () => {
+    it('1.2. Hết hàng (409 Conflict): Server trả về lỗi kèm danh sách details món hết hàng', async () => {
       const outOfStockDto: CreateOrderDto = {
         receiveType: 'TAKE_AWAY',
         items: [
           {
-            productId: '3', // Trà đào cam sả (trong MOCK_PRODUCTS isAvailable: false)
+            productId: '3', // Trà đào cam sả (trong mock có stock = 0)
             quantity: 1,
           },
         ],
@@ -84,7 +84,27 @@ describe('Lớp gọi API Đơn hàng và Thanh toán (services/orders.ts)', () 
         const orderErr = err as OrderApiError;
         expect(orderErr.statusCode).toBe(409);
         expect(orderErr.message).toBe(ORDER_ERROR_MESSAGES.OUT_OF_STOCK);
-        expect(orderErr.outOfStockItems).toContain('Trà đào cam sả');
+        expect(orderErr.details).toBeDefined();
+        expect(orderErr.details?.[0].name).toBe('Trà đào cam sả');
+        expect(orderErr.details?.[0].available).toBe(0);
+      }
+    });
+
+    it('1.3. Mô phỏng hết hàng qua ghi chú "hethang" trả về 409 kèm details', async () => {
+      const noteOutOfStockDto: CreateOrderDto = {
+        receiveType: 'AT_COUNTER',
+        items: [{ productId: '11111111-0000-0000-0000-000000000001', quantity: 1 }],
+        note: 'Giao hethang test',
+      };
+
+      try {
+        await createOrderApi(noteOutOfStockDto);
+        expect.unreachable('Phải ném lỗi 409');
+      } catch (err) {
+        expect(err).toBeInstanceOf(OrderApiError);
+        const orderErr = err as OrderApiError;
+        expect(orderErr.statusCode).toBe(409);
+        expect(orderErr.details).toBeDefined();
       }
     });
   });
@@ -96,84 +116,97 @@ describe('Lớp gọi API Đơn hàng và Thanh toán (services/orders.ts)', () 
     beforeEach(async () => {
       const order = await createOrderApi({
         receiveType: 'AT_COUNTER',
-        items: [{ productId: '1', quantity: 1 }],
+        items: [{ productId: '11111111-0000-0000-0000-000000000001', quantity: 1 }],
       });
       createdOrderId = order.id;
     });
 
-    it('2.1. Thanh toán thành công với số tài khoản hợp lệ (không kết thúc bằng 0)', async () => {
+    it('2.1. Thanh toán thành công với số tài khoản hợp lệ (không kết thúc bằng 0000): Trả 201 status SUCCESS', async () => {
       const paymentDto: PaymentDto = {
-        method: 'E_WALLET',
-        accountNumber: '0901234567',
+        orderId: createdOrderId,
+        method: 'WALLET',
+        accountNumber: '12345678',
       };
       const key = 'idemp-key-success-1';
 
-      const res = await payOrderApi(createdOrderId, paymentDto, key);
+      const res = await payOrderApi(paymentDto, key);
 
       expect(res.status).toBe('SUCCESS');
-      expect(res.orderStatus).toBe('PAID');
-      expect(res.idempotencyKey).toBe(key);
-      expect(res.gatewayRef).toBeDefined();
+      expect(res.order.status).toBe('PAID');
+      expect(res.accountLast4).toBe('5678');
+      expect(res.method).toBe('WALLET');
 
       // Kiểm tra đơn đã chuyển sang PAID
       const updatedOrder = await getOrderByIdApi(createdOrderId);
       expect(updatedOrder.status).toBe('PAID');
     });
 
-    it('2.2. Thanh toán thất bại khi số tài khoản kết thúc bằng 0: Đơn chuyển PAYMENT_FAILED', async () => {
+    it('2.2. Thanh toán thất bại khi số tài khoản kết thúc bằng 0000: Trả 201 status FAILED (KHÔNG ném 402)', async () => {
       const paymentDto: PaymentDto = {
-        method: 'BANK_CARD',
-        accountNumber: '9704000000000000', // Đuôi 0 -> giả lập bị từ chối
+        orderId: createdOrderId,
+        method: 'CARD',
+        accountNumber: '9704000000000000', // Đuôi 0000 -> thất bại
       };
       const key = 'idemp-key-fail-1';
 
-      await expect(payOrderApi(createdOrderId, paymentDto, key)).rejects.toThrow(
-        ORDER_ERROR_MESSAGES.PAYMENT_REJECTED
-      );
+      // Không throw error, trả về đối tượng có status FAILED
+      const res = await payOrderApi(paymentDto, key);
 
-      // Đơn hàng vẫn được lưu giữ và ở trạng thái PAYMENT_FAILED (để khách có thể thử lại)
+      expect(res.status).toBe('FAILED');
+      expect(res.failureReason).toContain('không đủ số dư');
+      expect(res.order.status).toBe('PAYMENT_FAILED');
+
+      // Đơn hàng ở trạng thái PAYMENT_FAILED (để khách có thể thử lại)
       const updatedOrder = await getOrderByIdApi(createdOrderId);
       expect(updatedOrder.status).toBe('PAYMENT_FAILED');
     });
 
-    it('2.3. IDEMPOTENCY: Cùng key gửi lại thì trả đúng kết quả cũ, không tạo thanh toán mới', async () => {
+    it('2.3. IDEMPOTENCY: Cùng key + cùng orderId luôn trả 200 với kết quả cũ, bất kể body thay đổi', async () => {
       const paymentDto: PaymentDto = {
-        method: 'E_WALLET',
-        accountNumber: '0901234567',
+        orderId: createdOrderId,
+        method: 'WALLET',
+        accountNumber: '12345678',
       };
       const sameKey = 'idemp-key-repeat-1';
 
       // Lần gửi 1
-      const res1 = await payOrderApi(createdOrderId, paymentDto, sameKey);
+      const res1 = await payOrderApi(paymentDto, sameKey);
 
-      // Lần gửi 2 (giả lập bấm đúp hoặc F5 gửi lại cùng key)
-      const res2 = await payOrderApi(createdOrderId, paymentDto, sameKey);
+      // Lần gửi 2 cùng key và cùng orderId nhưng đổi số tài khoản khác
+      const alteredDto: PaymentDto = {
+        orderId: createdOrderId,
+        method: 'WALLET',
+        accountNumber: '88888888',
+      };
+      const res2 = await payOrderApi(alteredDto, sameKey);
 
       expect(res2.id).toBe(res1.id);
-      expect(res2.idempotencyKey).toBe(sameKey);
-      expect(res2.gatewayRef).toBe(res1.gatewayRef);
+      expect(res2.accountLast4).toBe(res1.accountLast4);
       expect(res2.status).toBe('SUCCESS');
     });
 
-    it('2.4. IDEMPOTENCY: Cùng key nhưng body thanh toán khác (đổi số tài khoản) thì trả lỗi 409 Mismatch và không trừ tiền lần 2', async () => {
-      const initialDto: PaymentDto = {
-        method: 'E_WALLET',
-        accountNumber: '0901234567',
-      };
-      const sameKey = 'idemp-key-mismatch-test';
+    it('2.4. IDEMPOTENCY: Cùng key nhưng khác orderId thì trả lỗi 409 Conflict', async () => {
+      const sameKey = 'idemp-key-conflict-orders';
 
-      // Lần gửi 1 thành công
-      await payOrderApi(createdOrderId, initialDto, sameKey);
+      // Lần gửi 1 cho đơn 1
+      await payOrderApi(
+        { orderId: createdOrderId, method: 'WALLET', accountNumber: '12345678' },
+        sameKey
+      );
 
-      // Lần gửi 2 cùng key nhưng đổi số tài khoản khác
-      const alteredDto: PaymentDto = {
-        method: 'E_WALLET',
-        accountNumber: '0908888888',
-      };
+      // Tạo đơn thứ 2
+      const order2 = await createOrderApi({
+        receiveType: 'TAKE_AWAY',
+        items: [{ productId: '11111111-0000-0000-0000-000000000001', quantity: 1 }],
+      });
 
+      // Lần gửi 2 cùng key nhưng dùng orderId của đơn thứ 2
       try {
-        await payOrderApi(createdOrderId, alteredDto, sameKey);
-        expect.unreachable('Phải ném lỗi 409 Mismatch');
+        await payOrderApi(
+          { orderId: order2.id, method: 'WALLET', accountNumber: '12345678' },
+          sameKey
+        );
+        expect.unreachable('Phải ném lỗi 409 do trùng Idempotency-Key với đơn khác');
       } catch (err) {
         expect(err).toBeInstanceOf(OrderApiError);
         const orderErr = err as OrderApiError;
@@ -182,29 +215,29 @@ describe('Lớp gọi API Đơn hàng và Thanh toán (services/orders.ts)', () 
       }
     });
 
-    it('2.5. IDEMPOTENCY: Sau thất bại rõ ràng (PAYMENT_FAILED), thử lại với key mới thì xử lý độc lập và thành công', async () => {
-      const keyFail = 'idemp-key-rejected-1';
+    it('2.5. Sau thất bại (status FAILED), thử lại với key mới thì xử lý thành công', async () => {
+      const keyFail = 'idemp-key-failed-first';
       const failedDto: PaymentDto = {
-        method: 'E_WALLET',
-        accountNumber: '0901234560', // Đuôi 0 -> giả lập bị từ chối rõ ràng
+        orderId: createdOrderId,
+        method: 'WALLET',
+        accountNumber: '12340000', // Đuôi 0000 -> FAILED
       };
 
-      // Lần 1: Bị từ chối
-      await expect(payOrderApi(createdOrderId, failedDto, keyFail)).rejects.toThrow(
-        ORDER_ERROR_MESSAGES.PAYMENT_REJECTED
-      );
+      // Lần 1: FAILED
+      const resFail = await payOrderApi(failedDto, keyFail);
+      expect(resFail.status).toBe('FAILED');
 
-      // Lần 2: Sinh key mới sau thất bại rõ ràng, dùng số tài khoản mới hợp lệ
+      // Lần 2: Sinh key mới sau thất bại, dùng số tài khoản mới hợp lệ
       const keyNew = 'idemp-key-retry-success-2';
       const validRetryDto: PaymentDto = {
-        method: 'E_WALLET',
-        accountNumber: '0901234567',
+        orderId: createdOrderId,
+        method: 'WALLET',
+        accountNumber: '12345678',
       };
 
-      const resRetry = await payOrderApi(createdOrderId, validRetryDto, keyNew);
+      const resRetry = await payOrderApi(validRetryDto, keyNew);
       expect(resRetry.status).toBe('SUCCESS');
-      expect(resRetry.orderStatus).toBe('PAID');
-      expect(resRetry.idempotencyKey).toBe(keyNew);
+      expect(resRetry.order.status).toBe('PAID');
     });
   });
 
@@ -216,7 +249,7 @@ describe('Lớp gọi API Đơn hàng và Thanh toán (services/orders.ts)', () 
       await expect(
         createOrderApi({
           receiveType: 'AT_COUNTER',
-          items: [{ productId: '1', quantity: 1 }],
+          items: [{ productId: '11111111-0000-0000-0000-000000000001', quantity: 1 }],
         })
       ).rejects.toThrow(ORDER_ERROR_MESSAGES.NETWORK_TIMEOUT);
     });
@@ -227,20 +260,19 @@ describe('Lớp gọi API Đơn hàng và Thanh toán (services/orders.ts)', () 
       await expect(
         createOrderApi({
           receiveType: 'AT_COUNTER',
-          items: [{ productId: '1', quantity: 1 }],
+          items: [{ productId: '11111111-0000-0000-0000-000000000001', quantity: 1 }],
         })
       ).rejects.toThrow(ORDER_ERROR_MESSAGES.NETWORK_ERROR);
     });
   });
 
-  // 4. Lưu trữ Mock DB sống qua F5 (Mô phỏng F5 bằng cách xóa bộ nhớ RAM nhưng giữ localStorage)
+  // 4. Lưu trữ Mock DB sống qua F5 và không trùng bộ đếm orderNumber
   describe('Lưu trữ Mock DB qua localStorage', () => {
     it('4.1. Mock giữ đơn sau khi tải lại: Tạo đơn, xóa bộ nhớ RAM, gọi API thì tự nạp từ localStorage và thanh toán thành công với CÙNG id đơn', async () => {
       // 1. Tạo đơn mới
       const order = await createOrderApi({
         receiveType: 'AT_COUNTER',
-        items: [{ productId: '1', quantity: 1 }],
-        customerPhone: '0901234567',
+        items: [{ productId: '11111111-0000-0000-0000-000000000001', quantity: 1 }],
       });
 
       expect(order.id).toBeDefined();
@@ -260,17 +292,17 @@ describe('Lớp gọi API Đơn hàng và Thanh toán (services/orders.ts)', () 
 
       // 4. Tiến hành thanh toán tiếp: Vẫn tìm thấy đơn và thanh toán thành công với CÙNG id đơn
       const payRes = await payOrderApi(
-        order.id,
         {
-          method: 'E_WALLET',
-          accountNumber: '0901234567',
+          orderId: order.id,
+          method: 'WALLET',
+          accountNumber: '12345678',
         },
         'idemp-key-survives-f5'
       );
 
       expect(payRes.orderId).toBe(order.id);
       expect(payRes.status).toBe('SUCCESS');
-      expect(payRes.orderStatus).toBe('PAID');
+      expect(payRes.order.status).toBe('PAID');
 
       // 5. Kiểm tra localStorage: Trạng thái đơn đã được cập nhật thành PAID
       const updatedRaw = localStorage.getItem(MOCK_ORDERS_STORAGE_KEY);
@@ -278,30 +310,139 @@ describe('Lớp gọi API Đơn hàng và Thanh toán (services/orders.ts)', () 
       expect(updatedParsed.orders[order.id].status).toBe('PAID');
     });
 
-    it('4.2. Tự dọn các bản ghi mock quá 15 phút: bản ghi quá hạn không được nạp lại', async () => {
-      // Giả lập lưu đơn mock đã quá hạn 20 phút trước vào localStorage
-      const expiredMockData = {
-        orders: {
-          'order-expired-1': {
-            id: 'order-expired-1',
-            orderNumber: '#BL-EXPIRED',
-            status: 'PENDING',
-            receiveType: 'AT_COUNTER',
-            totalAmount: 50000,
-            expiresAt: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
-            createdAt: new Date(Date.now() - 20 * 60 * 1000).toISOString(),
-            items: [],
-          },
-        },
-        payments: {},
-        payloads: {},
-      };
-      localStorage.setItem(MOCK_ORDERS_STORAGE_KEY, JSON.stringify(expiredMockData));
+    it('4.2. Bộ đếm orderNumber lưu cùng mock DB để không bị trùng mã sau F5', async () => {
+      // Tạo đơn 1 -> orderNumber 1001
+      const order1 = await createOrderApi({
+        receiveType: 'AT_COUNTER',
+        items: [{ productId: '11111111-0000-0000-0000-000000000001', quantity: 1 }],
+      });
+
+      // F5 (xóa RAM)
       clearMockMemoryOnlyForTesting();
 
-      // Khi tra cứu đơn quá hạn -> không tìm thấy (404) vì đã bị dọn
-      await expect(getOrderByIdApi('order-expired-1')).rejects.toThrow('Không tìm thấy đơn hàng');
+      // Tạo đơn 2 sau F5 -> orderNumber phải tiếp tục là 1002, KHÔNG bị trùng lại 1001
+      const order2 = await createOrderApi({
+        receiveType: 'AT_COUNTER',
+        items: [{ productId: '11111111-0000-0000-0000-000000000001', quantity: 1 }],
+      });
+
+      expect(order1.orderNumber).toBe(1001);
+      expect(order2.orderNumber).toBe(1002);
+      expect(order2.orderNumber).toBeGreaterThan(order1.orderNumber);
+    });
+  });
+
+  // 5. Khi cờ NEXT_PUBLIC_USE_MOCK_ORDERS=false: Gọi fetch thật
+  describe('Gọi fetch thật khi cờ mock tắt (NEXT_PUBLIC_USE_MOCK_ORDERS=false)', () => {
+    beforeEach(() => {
+      process.env.NEXT_PUBLIC_USE_MOCK_ORDERS = 'false';
+    });
+
+    it('5.1. createOrderApi gọi đúng POST /orders, đúng body không có giá', async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 201,
+        json: async () => ({
+          id: 'server-order-1',
+          orderNumber: 2001,
+          status: 'PENDING',
+          receiveType: 'AT_COUNTER',
+          totalAmount: 50000,
+          items: [],
+          createdAt: new Date().toISOString(),
+        }),
+      });
+      globalThis.fetch = mockFetch;
+
+      const res = await createOrderApi({
+        receiveType: 'AT_COUNTER',
+        items: [{ productId: 'p1', quantity: 2, size: 'M' }],
+        note: 'Giao nhanh',
+      });
+
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+      const [url, options] = mockFetch.mock.calls[0];
+      expect(url).toContain('/orders');
+      expect(options.method).toBe('POST');
+
+      const body = JSON.parse(options.body);
+      expect(body.receiveType).toBe('AT_COUNTER');
+      expect(body.items[0].productId).toBe('p1');
+      expect(body.items[0].quantity).toBe(2);
+      expect(body.items[0].unitPrice).toBeUndefined();
+      expect(body.customerName).toBeUndefined();
+      expect(body.customerPhone).toBeUndefined();
+
+      expect(res.orderNumber).toBe(2001);
+    });
+
+    it('5.2. payOrderApi gọi đúng POST /payments với header Idempotency-Key và body chuẩn', async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 201,
+        json: async () => ({
+          id: 'pay-server-1',
+          orderId: 'server-order-1',
+          method: 'WALLET',
+          accountLast4: '5678',
+          amount: 50000,
+          status: 'SUCCESS',
+          createdAt: new Date().toISOString(),
+          order: {
+            id: 'server-order-1',
+            orderNumber: 2001,
+            status: 'PAID',
+          },
+        }),
+      });
+      globalThis.fetch = mockFetch;
+
+      const res = await payOrderApi(
+        { orderId: 'server-order-1', method: 'WALLET', accountNumber: '12345678' },
+        'test-idemp-key-100'
+      );
+
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+      const [url, options] = mockFetch.mock.calls[0];
+      expect(url).toContain('/payments');
+      expect(options.method).toBe('POST');
+
+      const headers = options.headers instanceof Headers
+        ? options.headers
+        : new Headers(options.headers || {});
+      expect(headers.get('Idempotency-Key')).toBe('test-idemp-key-100');
+
+      const body = JSON.parse(options.body);
+      expect(body.orderId).toBe('server-order-1');
+      expect(body.method).toBe('WALLET');
+      expect(body.accountNumber).toBe('12345678');
+
+      expect(res.status).toBe('SUCCESS');
+    });
+
+    it('5.3. getOrderByIdApi gọi đúng GET /orders/:id', async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          id: 'server-order-1',
+          orderNumber: 2001,
+          status: 'PAID',
+          receiveType: 'AT_COUNTER',
+          totalAmount: 50000,
+          items: [],
+          createdAt: new Date().toISOString(),
+        }),
+      });
+      globalThis.fetch = mockFetch;
+
+      const res = await getOrderByIdApi('server-order-1');
+
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+      const [url, options] = mockFetch.mock.calls[0];
+      expect(url).toContain('/orders/server-order-1');
+      expect(options.method).toBe('GET');
+      expect(res.status).toBe('PAID');
     });
   });
 });
-
