@@ -2,10 +2,10 @@ import { CartItem } from './cart';
 import {
   CreateOrderDto,
   CreateOrderItemDto,
-  ORDER_ERROR_MESSAGES,
   PaymentMethod,
   ReceiveType,
 } from '../services/order-contract';
+import { validateAccountNumber } from './validation';
 
 export const PENDING_ORDER_STORAGE_KEY = 'brewlite_pending_order_v2';
 const LEGACY_PENDING_ORDER_STORAGE_KEY = 'brewlite_pending_order_v1';
@@ -23,6 +23,7 @@ export interface PendingOrderRecord {
   method?: PaymentMethod;
   createdAt: string;
   itemCount: number;
+  createdFromCart?: boolean;
 }
 
 /**
@@ -63,12 +64,13 @@ export function savePendingOrder(record: PendingOrderRecord): void {
       method: record.method,
       createdAt: record.createdAt || new Date().toISOString(),
       itemCount: Math.max(1, record.itemCount || 1),
+      ...(record.createdFromCart !== undefined
+        ? { createdFromCart: Boolean(record.createdFromCart) }
+        : {}),
     };
     window.localStorage.setItem(PENDING_ORDER_STORAGE_KEY, JSON.stringify(cleanRecord));
-  } catch (err) {
-    if (process.env.NODE_ENV !== 'production') {
-      console.error('Không thể lưu đơn chờ vào localStorage:', err);
-    }
+  } catch {
+    // Bỏ qua nếu bộ nhớ trình duyệt bị chặn hoặc đầy
   }
 }
 
@@ -80,10 +82,8 @@ export function clearPendingOrder(): void {
   try {
     window.localStorage.removeItem(PENDING_ORDER_STORAGE_KEY);
     window.localStorage.removeItem(LEGACY_PENDING_ORDER_STORAGE_KEY);
-  } catch (err) {
-    if (process.env.NODE_ENV !== 'production') {
-      console.error('Không thể xóa đơn chờ:', err);
-    }
+  } catch {
+    // Bỏ qua nếu bộ nhớ trình duyệt bị chặn
   }
 }
 
@@ -116,6 +116,7 @@ export function loadPendingOrder(): PendingOrderRecord | null {
       method,
       createdAt,
       itemCount,
+      createdFromCart,
     } = parsed as Partial<PendingOrderRecord>;
 
     if (
@@ -139,6 +140,7 @@ export function loadPendingOrder(): PendingOrderRecord | null {
       method: method as PaymentMethod | undefined,
       createdAt: createdAt || new Date().toISOString(),
       itemCount: typeof itemCount === 'number' ? itemCount : 1,
+      ...(typeof createdFromCart === 'boolean' ? { createdFromCart } : {}),
     };
 
     return record;
@@ -178,7 +180,7 @@ export function buildCreateOrderPayload(
       itemDto.iceLevel = item.iceLevel;
     }
     if (item.toppings && item.toppings.length > 0) {
-      itemDto.toppingIds = item.toppings.slice(0, 3).map((t) => t.id);
+      itemDto.toppingIds = Array.from(new Set(item.toppings.map((t) => t.id))).slice(0, 3);
     }
     if (item.note && item.note.trim()) {
       itemDto.note = item.note.trim().slice(0, 200);
@@ -210,31 +212,7 @@ export function maskAccountNumber(rawNumber: string): string {
   return `•••• ${lastFour}`;
 }
 
-/**
- * Validate số tài khoản thanh toán mô phỏng (Ví điện tử hoặc Thẻ ngân hàng)
- * Hợp đồng: 8 đến 19 chữ số, không chứa ký tự khác.
- */
-export function validateAccountNumber(
-  accountNumber: string,
-  method?: PaymentMethod
-): { isValid: boolean; error?: string } {
-  void method;
-  const clean = (accountNumber || '').replace(/[\s-]+/g, '');
-
-  if (!clean) {
-    return { isValid: false, error: ORDER_ERROR_MESSAGES.ACCOUNT_NUMBER_REQUIRED };
-  }
-
-  if (!/^\d+$/.test(clean)) {
-    return { isValid: false, error: ORDER_ERROR_MESSAGES.ACCOUNT_NUMBER_INVALID };
-  }
-
-  if (clean.length < 8 || clean.length > 19) {
-    return { isValid: false, error: ORDER_ERROR_MESSAGES.ACCOUNT_NUMBER_INVALID };
-  }
-
-  return { isValid: true };
-}
+export { validateAccountNumber };
 
 /**
  * Tham số đầu vào để quyết định giữ hay đổi Idempotency-Key

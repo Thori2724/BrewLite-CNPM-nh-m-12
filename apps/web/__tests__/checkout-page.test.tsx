@@ -211,6 +211,9 @@ describe('Giao diện và luồng xử lý trang Checkout (/checkout)', () => {
 
     await waitFor(() => {
       expect(screen.getByText(/một số món trong giỏ hàng hiện đã hết hàng/i)).toBeInTheDocument();
+      expect(screen.getByText('Cà phê muối: còn 0')).toBeInTheDocument();
+      expect(screen.getByText('Thiếu hàng (còn 0)')).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: /chỉnh số lượng \/ xóa/i })).toBeInTheDocument();
       expect(screen.getAllByRole('link', { name: /quay lại giỏ hàng/i }).length).toBeGreaterThanOrEqual(1);
     });
 
@@ -502,10 +505,11 @@ describe('Giao diện và luồng xử lý trang Checkout (/checkout)', () => {
     });
   });
 
-  // 10. Đơn chờ đã hoàn tất thanh toán từ trước (PAID)
-  it('10. Đơn chờ đã hoàn tất thanh toán từ trước (PAID): Mở lại trang tự động dọn dẹp đơn chờ, giỏ hàng và chuyển sang màn hình thành công', async () => {
+  // 10. Đơn chờ đã hoàn tất thanh toán từ trước (PAID) khi mở /checkout không có ?orderId
+  it('10. Đơn chờ đã PAID khi mở /checkout (không có ?orderId): Xóa pendingOrder, giữ nguyên giỏ và ở lại Bước 1 (nếu có createdFromCart: true thì xóa giỏ và chuyển sang /orders/<id>)', async () => {
     localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(mockLoggedInUser));
-    localStorage.setItem(CART_STORAGE_KEY, JSON.stringify([mockCartItem]));
+    const initialCartJson = JSON.stringify([mockCartItem]);
+    localStorage.setItem(CART_STORAGE_KEY, initialCartJson);
 
     const pendingOrder: PendingOrderRecord = {
       orderId: 'order-already-paid',
@@ -529,17 +533,43 @@ describe('Giao diện và luồng xử lý trang Checkout (/checkout)', () => {
       items: [],
     });
 
-    renderCheckout();
+    const { unmount } = renderCheckout();
 
-    // Tự động chuyển sang màn hình thành công
     await waitFor(() => {
-      expect(screen.getByText(/thanh toán thành công!/i)).toBeInTheDocument();
-      expect(screen.getByText('#1020')).toBeInTheDocument();
+      expect(ordersService.getOrderByIdApi).toHaveBeenCalledWith('order-already-paid');
+      expect(localStorage.getItem(PENDING_ORDER_STORAGE_KEY)).toBeNull();
     });
 
-    // Đơn chờ và giỏ hàng đã được xóa sạch
-    expect(localStorage.getItem(PENDING_ORDER_STORAGE_KEY)).toBeNull();
-    expect(localStorage.getItem(CART_STORAGE_KEY)).toBe('[]');
+    // Giữ nguyên giỏ hàng, ở lại Bước 1, KHÔNG hiện màn thành công lúc mount
+    expect(localStorage.getItem(CART_STORAGE_KEY)).toBe(initialCartJson);
+    expect(screen.getByText('Bước 1/2: Đặt đơn')).toBeInTheDocument();
+    expect(screen.getByText('Cà phê muối')).toBeInTheDocument();
+    expect(screen.queryByText(/thanh toán thành công!/i)).not.toBeInTheDocument();
+
+    unmount();
+
+    // Trường hợp đặc biệt: nếu pendingOrder có cờ createdFromCart: true thì xóa giỏ và chuyển sang /orders/<id>
+    savePendingOrder({
+      ...pendingOrder,
+      createdFromCart: true,
+    });
+    vi.mocked(ordersService.getOrderByIdApi).mockResolvedValueOnce({
+      id: 'order-already-paid',
+      orderNumber: 1020,
+      status: 'PAID',
+      receiveType: 'AT_COUNTER',
+      totalAmount: 90000,
+      createdAt: new Date().toISOString(),
+      items: [],
+    });
+
+    renderCheckout();
+
+    await waitFor(() => {
+      expect(localStorage.getItem(PENDING_ORDER_STORAGE_KEY)).toBeNull();
+      expect(localStorage.getItem(CART_STORAGE_KEY)).toBe('[]');
+      expect(mockReplace).toHaveBeenCalledWith('/orders/order-already-paid');
+    });
   });
 
   // 11. Gặp lỗi 401 giữa chừng
@@ -603,12 +633,14 @@ describe('Giao diện và luồng xử lý trang Checkout (/checkout)', () => {
     const payBtn = screen.getByRole('button', { name: /xác nhận thanh toán/i });
     await user.click(payBtn);
 
-    // Quay về bước 1 (đặt đơn hàng), hiện nút "Đặt đơn hàng"
+    // Quay về bước 1 (đặt đơn hàng), hiện nút "Đặt đơn hàng" kèm message tiếng Việt của server và link Xem lịch sử đơn
     await waitFor(() => {
       expect(screen.getByRole('button', { name: /đặt đơn hàng/i })).toBeInTheDocument();
+      expect(screen.getByText(/không tìm thấy đơn hàng/i)).toBeInTheDocument();
       expect(
         screen.getByText(/đơn hàng trước đó không còn tồn tại trên hệ thống. vui lòng tiến hành đặt lại/i)
       ).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: /xem lịch sử đơn/i })).toBeInTheDocument();
     });
 
     // Bản ghi đơn chờ đã bị xóa sạch khỏi localStorage
@@ -716,6 +748,7 @@ describe('Giao diện và luồng xử lý trang Checkout (/checkout)', () => {
       itemCount: 1,
     };
     savePendingOrder(pendingOrder);
+    mockSearchParams = new URLSearchParams(`orderId=${targetOrderId}`);
 
     // Mock getOrderByIdApi trả về đơn PENDING
     vi.mocked(ordersService.getOrderByIdApi).mockResolvedValueOnce({
@@ -788,6 +821,7 @@ describe('Giao diện và luồng xử lý trang Checkout (/checkout)', () => {
       itemCount: 1,
     };
     savePendingOrder(pendingOrder);
+    mockSearchParams = new URLSearchParams('orderId=order-409-paid');
 
     // Lần 1: Trên mount tra cứu thấy đơn PENDING -> vào bước thanh toán
     vi.mocked(ordersService.getOrderByIdApi).mockResolvedValueOnce({
@@ -852,6 +886,7 @@ describe('Giao diện và luồng xử lý trang Checkout (/checkout)', () => {
       itemCount: 1,
     };
     savePendingOrder(pendingOrder);
+    mockSearchParams = new URLSearchParams('orderId=order-400-test');
 
     // Mock getOrderByIdApi lần 1 trên mount: trả về PENDING -> vào bước thanh toán
     vi.mocked(ordersService.getOrderByIdApi).mockResolvedValueOnce({
@@ -944,5 +979,517 @@ describe('Giao diện và luồng xử lý trang Checkout (/checkout)', () => {
     // 4. Giỏ hàng VẪN NGUYÊN VẸN, món vẫn còn trên giao diện
     expect(localStorage.getItem(CART_STORAGE_KEY)).not.toBeNull();
     expect(screen.getByText('Cà phê muối')).toBeInTheDocument();
+  });
+
+  // 19. Giỏ có nhiều món + đang có pendingOrder cũ (GET /orders/:id trả về PENDING) -> /checkout hiện Bước 1 với đủ các món, không tự nhảy sang Bước 2
+  it('19. Giỏ có nhiều món + đang có pendingOrder cũ: /checkout hiện Bước 1 với đủ các món và banner nhắc đơn chờ, KHÔNG tự động nhảy sang Bước 2', async () => {
+    localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(mockLoggedInUser));
+
+    const threeCartItems: CartItem[] = [
+      {
+        id: 'cart-item-1',
+        productId: 'prod-1',
+        name: 'Trà đào cam sả',
+        imageUrl: 'https://images.unsplash.com/photo-1556679343-c7306c1976bc?w=500',
+        size: 'S',
+        sugarLevel: 'P100',
+        iceLevel: 'NORMAL',
+        toppings: [],
+        note: '',
+        unitPrice: 39000,
+        quantity: 1,
+      },
+      {
+        id: 'cart-item-2',
+        productId: 'prod-2',
+        name: 'Cà phê sữa đá',
+        imageUrl: 'https://images.unsplash.com/photo-1514432324607-a09d9b4aefdd?w=500',
+        size: 'M',
+        sugarLevel: 'P70',
+        iceLevel: 'NORMAL',
+        toppings: [],
+        note: '',
+        unitPrice: 35000,
+        quantity: 1,
+      },
+      {
+        id: 'cart-item-3',
+        productId: 'prod-3',
+        name: 'Bánh Croissant',
+        imageUrl: 'https://images.unsplash.com/photo-1555507036-ab1f4038808a?w=500',
+        toppings: [],
+        note: '',
+        unitPrice: 30000,
+        quantity: 1,
+      },
+    ];
+    localStorage.setItem(CART_STORAGE_KEY, JSON.stringify(threeCartItems));
+
+    // Có đơn chờ cũ #1008 chỉ 1 món 39.000đ trong localStorage
+    const oldPendingOrder: PendingOrderRecord = {
+      orderId: 'order-old-1008',
+      orderNumber: 1008,
+      totalAmount: 39000,
+      receiveType: 'AT_COUNTER',
+      idempotencyKey: 'idemp-old-1008',
+      createdAt: new Date().toISOString(),
+      itemCount: 1,
+    };
+    savePendingOrder(oldPendingOrder);
+
+    // Server trả về đơn #1008 vẫn đang PENDING
+    vi.mocked(ordersService.getOrderByIdApi).mockResolvedValueOnce({
+      id: 'order-old-1008',
+      orderNumber: 1008,
+      status: 'PENDING',
+      receiveType: 'AT_COUNTER',
+      totalAmount: 39000,
+      createdAt: new Date().toISOString(),
+      items: [],
+    });
+
+    // Vào /checkout từ giỏ hàng (KHÔNG có ?orderId= trên URL)
+    renderCheckout();
+
+    await waitFor(() => {
+      expect(ordersService.getOrderByIdApi).toHaveBeenCalledWith('order-old-1008');
+    });
+
+    // Vẫn ở Bước 1/2: Đặt đơn với đầy đủ 3 món trong giỏ (tổng 104.000 đ)
+    expect(screen.getByText('Bước 1/2: Đặt đơn')).toBeInTheDocument();
+    expect(screen.getByText('Trà đào cam sả')).toBeInTheDocument();
+    expect(screen.getByText('Cà phê sữa đá')).toBeInTheDocument();
+    expect(screen.getByText('Bánh Croissant')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /đặt đơn hàng \(104\.000\s*đ\)/i })).toBeInTheDocument();
+
+    // Đồng thời hiện banner nhắc đơn chờ #1008 kèm nút "Tiếp tục thanh toán"
+    expect(screen.getByText(/bạn có đơn hàng đang chờ thanh toán: #1008/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /tiếp tục thanh toán/i })).toBeInTheDocument();
+
+    // Không tự động nhảy sang Bước 2
+    expect(screen.queryByText('Bước 2/2: Thanh toán')).not.toBeInTheDocument();
+  });
+
+  // 20. F5 ở Bước 2 (URL có ?orderId=) hoặc đổi trình duyệt (không có pendingOrder trong localStorage) vẫn giữ nguyên Bước 2 và tự sinh Idempotency-Key mới nếu thiếu
+  it('20. Mở /checkout?orderId=... khi không có pendingOrder trong localStorage vẫn vào thẳng Bước 2 và tự sinh Idempotency-Key mới', async () => {
+    const user = userEvent.setup();
+    localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(mockLoggedInUser));
+    // Giỏ có món nhưng URL có ?orderId=order-url-2020 và localStorage KHÔNG có pendingOrder
+    localStorage.setItem(CART_STORAGE_KEY, JSON.stringify([mockCartItem]));
+    mockSearchParams = new URLSearchParams('orderId=order-url-2020');
+
+    vi.mocked(ordersService.getOrderByIdApi).mockResolvedValueOnce({
+      id: 'order-url-2020',
+      orderNumber: 2020,
+      status: 'PENDING',
+      receiveType: 'TAKE_AWAY',
+      totalAmount: 55000,
+      createdAt: new Date().toISOString(),
+      items: [],
+    });
+
+    vi.mocked(ordersService.payOrderApi).mockResolvedValueOnce({
+      id: 'pay-2020',
+      orderId: 'order-url-2020',
+      amount: 55000,
+      method: 'WALLET',
+      accountLast4: '9999',
+      status: 'SUCCESS',
+      createdAt: new Date().toISOString(),
+      order: {
+        id: 'order-url-2020',
+        orderNumber: 2020,
+        status: 'PAID',
+      },
+    });
+
+    renderCheckout();
+
+    // Nhảy thẳng vào Bước 2 của đơn #2020 (55.000 đ)
+    await waitFor(() => {
+      expect(screen.getByText('Bước 2/2: Thanh toán')).toBeInTheDocument();
+      expect(screen.getByText('#2020')).toBeInTheDocument();
+    });
+
+    const accInput = await screen.findByPlaceholderText(/nhập số ví điện tử/i);
+    await user.type(accInput, '12349999');
+
+    const payBtn = screen.getByRole('button', { name: /xác nhận thanh toán/i });
+    await user.click(payBtn);
+
+    await waitFor(() => {
+      expect(screen.getByText(/thanh toán thành công!/i)).toBeInTheDocument();
+    });
+
+    expect(ordersService.payOrderApi).toHaveBeenCalledTimes(1);
+    const generatedKey = vi.mocked(ordersService.payOrderApi).mock.calls[0][1];
+    expect(typeof generatedKey).toBe('string');
+    expect((generatedKey as string).length).toBeGreaterThanOrEqual(8);
+  });
+
+  // 21. Thanh toán thành công đơn cũ (vào bằng /checkout?orderId=... từ /orders/[id]) khi giỏ đang có món khác -> GIỮ NGUYÊN giỏ hàng, không xóa giỏ
+  it('21. Thanh toán thành công đơn cũ qua /checkout?orderId=...: Giữ nguyên các món đang có trong giỏ hàng, chỉ xóa pendingOrder', async () => {
+    const user = userEvent.setup();
+    localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(mockLoggedInUser));
+    const currentCartJson = JSON.stringify([mockCartItem]);
+    localStorage.setItem(CART_STORAGE_KEY, currentCartJson);
+
+    // Giả lập người dùng bấm "Thanh toán" từ /orders/[id] cho đơn cũ #1002
+    const oldOrderRecord: PendingOrderRecord = {
+      orderId: 'old-order-from-history-1002',
+      orderNumber: 1002,
+      totalAmount: 29000,
+      receiveType: 'AT_COUNTER',
+      idempotencyKey: 'idemp-retry-old-1002',
+      createdAt: new Date().toISOString(),
+      itemCount: 1,
+    };
+    savePendingOrder(oldOrderRecord);
+    mockSearchParams = new URLSearchParams('orderId=old-order-from-history-1002');
+
+    vi.mocked(ordersService.getOrderByIdApi).mockResolvedValueOnce({
+      id: 'old-order-from-history-1002',
+      orderNumber: 1002,
+      status: 'PENDING',
+      receiveType: 'AT_COUNTER',
+      totalAmount: 29000,
+      createdAt: new Date().toISOString(),
+      items: [],
+    });
+
+    vi.mocked(ordersService.payOrderApi).mockResolvedValueOnce({
+      id: 'pay-old-1002',
+      orderId: 'old-order-from-history-1002',
+      amount: 29000,
+      method: 'WALLET',
+      accountLast4: '4321',
+      status: 'SUCCESS',
+      createdAt: new Date().toISOString(),
+      order: {
+        id: 'old-order-from-history-1002',
+        orderNumber: 1002,
+        status: 'PAID',
+      },
+    });
+
+    renderCheckout();
+
+    await waitFor(() => {
+      expect(screen.getByText('Bước 2/2: Thanh toán')).toBeInTheDocument();
+      expect(screen.getByText('#1002')).toBeInTheDocument();
+    });
+
+    const accInput = await screen.findByPlaceholderText(/nhập số ví điện tử/i);
+    await user.type(accInput, '09874321');
+
+    const payBtn = screen.getByRole('button', { name: /xác nhận thanh toán/i });
+    await user.click(payBtn);
+
+    await waitFor(() => {
+      expect(screen.getByText(/thanh toán thành công!/i)).toBeInTheDocument();
+      expect(screen.getByText('#1002')).toBeInTheDocument();
+    });
+
+    // pendingOrder đã được dọn sạch nhưng GIỎ HÀNG HIỆN TẠI VẪN CÒN NGUYÊN
+    expect(localStorage.getItem(PENDING_ORDER_STORAGE_KEY)).toBeNull();
+    expect(localStorage.getItem(CART_STORAGE_KEY)).toBe(currentCartJson);
+  });
+
+  // 22. Mô phỏng chuỗi lỗi: thanh toán đơn cũ #1015 qua ?orderId, sau đó điều hướng lại /checkout (không ?orderId) với giỏ 2 món (68.000đ) -> phải ở Bước 1 đủ 2 món, giỏ không bị xóa
+  it('22. Thanh toán đơn cũ qua ?orderId rồi vào lại /checkout (không ?orderId) khi giỏ có 2 món: Reset về Bước 1 với đủ 2 món và KHÔNG xóa giỏ hàng', async () => {
+    const user = userEvent.setup();
+    localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(mockLoggedInUser));
+
+    const twoCartItems: CartItem[] = [
+      {
+        id: 'cart-22-1',
+        productId: 'prod-22-1',
+        name: 'Trà đào cam sả',
+        imageUrl: 'https://images.unsplash.com/photo-1556679343-c7306c1976bc?w=500',
+        size: 'S',
+        sugarLevel: 'P100',
+        iceLevel: 'NORMAL',
+        toppings: [],
+        note: '',
+        unitPrice: 39000,
+        quantity: 1,
+      },
+      {
+        id: 'cart-22-2',
+        productId: 'prod-22-2',
+        name: 'Cà phê đen đá',
+        imageUrl: 'https://images.unsplash.com/photo-1514432324607-a09d9b4aefdd?w=500',
+        size: 'S',
+        sugarLevel: 'P70',
+        iceLevel: 'NORMAL',
+        toppings: [],
+        note: '',
+        unitPrice: 29000,
+        quantity: 1,
+      },
+    ];
+    const twoItemsJson = JSON.stringify(twoCartItems);
+    localStorage.setItem(CART_STORAGE_KEY, twoItemsJson);
+
+    // Bước (4): Mở từ /orders/[id] để thanh toán đơn cũ #1015 (30.000đ) qua ?orderId=order-1015
+    savePendingOrder({
+      orderId: 'order-1015',
+      orderNumber: 1015,
+      totalAmount: 30000,
+      receiveType: 'AT_COUNTER',
+      idempotencyKey: 'idemp-order-1015',
+      createdAt: new Date().toISOString(),
+      itemCount: 1,
+    });
+    mockSearchParams = new URLSearchParams('orderId=order-1015');
+
+    vi.mocked(ordersService.getOrderByIdApi).mockResolvedValueOnce({
+      id: 'order-1015',
+      orderNumber: 1015,
+      status: 'PENDING',
+      receiveType: 'AT_COUNTER',
+      totalAmount: 30000,
+      createdAt: new Date().toISOString(),
+      items: [],
+    });
+
+    vi.mocked(ordersService.payOrderApi).mockResolvedValueOnce({
+      id: 'pay-1015',
+      orderId: 'order-1015',
+      amount: 30000,
+      method: 'WALLET',
+      accountLast4: '6789',
+      status: 'SUCCESS',
+      createdAt: new Date().toISOString(),
+      order: {
+        id: 'order-1015',
+        orderNumber: 1015,
+        status: 'PAID',
+      },
+    });
+
+    const { rerender } = renderCheckout();
+
+    await waitFor(() => {
+      expect(screen.getByText('Bước 2/2: Thanh toán')).toBeInTheDocument();
+      expect(screen.getByText('#1015')).toBeInTheDocument();
+    });
+
+    const accInput = await screen.findByPlaceholderText(/nhập số ví điện tử/i);
+    await user.type(accInput, '12346789');
+
+    const payBtn = screen.getByRole('button', { name: /xác nhận thanh toán/i });
+    await user.click(payBtn);
+
+    // Đã hiện màn thành công của đơn #1015, pendingOrder bị xóa, giỏ 2 món vẫn còn
+    await waitFor(() => {
+      expect(screen.getByText(/thanh toán thành công!/i)).toBeInTheDocument();
+      expect(screen.getByText('#1015')).toBeInTheDocument();
+    });
+    expect(localStorage.getItem(PENDING_ORDER_STORAGE_KEY)).toBeNull();
+    expect(localStorage.getItem(CART_STORAGE_KEY)).toBe(twoItemsJson);
+
+    // Bước (5): Điều hướng client-side quay lại /checkout (không có ?orderId), component giữ state cũ trước khi effect chạy
+    mockSearchParams = new URLSearchParams();
+    rerender(
+      <AuthProvider>
+        <CartProvider>
+          <CheckoutPage />
+        </CartProvider>
+      </AuthProvider>
+    );
+
+    // Phải tự động reset về Bước 1/2: Đặt đơn với đủ 2 món (68.000đ), KHÔNG hiện màn thành công cũ và KHÔNG xóa giỏ
+    await waitFor(() => {
+      expect(screen.getByText('Bước 1/2: Đặt đơn')).toBeInTheDocument();
+      expect(screen.queryByText(/thanh toán thành công!/i)).not.toBeInTheDocument();
+    });
+
+    expect(screen.getByText('Trà đào cam sả')).toBeInTheDocument();
+    expect(screen.getByText('Cà phê đen đá')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /đặt đơn hàng \(68\.000\s*đ\)/i })).toBeInTheDocument();
+    expect(localStorage.getItem(CART_STORAGE_KEY)).toBe(twoItemsJson);
+  });
+
+  // 23. Tạo đơn từ giỏ ở Bước 1, F5 ở Bước 2 (mất state sessionCreatedOrderId nhưng còn cờ createdFromCart: true trong localStorage), thanh toán xong thì giỏ được xóa
+  it('23. Tạo đơn từ giỏ, F5 ở Bước 2 (?orderId=...), thanh toán xong thì giỏ hàng được xóa nhờ cờ createdFromCart: true', async () => {
+    const user = userEvent.setup();
+    localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(mockLoggedInUser));
+    localStorage.setItem(CART_STORAGE_KEY, JSON.stringify([mockCartItem]));
+
+    vi.mocked(ordersService.createOrderApi).mockResolvedValueOnce({
+      id: 'order-from-cart-f5',
+      orderNumber: 1025,
+      status: 'PENDING',
+      receiveType: 'AT_COUNTER',
+      totalAmount: 90000,
+      createdAt: new Date().toISOString(),
+      items: [],
+    });
+
+    // Phiên 1: Tạo đơn ở Bước 1
+    const { unmount } = renderCheckout();
+
+    await waitFor(() => {
+      expect(screen.getByText('Cà phê muối')).toBeInTheDocument();
+    });
+
+    const createBtn = screen.getByRole('button', { name: /đặt đơn hàng/i });
+    await user.click(createBtn);
+
+    await waitFor(() => {
+      expect(screen.getByText('Bước 2/2: Thanh toán')).toBeInTheDocument();
+      expect(screen.getByText('#1025')).toBeInTheDocument();
+    });
+
+    // Kiểm tra localStorage đã lưu cờ createdFromCart: true
+    const storedAfterCreate = JSON.parse(localStorage.getItem(PENDING_ORDER_STORAGE_KEY)!);
+    expect(storedAfterCreate.orderId).toBe('order-from-cart-f5');
+    expect(storedAfterCreate.createdFromCart).toBe(true);
+
+    // Giả lập F5 tại Bước 2: unmount hoàn toàn để xóa sạch state trong bộ nhớ (sessionCreatedOrderId bị mất)
+    unmount();
+
+    mockSearchParams = new URLSearchParams('orderId=order-from-cart-f5');
+    vi.mocked(ordersService.getOrderByIdApi).mockResolvedValueOnce({
+      id: 'order-from-cart-f5',
+      orderNumber: 1025,
+      status: 'PENDING',
+      receiveType: 'AT_COUNTER',
+      totalAmount: 90000,
+      createdAt: new Date().toISOString(),
+      items: [],
+    });
+
+    vi.mocked(ordersService.payOrderApi).mockResolvedValueOnce({
+      id: 'pay-from-cart-f5',
+      orderId: 'order-from-cart-f5',
+      amount: 90000,
+      method: 'WALLET',
+      accountLast4: '8888',
+      status: 'SUCCESS',
+      createdAt: new Date().toISOString(),
+      order: {
+        id: 'order-from-cart-f5',
+        orderNumber: 1025,
+        status: 'PAID',
+      },
+    });
+
+    // Phiên 2 (sau khi F5 tại /checkout?orderId=order-from-cart-f5)
+    renderCheckout();
+
+    await waitFor(() => {
+      expect(screen.getByText('Bước 2/2: Thanh toán')).toBeInTheDocument();
+      expect(screen.getByText('#1025')).toBeInTheDocument();
+    });
+
+    const accInput = await screen.findByPlaceholderText(/nhập số ví điện tử/i);
+    await user.type(accInput, '12348888');
+
+    const payBtn = screen.getByRole('button', { name: /xác nhận thanh toán/i });
+    await user.click(payBtn);
+
+    await waitFor(() => {
+      expect(screen.getByText(/thanh toán thành công!/i)).toBeInTheDocument();
+      expect(screen.getByText('#1025')).toBeInTheDocument();
+    });
+
+    // Cả pendingOrder và giỏ hàng đều được xóa sạch nhờ cờ createdFromCart: true được bảo toàn qua F5
+    expect(localStorage.getItem(PENDING_ORDER_STORAGE_KEY)).toBeNull();
+    expect(localStorage.getItem(CART_STORAGE_KEY)).toBe('[]');
+  });
+
+  // 24. Tạo đơn gặp lỗi mạng / 5xx: Hiển thị "Không kết nối được máy chủ, vui lòng thử lại" kèm nút "Thử lại"
+  it('24. Đặt đơn gặp lỗi mạng / 5xx: Hiện thông báo "Không kết nối được máy chủ, vui lòng thử lại" kèm nút "Thử lại"', async () => {
+    const user = userEvent.setup();
+    localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(mockLoggedInUser));
+    localStorage.setItem(CART_STORAGE_KEY, JSON.stringify([mockCartItem]));
+
+    vi.mocked(ordersService.createOrderApi).mockRejectedValueOnce(
+      new ordersService.OrderApiError(0, '')
+    );
+
+    renderCheckout();
+
+    await waitFor(() => {
+      expect(screen.getByText('Cà phê muối')).toBeInTheDocument();
+    });
+
+    const createBtn = screen.getByRole('button', { name: /đặt đơn hàng/i });
+    await user.click(createBtn);
+
+    await waitFor(() => {
+      expect(
+        screen.getByText('Không kết nối được máy chủ, vui lòng thử lại')
+      ).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /^thử lại$/i })).toBeInTheDocument();
+    });
+  });
+
+  // 25. Thanh toán gặp 409 khi đơn không còn thanh toán được (ví dụ đã CANCELLED): Xóa pendingOrder và hiện message tiếng Việt của server kèm nút Xem lịch sử đơn
+  it('25. Thanh toán gặp 409 khi đơn không phải PAID: Xóa pendingOrder, hiện message tiếng Việt của server kèm liên kết Xem lịch sử đơn', async () => {
+    const user = userEvent.setup();
+    localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(mockLoggedInUser));
+    localStorage.setItem(CART_STORAGE_KEY, JSON.stringify([mockCartItem]));
+
+    const pendingOrder: PendingOrderRecord = {
+      orderId: 'order-409-cancelled',
+      orderNumber: 1410,
+      totalAmount: 90000,
+      receiveType: 'AT_COUNTER',
+      idempotencyKey: 'idemp-409-cancelled-key',
+      createdAt: new Date().toISOString(),
+      itemCount: 1,
+    };
+    savePendingOrder(pendingOrder);
+    mockSearchParams = new URLSearchParams('orderId=order-409-cancelled');
+
+    // Lần 1 trên mount: đơn đang PENDING
+    vi.mocked(ordersService.getOrderByIdApi).mockResolvedValueOnce({
+      id: 'order-409-cancelled',
+      orderNumber: 1410,
+      status: 'PENDING',
+      receiveType: 'AT_COUNTER',
+      totalAmount: 90000,
+      createdAt: new Date().toISOString(),
+      items: [],
+    });
+
+    // payOrderApi trả 409 với message tiếng Việt của server
+    vi.mocked(ordersService.payOrderApi).mockRejectedValueOnce(
+      new ordersService.OrderApiError(409, 'Đơn hàng không ở trạng thái cho phép thanh toán')
+    );
+
+    // Lần 2 tra cứu lại: đơn đã CANCELLED (không phải PAID)
+    vi.mocked(ordersService.getOrderByIdApi).mockResolvedValueOnce({
+      id: 'order-409-cancelled',
+      orderNumber: 1410,
+      status: 'CANCELLED',
+      receiveType: 'AT_COUNTER',
+      totalAmount: 90000,
+      createdAt: new Date().toISOString(),
+      items: [],
+    });
+
+    renderCheckout();
+
+    await waitFor(() => {
+      expect(screen.getByText('#1410')).toBeInTheDocument();
+    });
+
+    const accInput = await screen.findByPlaceholderText(/nhập số ví điện tử/i);
+    await user.type(accInput, '12345678');
+    await user.click(screen.getByRole('button', { name: /xác nhận thanh toán/i }));
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(/đơn hàng không ở trạng thái cho phép thanh toán/i)
+      ).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: /xem lịch sử đơn/i })).toBeInTheDocument();
+    });
+
+    // pendingOrder đã được xóa để khách không bị kẹt ở đơn cũ
+    expect(localStorage.getItem(PENDING_ORDER_STORAGE_KEY)).toBeNull();
   });
 });

@@ -24,11 +24,11 @@ export default function RootLayout({
             <div className="min-h-screen flex flex-col">
               {/* Header Top Bar trải toàn chiều rộng */}
               <header className="sticky top-0 z-50 w-full bg-amber-600 text-white shadow-md">
-                <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex justify-between items-center gap-3">
-                  <div className="flex items-center gap-6 shrink-0">
+                <div className="max-w-6xl mx-auto px-3 sm:px-6 lg:px-8 h-16 flex justify-between items-center gap-2 sm:gap-3">
+                  <div className="flex items-center gap-4 sm:gap-6 shrink-0">
                     <Link
                       href="/"
-                      className="text-xl font-bold tracking-wide hover:opacity-90 transition"
+                      className="text-lg sm:text-xl font-bold tracking-wide hover:opacity-90 transition whitespace-nowrap"
                     >
                       BrewLite ☕
                     </Link>
@@ -39,11 +39,10 @@ export default function RootLayout({
                       >
                         Menu
                       </Link>
-                      {/* TODO: Task 18 sẽ thêm liên kết "Đơn hàng" vào header */}
                     </nav>
                   </div>
 
-                  <div className="flex items-center gap-3 sm:gap-4 min-w-0">
+                  <div className="flex items-center gap-2 sm:gap-4 min-w-0">
                     <AuthNav />
                     <CartIcon />
                   </div>

@@ -13,6 +13,7 @@ import {
   CATEGORY_LABELS,
 } from '../../../services/api';
 import { calculatePrice } from '../../../utils/price';
+import { formatVnd } from '../../../utils/validation';
 import { useCart } from '../../../context/CartContext';
 
 const MAX_TOPPINGS = 3;
@@ -310,9 +311,9 @@ function ProductDetailContent() {
           </div>
 
           <div className="mt-4 space-y-1.5">
-            <h1 className="text-xl sm:text-2xl font-bold text-gray-900">{product.name}</h1>
+            <h1 className="text-xl sm:text-2xl font-bold text-gray-900 break-words">{product.name}</h1>
             <p className="text-amber-600 font-extrabold text-lg sm:text-xl">
-              {product.basePrice.toLocaleString('vi-VN')} đ{' '}
+              {formatVnd(product.basePrice)}{' '}
               <span className="text-xs font-normal text-gray-400">(giá gốc)</span>
             </p>
             {isOutOfStock && (
@@ -328,17 +329,18 @@ function ProductDetailContent() {
           {/* 1. Chọn Size (ẩn nếu mảng rỗng) */}
           {hasSizes && (
             <div>
-              <label className="block text-sm font-bold text-gray-800 mb-2">
+              <span className="block text-sm font-bold text-gray-800 mb-2">
                 Chọn kích cỡ (Size) <span className="text-red-500">*</span>
-              </label>
+              </span>
               <div className="grid grid-cols-3 gap-2.5">
                 {product.sizes.map((size) => (
                   <button
                     key={size.value}
                     type="button"
+                    aria-pressed={selectedSize === size.value}
                     disabled={isOutOfStock}
                     onClick={() => setSelectedSize(size.value)}
-                    className={`py-2.5 px-3 rounded-xl border text-center transition ${
+                    className={`py-2.5 px-2 sm:px-3 rounded-xl border text-center transition ${
                       selectedSize === size.value
                         ? 'border-amber-600 bg-amber-50 text-amber-900 font-bold shadow-xs'
                         : 'border-gray-200 text-gray-700 hover:bg-gray-50'
@@ -346,7 +348,7 @@ function ProductDetailContent() {
                   >
                     <div className="text-xs sm:text-sm">{size.label}</div>
                     <div className="text-xs text-amber-700 font-semibold mt-0.5">
-                      {size.extraPrice > 0 ? `+${size.extraPrice.toLocaleString('vi-VN')} đ` : 'Gốc'}
+                      {size.extraPrice > 0 ? `+${formatVnd(size.extraPrice)}` : 'Gốc'}
                     </div>
                   </button>
                 ))}
@@ -357,14 +359,15 @@ function ProductDetailContent() {
           {/* 2. Chọn Đá (ẩn nếu mảng rỗng) */}
           {hasIceLevels && (
             <div>
-              <label className="block text-sm font-bold text-gray-800 mb-2">
+              <span className="block text-sm font-bold text-gray-800 mb-2">
                 Lượng đá
-              </label>
+              </span>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                 {product.iceLevels.map((ice) => (
                   <button
                     key={ice.value}
                     type="button"
+                    aria-pressed={selectedIce === ice.value}
                     disabled={isOutOfStock}
                     onClick={() => setSelectedIce(ice.value)}
                     className={`py-2 px-2.5 rounded-xl border text-xs font-medium text-center transition ${
@@ -383,14 +386,15 @@ function ProductDetailContent() {
           {/* 3. Chọn Đường (ẩn nếu mảng rỗng) */}
           {hasSugarLevels && (
             <div>
-              <label className="block text-sm font-bold text-gray-800 mb-2">
+              <span className="block text-sm font-bold text-gray-800 mb-2">
                 Lượng đường
-              </label>
-              <div className="grid grid-cols-5 gap-1.5 sm:gap-2">
+              </span>
+              <div className="grid grid-cols-3 sm:grid-cols-5 gap-1.5 sm:gap-2">
                 {product.sugarLevels.map((sugar) => (
                   <button
                     key={sugar.value}
                     type="button"
+                    aria-pressed={selectedSugar === sugar.value}
                     disabled={isOutOfStock}
                     onClick={() => setSelectedSugar(sugar.value)}
                     className={`py-2 px-1 rounded-xl border text-xs font-medium text-center transition ${
@@ -410,9 +414,9 @@ function ProductDetailContent() {
           {hasToppings && (
             <div>
               <div className="flex justify-between items-center mb-2">
-                <label className="text-sm font-bold text-gray-800">
+                <span className="text-sm font-bold text-gray-800">
                   Topping thêm <span className="text-xs font-normal text-gray-500">(Tối đa {MAX_TOPPINGS})</span>
-                </label>
+                </span>
                 <span className="text-xs text-gray-400">
                   Đã chọn {selectedToppings.length}/{MAX_TOPPINGS}
                 </span>
@@ -441,12 +445,13 @@ function ProductDetailContent() {
                           checked={isChecked}
                           disabled={isOutOfStock}
                           onChange={() => {}}
+                          aria-label={topping.name}
                           className="w-4 h-4 text-amber-600 rounded border-gray-300 focus:ring-amber-500 pointer-events-none shrink-0"
                         />
-                        <span className="text-xs font-medium text-gray-800 truncate">{topping.name}</span>
+                        <span className="text-xs font-medium text-gray-800 break-words">{topping.name}</span>
                       </div>
                       <span className="text-xs font-semibold text-amber-700 shrink-0 ml-2">
-                        +{topping.price.toLocaleString('vi-VN')} đ
+                        +{formatVnd(topping.price)}
                       </span>
                     </div>
                   );
@@ -458,12 +463,15 @@ function ProductDetailContent() {
           {/* 5. Ghi chú */}
           <div>
             <div className="flex justify-between items-center mb-1.5">
-              <label className="text-sm font-bold text-gray-800">Ghi chú cho quán</label>
+              <label htmlFor="item-note" className="text-sm font-bold text-gray-800">
+                Ghi chú cho quán
+              </label>
               <span className="text-xs text-gray-400">
                 {note.length}/{MAX_NOTE_LENGTH}
               </span>
             </div>
             <textarea
+              id="item-note"
               rows={3}
               maxLength={MAX_NOTE_LENGTH}
               disabled={isOutOfStock}
@@ -508,7 +516,7 @@ function ProductDetailContent() {
               <div className="flex justify-between items-baseline">
                 <span className="text-xs sm:text-sm text-amber-900 font-semibold">Tạm tính:</span>
                 <span className="text-xl font-black text-amber-600">
-                  {estimatedPrice.toLocaleString('vi-VN')} đ
+                  {formatVnd(estimatedPrice)}
                 </span>
               </div>
               <p className="text-[11px] sm:text-xs text-gray-500 mt-1">
@@ -528,7 +536,7 @@ function ProductDetailContent() {
               }`}
             >
               {!isOutOfStock
-                ? `+ Thêm vào giỏ (${estimatedPrice.toLocaleString('vi-VN')} đ)`
+                ? `+ Thêm vào giỏ (${formatVnd(estimatedPrice)})`
                 : 'Món tạm hết hàng'}
             </button>
           </div>

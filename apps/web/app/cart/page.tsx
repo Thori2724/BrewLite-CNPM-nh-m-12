@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useCart } from '../../context/CartContext';
 import { getLineTotal, MAX_ITEM_QUANTITY } from '../../utils/cart';
+import { formatVnd } from '../../utils/validation';
 import {
   SIZE_LABELS,
   SUGAR_LABELS,
@@ -136,7 +137,7 @@ export default function CartPage() {
                   />
                   <div className="flex-1 min-w-0">
                     <div className="flex justify-between items-start gap-2">
-                      <h2 className="text-sm sm:text-base font-bold text-gray-900 truncate">
+                      <h2 className="text-sm sm:text-base font-bold text-gray-900 break-words">
                         {item.name}
                       </h2>
                       <button
@@ -172,13 +173,13 @@ export default function CartPage() {
                       )}
 
                       {hasToppings && (
-                        <div className="text-gray-600">
+                        <div className="text-gray-600 break-words">
                           Topping: {item.toppings.map((t) => t.name).join(', ')}
                         </div>
                       )}
 
                       {hasNote && (
-                        <div className="italic text-gray-500">
+                        <div className="italic text-gray-500 break-words">
                           Ghi chú: &ldquo;{item.note}&rdquo;
                         </div>
                       )}
@@ -195,7 +196,7 @@ export default function CartPage() {
                       disabled={item.quantity <= 1}
                       onClick={() => updateQuantity(item.id, item.quantity - 1)}
                       aria-label="Giảm số lượng"
-                      className="w-8 h-8 flex items-center justify-center bg-gray-50 hover:bg-gray-100 text-gray-700 disabled:opacity-30 disabled:cursor-not-allowed font-bold cursor-pointer"
+                      className="w-8 h-8 sm:w-9 sm:h-9 flex items-center justify-center bg-gray-50 hover:bg-gray-100 text-gray-700 disabled:opacity-30 disabled:cursor-not-allowed font-bold cursor-pointer"
                     >
                       -
                     </button>
@@ -207,7 +208,7 @@ export default function CartPage() {
                       disabled={item.quantity >= MAX_ITEM_QUANTITY}
                       onClick={() => updateQuantity(item.id, item.quantity + 1)}
                       aria-label="Tăng số lượng"
-                      className="w-8 h-8 flex items-center justify-center bg-gray-50 hover:bg-gray-100 text-gray-700 disabled:opacity-30 disabled:cursor-not-allowed font-bold cursor-pointer"
+                      className="w-8 h-8 sm:w-9 sm:h-9 flex items-center justify-center bg-gray-50 hover:bg-gray-100 text-gray-700 disabled:opacity-30 disabled:cursor-not-allowed font-bold cursor-pointer"
                     >
                       +
                     </button>
@@ -216,10 +217,10 @@ export default function CartPage() {
                   {/* Đơn giá và Thành tiền */}
                   <div className="text-right">
                     <div className="text-[11px] sm:text-xs text-gray-400">
-                      Đơn giá: {item.unitPrice.toLocaleString('vi-VN')} đ
+                      Đơn giá: {formatVnd(item.unitPrice)}
                     </div>
                     <div className="font-extrabold text-amber-600 text-sm sm:text-base">
-                      {getLineTotal(item).toLocaleString('vi-VN')} đ
+                      {formatVnd(getLineTotal(item))}
                     </div>
                   </div>
                 </div>
@@ -243,7 +244,7 @@ export default function CartPage() {
               <div className="flex justify-between items-baseline pt-2 border-t border-gray-100">
                 <span className="text-sm font-semibold text-gray-700">Tổng tạm tính:</span>
                 <span className="text-xl sm:text-2xl font-black text-amber-600">
-                  {totalAmount.toLocaleString('vi-VN')} đ
+                  {formatVnd(totalAmount)}
                 </span>
               </div>
             </div>
@@ -257,7 +258,7 @@ export default function CartPage() {
               href="/checkout"
               className="block w-full py-3.5 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-xl text-sm transition shadow-sm text-center"
             >
-              Tiến hành đặt đơn ({totalAmount.toLocaleString('vi-VN')} đ)
+              Tiến hành đặt đơn ({formatVnd(totalAmount)})
             </Link>
           </div>
         </div>

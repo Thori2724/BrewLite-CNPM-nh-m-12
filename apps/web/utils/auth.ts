@@ -1,7 +1,16 @@
 import { AuthUser, AUTH_ERROR_MESSAGES } from '../services/auth-contract';
+import {
+  classifyApiError,
+  validateConfirmPassword,
+  validateDisplayName,
+  validateEmail,
+  validateLoginPassword,
+  validatePassword,
+} from './validation';
 
 export const AUTH_STORAGE_KEY = 'brewlite_auth_v2';
 export const LEGACY_AUTH_STORAGE_KEY = 'brewlite_auth_v1';
+export const AUTH_SESSION_CLEARED_EVENT = 'brewlite:auth-session-cleared';
 
 export interface AuthSession {
   token: string;
@@ -78,10 +87,8 @@ export function saveAuthSession(session: AuthSession): void {
       },
     };
     window.localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(cleanSession));
-  } catch (err) {
-    if (process.env.NODE_ENV !== 'production') {
-      console.error('Không thể lưu phiên đăng nhập vào localStorage:', err);
-    }
+  } catch {
+    // Bỏ qua nếu bộ nhớ trình duyệt bị chặn hoặc đầy
   }
 }
 
@@ -94,10 +101,11 @@ export function clearAuthSession(): void {
 
   try {
     window.localStorage.removeItem(AUTH_STORAGE_KEY);
-  } catch (err) {
-    if (process.env.NODE_ENV !== 'production') {
-      console.error('Không thể xóa phiên đăng nhập:', err);
+    if (typeof window.dispatchEvent === 'function') {
+      window.dispatchEvent(new Event(AUTH_SESSION_CLEARED_EVENT));
     }
+  } catch {
+    // Bỏ qua nếu bộ nhớ trình duyệt bị chặn
   }
 }
 
@@ -133,82 +141,13 @@ export function getSafeRedirectUrl(
   return trimmed;
 }
 
-/**
- * Validate định dạng Email
- */
-export function validateEmail(email: string): { isValid: boolean; error?: string } {
-  const trimmed = (email || '').trim();
-  if (!trimmed) {
-    return { isValid: false, error: 'Vui lòng nhập địa chỉ email' };
-  }
-
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  if (!emailRegex.test(trimmed)) {
-    return { isValid: false, error: 'Địa chỉ email không đúng định dạng' };
-  }
-
-  return { isValid: true };
-}
-
-/**
- * Validate Mật khẩu cho form Đăng nhập: chỉ bắt buộc nhập, không áp tối thiểu 6 ký tự
- */
-export function validateLoginPassword(password: string): { isValid: boolean; error?: string } {
-  if (!password) {
-    return { isValid: false, error: 'Vui lòng nhập mật khẩu' };
-  }
-  return { isValid: true };
-}
-
-/**
- * Validate Mật khẩu cho form Đăng ký: tối thiểu 6 ký tự
- */
-export function validatePassword(password: string): { isValid: boolean; error?: string } {
-  if (!password) {
-    return { isValid: false, error: 'Vui lòng nhập mật khẩu' };
-  }
-
-  if (password.length < 6) {
-    return { isValid: false, error: 'Mật khẩu phải có ít nhất 6 ký tự' };
-  }
-
-  return { isValid: true };
-}
-
-/**
- * Validate Tên hiển thị (displayName):
- * Hợp lệ khi 1 đến 50 ký tự sau khi trim; chuỗi toàn dấu cách bị báo lỗi tiếng Việt.
- */
-export function validateDisplayName(displayName: string): { isValid: boolean; error?: string } {
-  const trimmed = (displayName || '').trim();
-  if (!trimmed) {
-    return { isValid: false, error: 'Vui lòng nhập tên hiển thị' };
-  }
-
-  if (trimmed.length > 50) {
-    return { isValid: false, error: 'Tên hiển thị không được vượt quá 50 ký tự' };
-  }
-
-  return { isValid: true };
-}
-
-/**
- * Validate Xác nhận mật khẩu
- */
-export function validateConfirmPassword(
-  password: string,
-  confirmPassword: string
-): { isValid: boolean; error?: string } {
-  if (!confirmPassword) {
-    return { isValid: false, error: 'Vui lòng nhập lại mật khẩu' };
-  }
-
-  if (password !== confirmPassword) {
-    return { isValid: false, error: 'Mật khẩu nhập lại không khớp' };
-  }
-
-  return { isValid: true };
-}
+export {
+  validateEmail,
+  validateLoginPassword,
+  validatePassword,
+  validateDisplayName,
+  validateConfirmPassword,
+};
 
 /**
  * Trích xuất thông báo lỗi an toàn cho người dùng:
@@ -218,31 +157,11 @@ export function validateConfirmPassword(
  */
 export function extractErrorMessage(errorData: unknown, fallbackMessage?: string): string {
   const defaultFallback = fallbackMessage || AUTH_ERROR_MESSAGES.UNKNOWN_ERROR;
-
   if (!errorData) return defaultFallback;
-
   if (typeof errorData === 'string') return errorData;
-
   if (errorData instanceof Error) {
     return errorData.message || defaultFallback;
   }
-
-  if (typeof errorData === 'object' && errorData !== null) {
-    const errorObj = errorData as Record<string, unknown>;
-
-    // Định dạng NestJS validation: message là MẢNG chuỗi tiếng Anh -> chuyển thành câu chung tiếng Việt
-    if (Array.isArray(errorObj.message) && errorObj.message.length > 0) {
-      return AUTH_ERROR_MESSAGES.VALIDATION_ERROR;
-    }
-
-    if (typeof errorObj.message === 'string' && errorObj.message.trim()) {
-      return errorObj.message;
-    }
-
-    if (typeof errorObj.error === 'string' && errorObj.error.trim()) {
-      return errorObj.error;
-    }
-  }
-
-  return defaultFallback;
+  const classified = classifyApiError(errorData, defaultFallback);
+  return classified.message;
 }
