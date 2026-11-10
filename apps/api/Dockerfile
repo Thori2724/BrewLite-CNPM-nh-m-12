@@ -1,7 +1,7 @@
 FROM node:26.13.0-alpine
 
 WORKDIR /app
-
+RUN apk add --no-cache openssl
 # Copy dependency definitions and prisma schema
 COPY package*.json ./
 COPY prisma ./prisma/

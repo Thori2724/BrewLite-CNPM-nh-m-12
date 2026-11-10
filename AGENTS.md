@@ -104,8 +104,14 @@ Quy tắc giữ cho 3 người không đụng nhau:
 - Tồn kho tính theo món, không theo size. Menu xem được không cần đăng nhập.
 - Trạng thái đơn: PENDING → PAID → PREPARING → READY → COMPLETED, cộng PAYMENT_FAILED và CANCELLED. Chỉ PENDING, PAYMENT_FAILED mới thanh toán được.
 
-## 8. Triển khai lên mạng (CHƯA CHỐT)
-Nhóm đang hỏi thầy về cách triển khai (AWS, tên miền). Cho đến khi mục này được Dev&Ops cập nhật thành "ĐÃ CHỐT" kèm chi tiết, KHÔNG ai làm gì liên quan đến hạ tầng hoặc deploy. Chỉ cần mọi thứ chạy được bằng Docker Compose và cấu hình qua biến môi trường.
+## 8. Triển khai lên mạng (ĐÃ CHỐT)
+Chi tiết xem tại ADR-006 (`docs/architecture/adr/006-aws-deployment-topology.md`). 6 quyết định đã chốt:
+1. Nền tảng: AWS, region `ap-southeast-1`, theo ADR-006.
+2. Không có tên miền riêng. Địa chỉ public duy nhất là domain mặc định của CloudFront (dạng `https://xxxx.cloudfront.net`), trong dự án gọi là `PUBLIC_URL`.
+3. KHÔNG có tiền tố `/api`. Nginx định tuyến: `/products`, `/orders`, `/auth`, `/payments`, `/health` → `api:3001`; mọi đường dẫn còn lại → `web:3000`. Khớp hợp đồng API mục 1.
+4. Production KHÔNG seed tài khoản demo. Chỉ seed dữ liệu menu.
+5. Tách migration khỏi lúc khởi động API. Production không chạy migrate/seed tự động khi container API khởi động. Migrate chạy bằng container tạm, sau khi sao lưu DB.
+6. Giữ nguyên `docker-compose.yml`, `apps/api/Dockerfile`, `apps/web/Dockerfile` cho môi trường local (#24). Cấu hình production nằm ở file mới `docker-compose.prod.yml`.
 
 ## 9. Git (3 người làm song song)
 - Không có nhánh `dev`. Nhánh ghép chung là `some-diagram-and-SRS` (gọi tắt: nhánh some).
