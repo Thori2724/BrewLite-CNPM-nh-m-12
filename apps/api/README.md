@@ -122,7 +122,7 @@ $env:DATABASE_URL = $env:TEST_DATABASE_URL
 # 4. Chạy migration lên database test
 ./node_modules/.bin/prisma.cmd migrate deploy
 
-# 5. Chạy integration test tuần tự (--runInBand)
+# 5. Chạy integration test tuần tự (--runInBand) cho POST /orders và POST /payments
 npm.cmd run test:integration
 ```
 

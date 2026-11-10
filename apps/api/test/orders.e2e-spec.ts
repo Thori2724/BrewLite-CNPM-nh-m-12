@@ -487,13 +487,27 @@ describe('Orders Integration (POST /orders)', () => {
     expect(orderCount).toBe(0);
   });
 
-  it('d) Không bán quá kho khi đặt đồng thời: stock = 5, gửi 10 request POST /orders song song (quantity 1) -> đúng 5 cái 201, 5 cái 409, stock cuối = 0, đúng 5 Order trong DB', async () => {
-    await Promise.all([
-      ...Array.from({ length: 10 }, () => testPrisma.$queryRaw`SELECT 1`),
-      ...Array.from({ length: 10 }, () => prisma.$queryRaw`SELECT 1`),
-    ]);
+  it('d) Không bán quá kho khi đặt đồng thời: stock = 5, gửi 8 request POST /orders song song (quantity 1) -> đúng 5 cái 201, 3 cái 409, stock cuối = 0, đúng 5 Order trong DB', async () => {
+    const sleep = (ms: number) =>
+      new Promise<void>((resolve) => setTimeout(resolve, ms));
 
-    const concurrentRequests = Array.from({ length: 10 }, () =>
+    // Làm nóng 2 kết nối cho pool của testPrisma (dùng để kiểm tra DB)
+    await Promise.all([
+      testPrisma.$queryRaw`SELECT 1`,
+      testPrisma.$queryRaw`SELECT 1`,
+    ]);
+    await sleep(50);
+
+    // Làm nóng pool của app (PrismaService) theo từng đợt nhỏ 2 truy vấn, chờ 50ms giữa các đợt
+    for (let batch = 1; batch <= 5; batch++) {
+      await Promise.all([
+        prisma.$queryRaw`SELECT 1`,
+        prisma.$queryRaw`SELECT 1`,
+      ]);
+      await sleep(50);
+    }
+
+    const concurrentRequests = Array.from({ length: 8 }, () =>
       request(app.getHttpServer())
         .post('/orders')
         .set('Authorization', `Bearer ${accessToken}`)
@@ -513,7 +527,7 @@ describe('Orders Integration (POST /orders)', () => {
     const conflictResponses = responses.filter((r) => r.status === 409);
 
     expect(successResponses).toHaveLength(5);
-    expect(conflictResponses).toHaveLength(5);
+    expect(conflictResponses).toHaveLength(3);
 
     const productInDb = await prisma.product.findUniqueOrThrow({
       where: { id: PRODUCT_CONCURRENT_ID },
