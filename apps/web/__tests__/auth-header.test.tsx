@@ -4,7 +4,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import AuthNav from '../app/components/AuthNav';
 import { AuthProvider } from '../context/AuthContext';
 import { useRequireAuth } from '../context/useRequireAuth';
-import { AUTH_STORAGE_KEY } from '../utils/auth';
+import { AUTH_STORAGE_KEY, clearAuthSession } from '../utils/auth';
 import { CART_STORAGE_KEY } from '../utils/cart';
 
 const { mockPush, mockReplace } = vi.hoisted(() => ({
@@ -177,5 +177,20 @@ describe('Hook bảo vệ trang useRequireAuth', () => {
     await waitFor(() => {
       expect(mockReplace).toHaveBeenCalledWith('/login?redirect=%2Forders');
     });
+  });
+
+  it('10. Khi clearAuthSession() phát sự kiện xóa phiên (lỗi 401 giữa phiên), AuthContext xóa ngay user và token về null trong cùng tab', async () => {
+    localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(loggedInSession));
+    renderHeader();
+
+    expect(await screen.findByText('Nguyễn Văn An')).toBeInTheDocument();
+
+    act(() => {
+      clearAuthSession();
+    });
+
+    expect(await screen.findByRole('link', { name: 'Đăng nhập tài khoản' })).toBeInTheDocument();
+    expect(screen.queryByText('Nguyễn Văn An')).not.toBeInTheDocument();
+    expect(localStorage.getItem(AUTH_STORAGE_KEY)).toBeNull();
   });
 });

@@ -9,6 +9,7 @@ import {
 } from '../services/auth-contract';
 import { loginApi, registerApi } from '../services/auth';
 import {
+  AUTH_SESSION_CLEARED_EVENT,
   AUTH_STORAGE_KEY,
   clearAuthSession,
   loadAuthSession,
@@ -61,10 +62,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     };
 
+    const handleSessionCleared = () => {
+      if (isMounted) {
+        setUser(null);
+        setToken(null);
+      }
+    };
+
     window.addEventListener('storage', handleStorageChange);
+    window.addEventListener(AUTH_SESSION_CLEARED_EVENT, handleSessionCleared);
     return () => {
       isMounted = false;
       window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener(AUTH_SESSION_CLEARED_EVENT, handleSessionCleared);
     };
   }, []);
 

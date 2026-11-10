@@ -18,7 +18,33 @@ describe('ProductsService', () => {
       findMany: jest.Mock;
       findFirst: jest.Mock;
     };
+    topping: {
+      findMany: jest.Mock;
+    };
   };
+
+  const mockToppings = [
+    {
+      id: '22222222-0000-0000-0000-000000000001',
+      name: 'Trân châu đen',
+      price: 5000,
+    },
+    {
+      id: '22222222-0000-0000-0000-000000000002',
+      name: 'Thạch dừa',
+      price: 5000,
+    },
+    {
+      id: '22222222-0000-0000-0000-000000000003',
+      name: 'Pudding',
+      price: 7000,
+    },
+    {
+      id: '22222222-0000-0000-0000-000000000004',
+      name: 'Kem cheese',
+      price: 10000,
+    },
+  ];
 
   const mockCoffee = {
     id: '11111111-0000-0000-0000-000000000001',
@@ -52,6 +78,9 @@ describe('ProductsService', () => {
       product: {
         findMany: jest.fn(),
         findFirst: jest.fn(),
+      },
+      topping: {
+        findMany: jest.fn().mockResolvedValue(mockToppings),
       },
     };
 
@@ -145,8 +174,9 @@ describe('ProductsService', () => {
   });
 
   describe('findOne (GET /products/:id)', () => {
-    it('trả chi tiết món nước đủ sizes, sugarLevels, iceLevels và toppings rỗng', async () => {
+    it('trả chi tiết món nước đủ sizes, sugarLevels, iceLevels và 4 toppings theo thứ tự id tăng dần', async () => {
       prisma.product.findFirst.mockResolvedValue(mockCoffee);
+      prisma.topping.findMany.mockResolvedValue(mockToppings);
 
       const result = await service.findOne(mockCoffee.id);
 
@@ -161,20 +191,56 @@ describe('ProductsService', () => {
           stock: true,
         },
       });
+      expect(prisma.topping.findMany).toHaveBeenCalledWith({
+        where: { isVisible: true },
+        orderBy: { id: 'asc' },
+        select: {
+          id: true,
+          name: true,
+          price: true,
+        },
+      });
       expect(result).toEqual({
         ...mockCoffee,
         sizes: DRINK_SIZES,
         sugarLevels: DRINK_SUGAR_LEVELS,
         iceLevels: DRINK_ICE_LEVELS,
-        toppings: [],
+        toppings: mockToppings,
       });
     });
 
-    it('trả chi tiết món CAKE với 4 mảng tùy chọn đều rỗng', async () => {
+    it('chỉ lấy topping có isVisible = true và không trả trường isVisible', async () => {
+      prisma.product.findFirst.mockResolvedValue(mockOutOfStock);
+      prisma.topping.findMany.mockResolvedValue([mockToppings[0]]);
+
+      const result = await service.findOne(mockOutOfStock.id);
+
+      expect(prisma.topping.findMany).toHaveBeenCalledTimes(1);
+      expect(prisma.topping.findMany).toHaveBeenCalledWith({
+        where: { isVisible: true },
+        orderBy: { id: 'asc' },
+        select: {
+          id: true,
+          name: true,
+          price: true,
+        },
+      });
+      expect(result.toppings).toEqual([
+        {
+          id: '22222222-0000-0000-0000-000000000001',
+          name: 'Trân châu đen',
+          price: 5000,
+        },
+      ]);
+      expect(result.toppings[0]).not.toHaveProperty('isVisible');
+    });
+
+    it('trả chi tiết món CAKE với 4 mảng tùy chọn đều rỗng và không truy vấn bảng Topping', async () => {
       prisma.product.findFirst.mockResolvedValue(mockCake);
 
       const result = await service.findOne(mockCake.id);
 
+      expect(prisma.topping.findMany).not.toHaveBeenCalled();
       expect(result).toEqual({
         ...mockCake,
         sizes: [],

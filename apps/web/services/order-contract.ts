@@ -44,6 +44,106 @@ export const ORDER_STATUS_LABELS: Record<OrderStatus, string> = {
 // 4. Enum Trạng thái thanh toán (PaymentStatus)
 export type PaymentStatus = 'PENDING' | 'SUCCESS' | 'FAILED';
 
+// Ghi chú: Hợp đồng API (mục 7) chưa có bảng nhãn cho PaymentStatus, đây là nhãn tiếng Việt do FE tự đặt để hiển thị trên UI
+export const PAYMENT_STATUS_LABELS: Record<PaymentStatus, string> = {
+  SUCCESS: 'Thành công',
+  FAILED: 'Thất bại',
+  PENDING: 'Đang xử lý',
+};
+
+// Các bước luồng tiến trình chính của đơn hàng (Stepper)
+export const ORDER_MAIN_FLOW_STEPS: OrderStatus[] = [
+  'PENDING',
+  'PAID',
+  'PREPARING',
+  'READY',
+  'COMPLETED',
+];
+
+// Cấu hình Banner đầu trang chi tiết đơn theo từng trạng thái OrderStatus
+export interface OrderStatusBannerConfig {
+  title: string;
+  description: string;
+  variant: 'success' | 'warning' | 'error' | 'info' | 'neutral';
+}
+
+export const ORDER_STATUS_BANNERS: Record<OrderStatus, OrderStatusBannerConfig> = {
+  PAID: {
+    title: 'Đặt hàng thành công',
+    description: `Trạng thái: ${ORDER_STATUS_LABELS.PAID}. Đơn hàng của bạn đã được ghi nhận và đang chờ quầy chuẩn bị.`,
+    variant: 'success',
+  },
+  PENDING: {
+    title: 'Đơn đang chờ thanh toán',
+    description: `Trạng thái: ${ORDER_STATUS_LABELS.PENDING}. Vui lòng hoàn tất thanh toán để quán bắt đầu pha chế.`,
+    variant: 'warning',
+  },
+  PAYMENT_FAILED: {
+    title: 'Thanh toán không thành công',
+    description: `Trạng thái: ${ORDER_STATUS_LABELS.PAYMENT_FAILED}. Vui lòng kiểm tra lại và bấm Thử lại thanh toán.`,
+    variant: 'error',
+  },
+  PREPARING: {
+    title: ORDER_STATUS_LABELS.PREPARING,
+    description: 'Quầy đang pha chế đồ uống và chuẩn bị món cho bạn.',
+    variant: 'info',
+  },
+  READY: {
+    title: ORDER_STATUS_LABELS.READY,
+    description: 'Món của bạn đã sẵn sàng! Vui lòng đến quầy để nhận đồ uống.',
+    variant: 'success',
+  },
+  COMPLETED: {
+    title: ORDER_STATUS_LABELS.COMPLETED,
+    description: 'Đơn hàng đã hoàn thành. Cảm ơn bạn đã ủng hộ BrewLite!',
+    variant: 'success',
+  },
+  CANCELLED: {
+    title: ORDER_STATUS_LABELS.CANCELLED,
+    description: 'Đơn hàng này đã bị hủy.',
+    variant: 'neutral',
+  },
+};
+
+/**
+ * Chuyển đổi thời gian ISO 8601 UTC sang giờ Việt Nam (UTC+7), định dạng dd/MM/yyyy HH:mm
+ */
+export function formatVietnamDateTime(isoString?: string | null): string {
+  if (!isoString) return '';
+  const date = new Date(isoString);
+  if (Number.isNaN(date.getTime())) return '';
+
+  // Đổi sang giờ Việt Nam (UTC+7) ổn định trên mọi môi trường (trình duyệt & Node/Vitest)
+  const vnTimeMs = date.getTime() + 7 * 60 * 60 * 1000;
+  const vnDate = new Date(vnTimeMs);
+
+  const day = String(vnDate.getUTCDate()).padStart(2, '0');
+  const month = String(vnDate.getUTCMonth() + 1).padStart(2, '0');
+  const year = vnDate.getUTCFullYear();
+  const hours = String(vnDate.getUTCHours()).padStart(2, '0');
+  const minutes = String(vnDate.getUTCMinutes()).padStart(2, '0');
+
+  return `${day}/${month}/${year} ${hours}:${minutes}`;
+}
+
+/**
+ * Tóm tắt danh sách món của đơn hàng trên trang lịch sử
+ * Ví dụ: "Trà sữa truyền thống x2, Bánh Croissant x1" hoặc "... và 2 món khác" nếu quá 2 món
+ */
+export function summarizeOrderItems(items?: OrderItemResponse[]): string {
+  if (!items || items.length === 0) return 'Không có món';
+  const maxShown = 2;
+  const shown = items
+    .slice(0, maxShown)
+    .map((item) => `${item.productName} x${item.quantity}`)
+    .join(', ');
+  const remaining = items.length - maxShown;
+  if (remaining > 0) {
+    return `${shown} ... và ${remaining} món khác`;
+  }
+  return shown;
+}
+
 // 5. DTO từng món khi gửi lên POST /orders
 // TUYỆT ĐỐI KHÔNG GỬI GIÁ TIỀN (unitPrice, lineTotal, totalAmount) TỪ CLIENT
 export interface CreateOrderItemDto {

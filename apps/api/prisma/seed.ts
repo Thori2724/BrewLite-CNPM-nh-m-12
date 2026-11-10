@@ -1,6 +1,12 @@
-import { PrismaClient, Category } from '@prisma/client';
+import { PrismaClient, Category, Role } from '@prisma/client';
+import * as bcrypt from 'bcrypt';
 
 const prisma = new PrismaClient();
+
+const DEMO_USER_ID = '44444444-0000-0000-0000-000000000001';
+const DEMO_USER_EMAIL = 'khach@example.com';
+const DEMO_USER_DISPLAY_NAME = 'Khách demo';
+const BCRYPT_SALT_ROUNDS = 10;
 
 const products = [
   // COFFEE
@@ -117,6 +123,33 @@ const products = [
   },
 ];
 
+const toppings = [
+  {
+    id: '22222222-0000-0000-0000-000000000001',
+    name: 'Trân châu đen',
+    price: 5000,
+    isVisible: true,
+  },
+  {
+    id: '22222222-0000-0000-0000-000000000002',
+    name: 'Thạch dừa',
+    price: 5000,
+    isVisible: true,
+  },
+  {
+    id: '22222222-0000-0000-0000-000000000003',
+    name: 'Pudding',
+    price: 7000,
+    isVisible: true,
+  },
+  {
+    id: '22222222-0000-0000-0000-000000000004',
+    name: 'Kem cheese',
+    price: 10000,
+    isVisible: true,
+  },
+];
+
 async function main() {
   console.log('Đang khởi tạo dữ liệu mẫu cho menu (seed)...');
   for (const product of products) {
@@ -127,6 +160,46 @@ async function main() {
     });
   }
   console.log(`Đã nạp thành công ${products.length} sản phẩm vào bảng Product.`);
+
+  for (const topping of toppings) {
+    await prisma.topping.upsert({
+      where: { id: topping.id },
+      update: {
+        name: topping.name,
+        price: topping.price,
+        isVisible: topping.isVisible,
+      },
+      create: topping,
+    });
+  }
+  console.log(`Đã nạp thành công ${toppings.length} topping vào bảng Topping.`);
+
+  const demoPassword = process.env.DEMO_USER_PASSWORD;
+  if (!demoPassword || demoPassword.length < 6) {
+    console.log(
+      'Bỏ qua tạo tài khoản demo: biến môi trường DEMO_USER_PASSWORD chưa được đặt hoặc ngắn hơn 6 ký tự.',
+    );
+  } else {
+    const passwordHash = await bcrypt.hash(demoPassword, BCRYPT_SALT_ROUNDS);
+    await prisma.user.upsert({
+      where: { id: DEMO_USER_ID },
+      update: {
+        displayName: DEMO_USER_DISPLAY_NAME,
+        role: Role.CUSTOMER,
+        passwordHash,
+      },
+      create: {
+        id: DEMO_USER_ID,
+        email: DEMO_USER_EMAIL,
+        displayName: DEMO_USER_DISPLAY_NAME,
+        role: Role.CUSTOMER,
+        passwordHash,
+      },
+    });
+    console.log(
+      `Đã nạp thành công tài khoản demo (${DEMO_USER_EMAIL}) vào bảng User.`,
+    );
+  }
 }
 
 main()

@@ -313,7 +313,7 @@ describe('Giao diện và nghiệp vụ trang Đăng ký (/register)', () => {
     expect(authService.registerApi).not.toHaveBeenCalled();
   });
 
-  it('12. Hiển thị thông báo khi email đã tồn tại (lỗi 409 Conflict)', async () => {
+  it('12. Hiển thị thông báo khi email đã tồn tại (lỗi 409 Conflict) ngay dưới ô email', async () => {
     const user = userEvent.setup();
     vi.mocked(authService.registerApi).mockRejectedValue(
       new authService.AuthApiError(409, AUTH_ERROR_MESSAGES.EMAIL_ALREADY_EXISTS)
@@ -325,13 +325,18 @@ describe('Giao diện và nghiệp vụ trang Đăng ký (/register)', () => {
       </AuthProvider>
     );
 
-    await user.type(await screen.findByLabelText(/tên hiển thị/i), 'Nguyễn Văn A');
-    await user.type(screen.getByLabelText(/địa chỉ email/i), 'duplicate@brewlite.vn');
+    const emailInput = await screen.findByLabelText(/địa chỉ email/i);
+    await user.type(screen.getByLabelText(/tên hiển thị/i), 'Nguyễn Văn A');
+    await user.type(emailInput, 'duplicate@brewlite.vn');
     await user.type(screen.getByLabelText(/^mật khẩu$/i), '123456');
     await user.type(screen.getByLabelText(/nhập lại mật khẩu/i), '123456');
     await user.click(screen.getByRole('button', { name: /đăng ký tài khoản/i }));
 
-    expect(await screen.findByText(AUTH_ERROR_MESSAGES.EMAIL_ALREADY_EXISTS)).toBeInTheDocument();
+    const emailErr = await screen.findByText(AUTH_ERROR_MESSAGES.EMAIL_ALREADY_EXISTS);
+    expect(emailErr).toBeInTheDocument();
+    expect(emailErr).toHaveAttribute('id', 'register-email-error');
+    expect(emailInput).toHaveAttribute('aria-invalid', 'true');
+    expect(emailInput).toHaveAttribute('aria-describedby', 'register-email-error');
   });
 
   it('13. Đăng ký thành công thì chuyển hướng sang /login kèm registered=true (không tự đăng nhập)', async () => {
@@ -421,8 +426,16 @@ describe('Giao diện và nghiệp vụ trang Đăng ký (/register)', () => {
     await user.type(screen.getByLabelText(/nhập lại mật khẩu/i), '123456');
     await user.click(screen.getByRole('button', { name: /đăng ký tài khoản/i }));
 
-    // Chỉ hiện thông báo chung tiếng Việt
+    // Chỉ hiện thông báo chung tiếng Việt và gắn lỗi tiếng Việt vào đúng ô
     expect(await screen.findByText(AUTH_ERROR_MESSAGES.VALIDATION_ERROR)).toBeInTheDocument();
+    expect(screen.getByText('Địa chỉ email không đúng định dạng')).toHaveAttribute(
+      'id',
+      'register-email-error'
+    );
+    expect(screen.getByText('Mật khẩu phải có ít nhất 6 ký tự')).toHaveAttribute(
+      'id',
+      'register-password-error'
+    );
 
     // Khẳng định chuỗi tiếng Anh của server KHÔNG xuất hiện trên màn hình
     expect(screen.queryByText('email must be an email')).not.toBeInTheDocument();
