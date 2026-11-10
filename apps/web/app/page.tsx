@@ -104,6 +104,8 @@ export default function MenuPage() {
           {CATEGORIES.map((cat) => (
             <button
               key={cat.id}
+              type="button"
+              aria-pressed={selectedCategory === cat.id}
               onClick={() => setSelectedCategory(cat.id)}
               className={`px-4 py-2 text-xs sm:text-sm font-medium rounded-full whitespace-nowrap transition cursor-pointer ${
                 selectedCategory === cat.id
@@ -118,7 +120,11 @@ export default function MenuPage() {
 
         {/* Ô tìm kiếm */}
         <div className="relative w-full md:w-72 lg:w-80 shrink-0">
+          <label htmlFor="menu-search" className="sr-only">
+            Tìm kiếm món ăn, đồ uống
+          </label>
           <input
+            id="menu-search"
             type="text"
             placeholder="Tìm kiếm món ăn, đồ uống..."
             value={searchInput}
@@ -138,15 +144,33 @@ export default function MenuPage() {
 
       {/* Trạng thái Error (Lỗi) */}
       {error && !loading && (
-        <div className="max-w-md mx-auto bg-red-50 border border-red-100 text-red-600 p-6 rounded-2xl text-center text-sm space-y-3">
+        <div
+          role="alert"
+          className="max-w-md mx-auto bg-red-50 border border-red-100 text-red-600 p-6 rounded-2xl text-center text-sm space-y-3"
+        >
           <p>{error}</p>
-          <button
-            type="button"
-            onClick={handleRetry}
-            className="px-5 py-2 bg-red-600 text-white text-xs sm:text-sm font-medium rounded-xl hover:bg-red-700 transition cursor-pointer"
-          >
-            Thử lại
-          </button>
+          <div className="flex flex-wrap justify-center gap-2">
+            <button
+              type="button"
+              onClick={handleRetry}
+              className="px-5 py-2 bg-red-600 text-white text-xs sm:text-sm font-medium rounded-xl hover:bg-red-700 transition cursor-pointer"
+            >
+              Thử lại
+            </button>
+            {(selectedCategory !== 'ALL' || searchInput.trim() !== '') && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedCategory('ALL');
+                  setSearchInput('');
+                  setDebouncedQuery('');
+                }}
+                className="px-4 py-2 bg-white text-gray-700 border border-gray-200 text-xs sm:text-sm font-medium rounded-xl hover:bg-gray-50 transition cursor-pointer"
+              >
+                Quay về Tất cả
+              </button>
+            )}
+          </div>
         </div>
       )}
 
@@ -158,9 +182,9 @@ export default function MenuPage() {
         </div>
       )}
 
-      {/* Lưới hiển thị sản phẩm: 2 cột điện thoại, 3 cột tablet, 4 cột desktop */}
+      {/* Lưới hiển thị sản phẩm: 1 cột màn nhỏ (<640px), 2 cột sm, 3 cột tablet (md), 4 cột desktop (lg) */}
       {!loading && !error && products.length > 0 && (
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 sm:gap-5">
           {products.map((product) => (
             <ProductCard key={product.id} product={product} />
           ))}

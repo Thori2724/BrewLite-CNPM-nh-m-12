@@ -8,8 +8,8 @@ import {
   getSafeRedirectUrl,
   validateEmail,
   validateLoginPassword,
-  extractErrorMessage,
 } from '../../utils/auth';
+import { classifyApiError } from '../../utils/validation';
 import { AUTH_ERROR_MESSAGES } from '../../services/auth-contract';
 
 function LoginForm() {
@@ -74,9 +74,9 @@ function LoginForm() {
       router.push(targetRedirect);
     } catch (err) {
       // Thông báo lỗi chung 401 hoặc lỗi validate, không tiết lộ cụ thể sai email hay sai mật khẩu
-      const message = extractErrorMessage(err, AUTH_ERROR_MESSAGES.INVALID_CREDENTIALS);
+      const classified = classifyApiError(err, AUTH_ERROR_MESSAGES.INVALID_CREDENTIALS);
       setErrors({
-        general: message,
+        general: classified.message,
       });
     } finally {
       setIsSubmitting(false);
@@ -148,6 +148,8 @@ function LoginForm() {
             autoComplete="email"
             placeholder="nhapemail@vidu.com"
             value={email}
+            aria-invalid={Boolean(errors.email)}
+            aria-describedby={errors.email ? 'login-email-error' : undefined}
             onChange={(e) => {
               setEmail(e.target.value);
               if (errors.email) setErrors((prev) => ({ ...prev, email: undefined }));
@@ -159,7 +161,7 @@ function LoginForm() {
             }`}
           />
           {errors.email && (
-            <p role="alert" className="text-xs text-red-600 font-medium">
+            <p id="login-email-error" role="alert" className="text-xs text-red-600 font-medium">
               {errors.email}
             </p>
           )}
@@ -178,6 +180,8 @@ function LoginForm() {
               autoComplete="current-password"
               placeholder="Nhập mật khẩu"
               value={password}
+              aria-invalid={Boolean(errors.password)}
+              aria-describedby={errors.password ? 'login-password-error' : undefined}
               onChange={(e) => {
                 setPassword(e.target.value);
                 if (errors.password) setErrors((prev) => ({ ...prev, password: undefined }));
@@ -198,7 +202,7 @@ function LoginForm() {
             </button>
           </div>
           {errors.password && (
-            <p role="alert" className="text-xs text-red-600 font-medium">
+            <p id="login-password-error" role="alert" className="text-xs text-red-600 font-medium">
               {errors.password}
             </p>
           )}
