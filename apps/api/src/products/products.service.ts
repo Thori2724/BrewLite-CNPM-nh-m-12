@@ -79,12 +79,24 @@ export class ProductsService {
 
     const isCake = product.category === Category.CAKE;
 
+    const toppings = isCake
+      ? []
+      : await this.prisma.topping.findMany({
+          where: { isVisible: true },
+          orderBy: { id: 'asc' },
+          select: {
+            id: true,
+            name: true,
+            price: true,
+          },
+        });
+
     return {
       ...product,
       sizes: isCake ? [] : DRINK_SIZES,
       sugarLevels: isCake ? [] : DRINK_SUGAR_LEVELS,
       iceLevels: isCake ? [] : DRINK_ICE_LEVELS,
-      toppings: [],
+      toppings,
     };
   }
 }
