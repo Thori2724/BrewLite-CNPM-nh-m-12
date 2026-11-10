@@ -102,6 +102,30 @@ npm.cmd run seed
 - `GET /orders/me` (cần Bearer JWT): Lấy danh sách đơn hàng của người dùng đang đăng nhập, sắp xếp `createdAt` giảm dần rồi `orderNumber` giảm dần, kèm `items[]` và `toppings[]` (không bao gồm `payments`).
 - `GET /orders/:id` (cần Bearer JWT): Xem chi tiết một đơn hàng của chính người dùng kèm lịch sử `payments[]` (sắp xếp `createdAt` giảm dần, có `failureReason: null` hoặc lý do lỗi). Đơn không tồn tại, của người khác hoặc `id` không phải UUID đều trả `404 Not Found` (`"Không tìm thấy đơn hàng"`).
 
+## Chạy Integration Test (Database PostgreSQL thật - Việc 9a)
+
+Integration test kết nối tới database PostgreSQL riêng biệt thông qua biến môi trường `TEST_DATABASE_URL`. Để bảo vệ dữ liệu dev, khóa an toàn bắt buộc tên database trong `TEST_DATABASE_URL` phải kết thúc bằng hậu tố `_test` (nếu thiếu biến hoặc tên database không kết thúc bằng `_test`, bộ test sẽ từ chối chạy ngay).
+
+Các bước chuẩn bị và chạy trên Windows PowerShell (khi container `brewlite-postgres` của Docker Compose đang chạy):
+
+```powershell
+# 1. Tạo database test riêng (chỉ cần chạy 1 lần; nếu đã có sẽ báo already exists, có thể bỏ qua)
+docker exec brewlite-postgres psql -U brewlite -d postgres -c "CREATE DATABASE brewlite_test;"
+
+# 2. Di chuyển vào thư mục apps/api
+cd apps/api
+
+# 3. Đặt biến TEST_DATABASE_URL và tạm trỏ DATABASE_URL sang database test trong cửa sổ PowerShell hiện tại để chạy migration
+$env:TEST_DATABASE_URL = "postgresql://brewlite:brewlite@127.0.0.1:5432/brewlite_test?schema=public"
+$env:DATABASE_URL = $env:TEST_DATABASE_URL
+
+# 4. Chạy migration lên database test
+./node_modules/.bin/prisma.cmd migrate deploy
+
+# 5. Chạy integration test tuần tự (--runInBand)
+npm.cmd run test:integration
+```
+
 ## Deployment
 
 When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.

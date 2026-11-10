@@ -194,119 +194,122 @@ export class OrdersService {
     const receiveType = dto.receiveType ?? ReceiveType.AT_COUNTER;
     const orderNote = dto.note ?? null;
 
-    return this.prisma.$transaction(async (tx) => {
-      const failedProductIds: string[] = [];
+    return this.prisma.$transaction(
+      async (tx) => {
+        const failedProductIds: string[] = [];
 
-      for (const [productId, requiredQty] of requestedByProduct.entries()) {
-        const updated = await tx.product.updateMany({
-          where: {
-            id: productId,
-            isVisible: true,
-            stock: { gte: requiredQty },
-          },
-          data: {
-            stock: { decrement: requiredQty },
-          },
-        });
-
-        if (updated.count === 0) {
-          failedProductIds.push(productId);
-        }
-      }
-
-      if (failedProductIds.length > 0) {
-        const currentProducts = await tx.product.findMany({
-          where: { id: { in: failedProductIds } },
-          select: { id: true, name: true, stock: true },
-        });
-        const currentById = new Map(currentProducts.map((p) => [p.id, p]));
-
-        const details = failedProductIds.map((productId) => {
-          const current = currentById.get(productId);
-          const original = productMap.get(productId)!;
-          return {
-            productId,
-            name: current?.name ?? original.name,
-            available: current?.stock ?? 0,
-          };
-        });
-
-        throw new ConflictException({
-          statusCode: HttpStatus.CONFLICT,
-          message: `Sản phẩm '${details[0].name}' không đủ số lượng trong kho`,
-          error: 'Conflict',
-          details,
-        });
-      }
-
-      const createdOrder = await tx.order.create({
-        data: {
-          userId,
-          status: OrderStatus.PENDING,
-          receiveType,
-          note: orderNote,
-          totalAmount: pricing.totalAmount,
-        },
-      });
-
-      const createdItems: OrderItemRecord[] = [];
-
-      for (let i = 0; i < normalizedItems.length; i++) {
-        const item = normalizedItems[i];
-        const linePricing = pricing.lines[i];
-
-        const createdItem = await tx.orderItem.create({
-          data: {
-            orderId: createdOrder.id,
-            productId: item.product.id,
-            productName: item.product.name,
-            unitPrice: linePricing.unitPrice,
-            quantity: item.quantity,
-            size: item.size,
-            sugarLevel: item.sugarLevel,
-            iceLevel: item.iceLevel,
-            lineTotal: linePricing.lineTotal,
-            note: item.note,
-          },
-        });
-
-        const createdToppings: OrderToppingRecord[] = [];
-        for (const topping of item.toppings) {
-          await tx.orderItemTopping.create({
+        for (const [productId, requiredQty] of requestedByProduct.entries()) {
+          const updated = await tx.product.updateMany({
+            where: {
+              id: productId,
+              isVisible: true,
+              stock: { gte: requiredQty },
+            },
             data: {
-              orderItemId: createdItem.id,
+              stock: { decrement: requiredQty },
+            },
+          });
+
+          if (updated.count === 0) {
+            failedProductIds.push(productId);
+          }
+        }
+
+        if (failedProductIds.length > 0) {
+          const currentProducts = await tx.product.findMany({
+            where: { id: { in: failedProductIds } },
+            select: { id: true, name: true, stock: true },
+          });
+          const currentById = new Map(currentProducts.map((p) => [p.id, p]));
+
+          const details = failedProductIds.map((productId) => {
+            const current = currentById.get(productId);
+            const original = productMap.get(productId)!;
+            return {
+              productId,
+              name: current?.name ?? original.name,
+              available: current?.stock ?? 0,
+            };
+          });
+
+          throw new ConflictException({
+            statusCode: HttpStatus.CONFLICT,
+            message: `Sản phẩm '${details[0].name}' không đủ số lượng trong kho`,
+            error: 'Conflict',
+            details,
+          });
+        }
+
+        const createdOrder = await tx.order.create({
+          data: {
+            userId,
+            status: OrderStatus.PENDING,
+            receiveType,
+            note: orderNote,
+            totalAmount: pricing.totalAmount,
+          },
+        });
+
+        const createdItems: OrderItemRecord[] = [];
+
+        for (let i = 0; i < normalizedItems.length; i++) {
+          const item = normalizedItems[i];
+          const linePricing = pricing.lines[i];
+
+          const createdItem = await tx.orderItem.create({
+            data: {
+              orderId: createdOrder.id,
+              productId: item.product.id,
+              productName: item.product.name,
+              unitPrice: linePricing.unitPrice,
+              quantity: item.quantity,
+              size: item.size,
+              sugarLevel: item.sugarLevel,
+              iceLevel: item.iceLevel,
+              lineTotal: linePricing.lineTotal,
+              note: item.note,
+            },
+          });
+
+          const createdToppings: OrderToppingRecord[] = [];
+          for (const topping of item.toppings) {
+            await tx.orderItemTopping.create({
+              data: {
+                orderItemId: createdItem.id,
+                toppingId: topping.id,
+                name: topping.name,
+                price: topping.price,
+              },
+            });
+            createdToppings.push({
               toppingId: topping.id,
               name: topping.name,
               price: topping.price,
-            },
-          });
-          createdToppings.push({
-            toppingId: topping.id,
-            name: topping.name,
-            price: topping.price,
+            });
+          }
+
+          createdItems.push({
+            id: createdItem.id,
+            productId: createdItem.productId,
+            productName: createdItem.productName,
+            size: createdItem.size,
+            sugarLevel: createdItem.sugarLevel,
+            iceLevel: item.iceLevel,
+            quantity: createdItem.quantity,
+            unitPrice: createdItem.unitPrice,
+            lineTotal: createdItem.lineTotal,
+            note: createdItem.note,
+            toppings: createdToppings,
           });
         }
 
-        createdItems.push({
-          id: createdItem.id,
-          productId: createdItem.productId,
-          productName: createdItem.productName,
-          size: createdItem.size,
-          sugarLevel: createdItem.sugarLevel,
-          iceLevel: createdItem.iceLevel,
-          quantity: createdItem.quantity,
-          unitPrice: createdItem.unitPrice,
-          lineTotal: createdItem.lineTotal,
-          note: createdItem.note,
-          toppings: createdToppings,
+        return this.formatOrderResponse({
+          ...createdOrder,
+          items: createdItems,
         });
-      }
-
-      return this.formatOrderResponse({
-        ...createdOrder,
-        items: createdItems,
-      });
-    });
+      },
+      { maxWait: 10000, timeout: 15000 },
+    );
   }
 
   async findMyOrders(userId: string) {
