@@ -57,10 +57,11 @@ $ npm run test:e2e
 $ npm run test:cov
 ```
 
-## Endpoints Sản phẩm (Sprint 1)
+## Endpoints Sản phẩm (Sprint 1 & Việc 5)
 
 - `GET /products`: Lấy danh sách món đang hiển thị (`isVisible = true`), sắp xếp theo `category` rồi `name`. Hỗ trợ query tùy chọn `category` (`TEA`, `COFFEE`, `MILK_TEA`, `CAKE`) và `q` (tìm theo tên không phân biệt hoa/thường, có dấu).
-- `GET /products/:id`: Xem chi tiết một sản phẩm theo UUID kèm cấu hình `sizes`, `sugarLevels`, `iceLevels`, `toppings` (món `CAKE` trả 4 mảng rỗng `[]`).
+- `GET /products/:id`: Xem chi tiết một sản phẩm theo UUID kèm cấu hình `sizes`, `sugarLevels`, `iceLevels` và `toppings` (lấy các topping `isVisible = true` từ bảng `Topping`, sắp xếp theo `id` tăng dần; riêng món `CAKE` trả 4 mảng rỗng `[]`).
+- **Dữ liệu mẫu (Seed):** Nạp 12 sản phẩm (`Product`) và 4 topping (`Topping`: Trân châu đen, Thạch dừa, Pudding, Kem cheese) bằng `upsert` theo UUID cố định. Chạy lệnh seed từ thư mục `apps/api`: `npm.cmd run seed`.
 
 ## Logic nghiệp vụ Đơn hàng (`src/orders`, chưa mở endpoint)
 
@@ -76,6 +77,17 @@ npm.cmd run test
 
 - Chạy migration ở môi trường dev (từ `apps/api`): `npm.cmd run prisma -- migrate dev` (hoặc `npx.cmd prisma migrate dev` / `npx.cmd prisma migrate deploy` nếu đã cấu hình biến `DATABASE_URL` trong `apps/api/.env`).
 - **Lưu ý khi pull code mới về:** Bắt buộc chạy `npm.cmd run prisma -- migrate dev` (hoặc `npx.cmd prisma migrate deploy`) và `npx.cmd prisma generate` trong thư mục `apps/api` để cập nhật 6 bảng mới (`User`, `Topping`, `Order`, `OrderItem`, `OrderItemTopping`, `Payment`) vào database.
+
+## Dựng lại database từ đầu
+
+Khi khởi tạo database mới trên máy local (sau khi đã bật PostgreSQL bằng `docker compose up -d` và cấu hình `.env` ở thư mục gốc), chạy theo đúng thứ tự từ thư mục `apps/api`:
+```powershell
+cd apps/api
+npm.cmd run prisma -- migrate deploy
+npm.cmd run prisma -- generate
+npm.cmd run seed
+```
+- **Tài khoản khách hàng demo:** Nếu biến môi trường `DEMO_USER_PASSWORD` trong `.env` được đặt (tối thiểu 6 ký tự), lệnh `npm.cmd run seed` sẽ tạo/cập nhật tài khoản demo với email `khach@example.com` (`role: CUSTOMER`, `displayName: "Khách demo"`). Nếu biến này để trống hoặc ngắn hơn 6 ký tự, seed sẽ tự động bỏ qua bước tạo tài khoản demo.
 
 ## Endpoints Xác thực (Sprint 2 - Việc 4b)
 
