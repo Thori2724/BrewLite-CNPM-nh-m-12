@@ -1,6 +1,7 @@
 # ADR-006: Mô hình triển khai trên AWS
 
-- **Trạng thái:** Accepted
+- **Trạng thái:** Superseded by ADR-009
+- **Ghi chú thay thế (2026-11-10):** Được thay thế bởi ADR-009 do chuyển sang nền tảng Render theo sự đồng ý của giảng viên.
 - **Ngày:** 2026-11-03
 
 ## Bối cảnh
@@ -9,7 +10,7 @@ Giảng viên yêu cầu triển khai trên AWS. Production cần: URL frontend 
 ## Quyết định
 - **Region:** `ap-southeast-1` (Singapore), gần người dùng ở Việt Nam.
 - **Máy chủ:** một EC2 chạy Docker Compose với bốn container: `nginx`, `web` (Next.js), `api` (NestJS), `postgres`.
-- **HTTPS và CDN:** Amazon CloudFront đứng trước, dùng chứng chỉ mặc định của CloudFront (không cần tên miền riêng). Behavior `/api/*` tắt cache và chuyển tiếp các header `Authorization`, `Idempotency-Key`.
+- **HTTPS và CDN:** Amazon CloudFront đứng trước, dùng chứng chỉ mặc định của CloudFront (không cần tên miền riêng). Nginx reverse proxy định tuyến theo đường dẫn không có tiền tố: các endpoint API (`/products`, `/orders`, `/auth`, `/payments`, `/health`) sang `api:3001`, các đường dẫn còn lại sang `web:3000`. Chuyển tiếp các header `Authorization`, `Idempotency-Key`.
 - **Database:** PostgreSQL trong container, dữ liệu lưu ở Docker volume nằm trên EBS; không map cổng 5432 ra host.
 - **Registry:** Amazon ECR, image gắn tag theo commit SHA.
 - **Log:** Docker logging driver `awslogs` gửi lên CloudWatch Logs.
