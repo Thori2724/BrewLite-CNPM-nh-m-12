@@ -9,16 +9,64 @@ import {
   Category,
   IceLevel,
   OrderStatus,
+  PaymentMethod,
+  PaymentStatus,
   ReceiveType,
   Size,
   SugarLevel,
 } from '@prisma/client';
+import { ORDER_NOT_FOUND_MESSAGE } from '../payments/payments.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { PRODUCT_NOT_FOUND_MESSAGE } from '../products/products.constants';
+import {
+  PRODUCT_NOT_FOUND_MESSAGE,
+  UUID_REGEX,
+} from '../products/products.constants';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { calculateOrderTotal } from './order-pricing';
 
 export const TOPPING_NOT_FOUND_MESSAGE = 'Không tìm thấy topping';
+export { ORDER_NOT_FOUND_MESSAGE };
+
+interface OrderToppingRecord {
+  id?: string;
+  toppingId?: string;
+  name: string;
+  price: number;
+}
+
+interface OrderItemRecord {
+  id: string;
+  productId: string;
+  productName: string;
+  size: Size | null;
+  sugarLevel: SugarLevel | null;
+  iceLevel: IceLevel | null;
+  quantity: number;
+  unitPrice: number;
+  lineTotal: number;
+  note: string | null;
+  toppings: OrderToppingRecord[];
+}
+
+interface OrderRecord {
+  id: string;
+  orderNumber: number;
+  status: OrderStatus;
+  receiveType: ReceiveType;
+  note: string | null;
+  totalAmount: number;
+  createdAt: Date;
+  items: OrderItemRecord[];
+}
+
+interface PaymentRecord {
+  id: string;
+  method: PaymentMethod;
+  accountLast4: string;
+  status: PaymentStatus;
+  failureReason: string | null;
+  createdAt: Date;
+}
 
 @Injectable()
 export class OrdersService {
@@ -201,19 +249,7 @@ export class OrdersService {
         },
       });
 
-      const responseItems: Array<{
-        id: string;
-        productId: string;
-        productName: string;
-        size: Size | null;
-        sugarLevel: SugarLevel | null;
-        iceLevel: IceLevel | null;
-        quantity: number;
-        unitPrice: number;
-        lineTotal: number;
-        note: string | null;
-        toppings: Array<{ id: string; name: string; price: number }>;
-      }> = [];
+      const createdItems: OrderItemRecord[] = [];
 
       for (let i = 0; i < normalizedItems.length; i++) {
         const item = normalizedItems[i];
@@ -234,6 +270,7 @@ export class OrdersService {
           },
         });
 
+        const createdToppings: OrderToppingRecord[] = [];
         for (const topping of item.toppings) {
           await tx.orderItemTopping.create({
             data: {
@@ -243,9 +280,14 @@ export class OrdersService {
               price: topping.price,
             },
           });
+          createdToppings.push({
+            toppingId: topping.id,
+            name: topping.name,
+            price: topping.price,
+          });
         }
 
-        responseItems.push({
+        createdItems.push({
           id: createdItem.id,
           productId: createdItem.productId,
           productName: createdItem.productName,
@@ -256,24 +298,98 @@ export class OrdersService {
           unitPrice: createdItem.unitPrice,
           lineTotal: createdItem.lineTotal,
           note: createdItem.note,
-          toppings: item.toppings.map((t) => ({
-            id: t.id,
-            name: t.name,
-            price: t.price,
-          })),
+          toppings: createdToppings,
         });
       }
 
-      return {
-        id: createdOrder.id,
-        orderNumber: createdOrder.orderNumber,
-        status: createdOrder.status,
-        receiveType: createdOrder.receiveType,
-        note: createdOrder.note,
-        totalAmount: createdOrder.totalAmount,
-        createdAt: createdOrder.createdAt,
-        items: responseItems,
-      };
+      return this.formatOrderResponse({
+        ...createdOrder,
+        items: createdItems,
+      });
     });
+  }
+
+  async findMyOrders(userId: string) {
+    const orders = await this.prisma.order.findMany({
+      where: { userId },
+      orderBy: [{ createdAt: 'desc' }, { orderNumber: 'desc' }],
+      include: {
+        items: {
+          include: {
+            toppings: true,
+          },
+        },
+      },
+    });
+
+    return orders.map((order) => this.formatOrderResponse(order));
+  }
+
+  async findOneForUser(userId: string, id: string) {
+    if (!UUID_REGEX.test(id)) {
+      throw new NotFoundException(ORDER_NOT_FOUND_MESSAGE);
+    }
+
+    const order = await this.prisma.order.findFirst({
+      where: {
+        id,
+        userId,
+      },
+      include: {
+        items: {
+          include: {
+            toppings: true,
+          },
+        },
+        payments: {
+          orderBy: { createdAt: 'desc' },
+        },
+      },
+    });
+
+    if (!order) {
+      throw new NotFoundException(ORDER_NOT_FOUND_MESSAGE);
+    }
+
+    return {
+      ...this.formatOrderResponse(order),
+      payments: order.payments.map((payment: PaymentRecord) => ({
+        id: payment.id,
+        method: payment.method,
+        accountLast4: payment.accountLast4,
+        status: payment.status,
+        failureReason: payment.failureReason ?? null,
+        createdAt: payment.createdAt,
+      })),
+    };
+  }
+
+  private formatOrderResponse(order: OrderRecord) {
+    return {
+      id: order.id,
+      orderNumber: order.orderNumber,
+      status: order.status,
+      receiveType: order.receiveType,
+      note: order.note,
+      totalAmount: order.totalAmount,
+      createdAt: order.createdAt,
+      items: order.items.map((item) => ({
+        id: item.id,
+        productId: item.productId,
+        productName: item.productName,
+        size: item.size,
+        sugarLevel: item.sugarLevel,
+        iceLevel: item.iceLevel,
+        quantity: item.quantity,
+        unitPrice: item.unitPrice,
+        lineTotal: item.lineTotal,
+        note: item.note,
+        toppings: item.toppings.map((topping) => ({
+          id: topping.toppingId ?? topping.id!,
+          name: topping.name,
+          price: topping.price,
+        })),
+      })),
+    };
   }
 }

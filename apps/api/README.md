@@ -95,6 +95,13 @@ npm.cmd run seed
 - `POST /auth/register`: Đăng ký tài khoản khách hàng (`CUSTOMER`), băm mật khẩu bcrypt (10 vòng), chuẩn hóa email chữ thường. Trả `201 Created` gồm `{ id, email, displayName, role }`; trùng email trả `409 Conflict` (`"Email này đã được sử dụng"`).
 - `POST /auth/login`: Đăng nhập bằng `email` và `password`. Trả `200 OK` gồm `{ accessToken, user: { id, email, displayName, role } }` (JWT có hạn 24 giờ); sai email hoặc mật khẩu trả `401 Unauthorized` (`"Email hoặc mật khẩu không chính xác"`).
 
+## Endpoints Đơn hàng & Thanh toán (Sprint 2 - Việc 6, 7, 8)
+
+- `POST /orders` (cần Bearer JWT): Khởi tạo đơn hàng từ giỏ, server tự tính tiền và kiểm tra/trừ tồn kho cộng gộp theo món trong một transaction.
+- `POST /payments` (cần Bearer JWT và header `Idempotency-Key` 8–100 ký tự): Thanh toán đơn hàng qua cổng mô phỏng (đuôi `0000` thất bại `FAILED`, còn lại `SUCCESS`; chỉ lưu 4 số cuối `accountLast4`).
+- `GET /orders/me` (cần Bearer JWT): Lấy danh sách đơn hàng của người dùng đang đăng nhập, sắp xếp `createdAt` giảm dần rồi `orderNumber` giảm dần, kèm `items[]` và `toppings[]` (không bao gồm `payments`).
+- `GET /orders/:id` (cần Bearer JWT): Xem chi tiết một đơn hàng của chính người dùng kèm lịch sử `payments[]` (sắp xếp `createdAt` giảm dần, có `failureReason: null` hoặc lý do lỗi). Đơn không tồn tại, của người khác hoặc `id` không phải UUID đều trả `404 Not Found` (`"Không tìm thấy đơn hàng"`).
+
 ## Deployment
 
 When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
