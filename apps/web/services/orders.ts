@@ -1,4 +1,5 @@
 import { apiFetch, AuthApiError } from './auth';
+import { AUTH_ERROR_MESSAGES } from './auth-contract';
 import {
   CreateOrderDto,
   ORDER_ENDPOINTS,
@@ -95,7 +96,10 @@ export async function createOrderApi(dto: CreateOrderDto): Promise<OrderResponse
       if (err.statusCode === 409) {
         msg = msg || ORDER_ERROR_MESSAGES.OUT_OF_STOCK;
       } else if (err.statusCode === 400) {
-        msg = ORDER_ERROR_MESSAGES.UNKNOWN_ERROR;
+        msg =
+          msg && msg !== AUTH_ERROR_MESSAGES.UNKNOWN_ERROR
+            ? msg
+            : AUTH_ERROR_MESSAGES.VALIDATION_ERROR;
       } else if (!msg) {
         msg = ORDER_ERROR_MESSAGES.UNKNOWN_ERROR;
       }

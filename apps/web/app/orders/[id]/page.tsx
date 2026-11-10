@@ -420,8 +420,8 @@ function OrderDetailContent() {
                     className="py-3.5 first:pt-0 last:pb-0 flex justify-between items-start gap-4"
                   >
                     <div className="space-y-1 min-w-0 flex-1">
-                      <div className="flex items-baseline gap-2">
-                        <h3 className="text-sm sm:text-base font-bold text-gray-900">
+                      <div className="flex items-baseline gap-2 flex-wrap">
+                        <h3 className="text-sm sm:text-base font-bold text-gray-900 break-words">
                           {item.productName}
                         </h3>
                         <span className="text-xs sm:text-sm font-extrabold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-md">

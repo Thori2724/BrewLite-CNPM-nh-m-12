@@ -211,6 +211,9 @@ describe('Giao diện và luồng xử lý trang Checkout (/checkout)', () => {
 
     await waitFor(() => {
       expect(screen.getByText(/một số món trong giỏ hàng hiện đã hết hàng/i)).toBeInTheDocument();
+      expect(screen.getByText('Cà phê muối: còn 0')).toBeInTheDocument();
+      expect(screen.getByText('Thiếu hàng (còn 0)')).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: /chỉnh số lượng \/ xóa/i })).toBeInTheDocument();
       expect(screen.getAllByRole('link', { name: /quay lại giỏ hàng/i }).length).toBeGreaterThanOrEqual(1);
     });
 
@@ -630,12 +633,14 @@ describe('Giao diện và luồng xử lý trang Checkout (/checkout)', () => {
     const payBtn = screen.getByRole('button', { name: /xác nhận thanh toán/i });
     await user.click(payBtn);
 
-    // Quay về bước 1 (đặt đơn hàng), hiện nút "Đặt đơn hàng"
+    // Quay về bước 1 (đặt đơn hàng), hiện nút "Đặt đơn hàng" kèm message tiếng Việt của server và link Xem lịch sử đơn
     await waitFor(() => {
       expect(screen.getByRole('button', { name: /đặt đơn hàng/i })).toBeInTheDocument();
+      expect(screen.getByText(/không tìm thấy đơn hàng/i)).toBeInTheDocument();
       expect(
         screen.getByText(/đơn hàng trước đó không còn tồn tại trên hệ thống. vui lòng tiến hành đặt lại/i)
       ).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: /xem lịch sử đơn/i })).toBeInTheDocument();
     });
 
     // Bản ghi đơn chờ đã bị xóa sạch khỏi localStorage
@@ -1055,7 +1060,7 @@ describe('Giao diện và luồng xử lý trang Checkout (/checkout)', () => {
     expect(screen.getByText('Trà đào cam sả')).toBeInTheDocument();
     expect(screen.getByText('Cà phê sữa đá')).toBeInTheDocument();
     expect(screen.getByText('Bánh Croissant')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /đặt đơn hàng \(104\.000 đ\)/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /đặt đơn hàng \(104\.000\s*đ\)/i })).toBeInTheDocument();
 
     // Đồng thời hiện banner nhắc đơn chờ #1008 kèm nút "Tiếp tục thanh toán"
     expect(screen.getByText(/bạn có đơn hàng đang chờ thanh toán: #1008/i)).toBeInTheDocument();
@@ -1302,7 +1307,7 @@ describe('Giao diện và luồng xử lý trang Checkout (/checkout)', () => {
 
     expect(screen.getByText('Trà đào cam sả')).toBeInTheDocument();
     expect(screen.getByText('Cà phê đen đá')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /đặt đơn hàng \(68\.000 đ\)/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /đặt đơn hàng \(68\.000\s*đ\)/i })).toBeInTheDocument();
     expect(localStorage.getItem(CART_STORAGE_KEY)).toBe(twoItemsJson);
   });
 
@@ -1393,5 +1398,98 @@ describe('Giao diện và luồng xử lý trang Checkout (/checkout)', () => {
     // Cả pendingOrder và giỏ hàng đều được xóa sạch nhờ cờ createdFromCart: true được bảo toàn qua F5
     expect(localStorage.getItem(PENDING_ORDER_STORAGE_KEY)).toBeNull();
     expect(localStorage.getItem(CART_STORAGE_KEY)).toBe('[]');
+  });
+
+  // 24. Tạo đơn gặp lỗi mạng / 5xx: Hiển thị "Không kết nối được máy chủ, vui lòng thử lại" kèm nút "Thử lại"
+  it('24. Đặt đơn gặp lỗi mạng / 5xx: Hiện thông báo "Không kết nối được máy chủ, vui lòng thử lại" kèm nút "Thử lại"', async () => {
+    const user = userEvent.setup();
+    localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(mockLoggedInUser));
+    localStorage.setItem(CART_STORAGE_KEY, JSON.stringify([mockCartItem]));
+
+    vi.mocked(ordersService.createOrderApi).mockRejectedValueOnce(
+      new ordersService.OrderApiError(0, '')
+    );
+
+    renderCheckout();
+
+    await waitFor(() => {
+      expect(screen.getByText('Cà phê muối')).toBeInTheDocument();
+    });
+
+    const createBtn = screen.getByRole('button', { name: /đặt đơn hàng/i });
+    await user.click(createBtn);
+
+    await waitFor(() => {
+      expect(
+        screen.getByText('Không kết nối được máy chủ, vui lòng thử lại')
+      ).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /^thử lại$/i })).toBeInTheDocument();
+    });
+  });
+
+  // 25. Thanh toán gặp 409 khi đơn không còn thanh toán được (ví dụ đã CANCELLED): Xóa pendingOrder và hiện message tiếng Việt của server kèm nút Xem lịch sử đơn
+  it('25. Thanh toán gặp 409 khi đơn không phải PAID: Xóa pendingOrder, hiện message tiếng Việt của server kèm liên kết Xem lịch sử đơn', async () => {
+    const user = userEvent.setup();
+    localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(mockLoggedInUser));
+    localStorage.setItem(CART_STORAGE_KEY, JSON.stringify([mockCartItem]));
+
+    const pendingOrder: PendingOrderRecord = {
+      orderId: 'order-409-cancelled',
+      orderNumber: 1410,
+      totalAmount: 90000,
+      receiveType: 'AT_COUNTER',
+      idempotencyKey: 'idemp-409-cancelled-key',
+      createdAt: new Date().toISOString(),
+      itemCount: 1,
+    };
+    savePendingOrder(pendingOrder);
+    mockSearchParams = new URLSearchParams('orderId=order-409-cancelled');
+
+    // Lần 1 trên mount: đơn đang PENDING
+    vi.mocked(ordersService.getOrderByIdApi).mockResolvedValueOnce({
+      id: 'order-409-cancelled',
+      orderNumber: 1410,
+      status: 'PENDING',
+      receiveType: 'AT_COUNTER',
+      totalAmount: 90000,
+      createdAt: new Date().toISOString(),
+      items: [],
+    });
+
+    // payOrderApi trả 409 với message tiếng Việt của server
+    vi.mocked(ordersService.payOrderApi).mockRejectedValueOnce(
+      new ordersService.OrderApiError(409, 'Đơn hàng không ở trạng thái cho phép thanh toán')
+    );
+
+    // Lần 2 tra cứu lại: đơn đã CANCELLED (không phải PAID)
+    vi.mocked(ordersService.getOrderByIdApi).mockResolvedValueOnce({
+      id: 'order-409-cancelled',
+      orderNumber: 1410,
+      status: 'CANCELLED',
+      receiveType: 'AT_COUNTER',
+      totalAmount: 90000,
+      createdAt: new Date().toISOString(),
+      items: [],
+    });
+
+    renderCheckout();
+
+    await waitFor(() => {
+      expect(screen.getByText('#1410')).toBeInTheDocument();
+    });
+
+    const accInput = await screen.findByPlaceholderText(/nhập số ví điện tử/i);
+    await user.type(accInput, '12345678');
+    await user.click(screen.getByRole('button', { name: /xác nhận thanh toán/i }));
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(/đơn hàng không ở trạng thái cho phép thanh toán/i)
+      ).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: /xem lịch sử đơn/i })).toBeInTheDocument();
+    });
+
+    // pendingOrder đã được xóa để khách không bị kẹt ở đơn cũ
+    expect(localStorage.getItem(PENDING_ORDER_STORAGE_KEY)).toBeNull();
   });
 });

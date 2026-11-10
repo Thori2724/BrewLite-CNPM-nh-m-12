@@ -4,6 +4,8 @@ import {
   mockGetProducts,
   mockGetProductById,
 } from '../mocks/mock-products';
+import { getApiBaseUrl } from './auth';
+import { AUTH_ERROR_MESSAGES } from './auth-contract';
 
 // 1. Phân loại danh mục sản phẩm theo hợp đồng
 export type ProductCategory = 'TEA' | 'COFFEE' | 'MILK_TEA' | 'CAKE';
@@ -125,7 +127,7 @@ export async function getProducts(params?: GetProductsParams): Promise<Product[]
     return mockGetProducts(params);
   }
 
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+  const apiUrl = getApiBaseUrl();
   const searchParams = new URLSearchParams();
 
   if (params?.category) {
@@ -138,7 +140,12 @@ export async function getProducts(params?: GetProductsParams): Promise<Product[]
   const queryString = searchParams.toString();
   const url = `${apiUrl}/products${queryString ? `?${queryString}` : ''}`;
 
-  const res = await fetch(url);
+  let res: Response;
+  try {
+    res = await fetch(url);
+  } catch {
+    throw new Error('Không kết nối được máy chủ, vui lòng thử lại');
+  }
   if (!res.ok) {
     let errorMessage = 'Không thể tải danh sách sản phẩm';
     try {
@@ -146,7 +153,7 @@ export async function getProducts(params?: GetProductsParams): Promise<Product[]
       if (typeof data.message === 'string') {
         errorMessage = data.message;
       } else if (Array.isArray(data.message)) {
-        errorMessage = data.message.join(', ');
+        errorMessage = AUTH_ERROR_MESSAGES.VALIDATION_ERROR;
       }
     } catch {}
     throw new Error(errorMessage);
@@ -164,10 +171,15 @@ export async function getProductById(id: string): Promise<ProductDetail | null> 
     return mockGetProductById(id);
   }
 
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+  const apiUrl = getApiBaseUrl();
   const url = `${apiUrl}/products/${encodeURIComponent(id)}`;
 
-  const res = await fetch(url);
+  let res: Response;
+  try {
+    res = await fetch(url);
+  } catch {
+    throw new Error('Không kết nối được máy chủ, vui lòng thử lại');
+  }
   if (res.status === 404) {
     return null;
   }
@@ -179,7 +191,7 @@ export async function getProductById(id: string): Promise<ProductDetail | null> 
       if (typeof data.message === 'string') {
         errorMessage = data.message;
       } else if (Array.isArray(data.message)) {
-        errorMessage = data.message.join(', ');
+        errorMessage = AUTH_ERROR_MESSAGES.VALIDATION_ERROR;
       }
     } catch {}
     throw new Error(errorMessage);

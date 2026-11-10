@@ -39,6 +39,12 @@ import {
   savePendingOrder,
   validateAccountNumber,
 } from '../../utils/checkout';
+import {
+  formatVnd,
+  validateNote,
+  validateOrderCart,
+  validatePaymentMethod,
+} from '../../utils/validation';
 import { getLineTotal } from '../../utils/cart';
 
 function getIceLabel(ice?: IceLevel): string {
@@ -83,6 +89,10 @@ function CheckoutContent() {
   const [isCreatingOrder, setIsCreatingOrder] = useState<boolean>(false);
   const [createOrderError, setCreateOrderError] = useState<string | null>(null);
   const [outOfStockDetails, setOutOfStockDetails] = useState<OutOfStockDetail[]>([]);
+  const [isCreateOrderNetworkError, setIsCreateOrderNetworkError] = useState<boolean>(false);
+  const [isCreateOrderNotFoundError, setIsCreateOrderNotFoundError] = useState<boolean>(false);
+  const [showHistoryLinkInOrderError, setShowHistoryLinkInOrderError] = useState<boolean>(false);
+  const [noteError, setNoteError] = useState<string | null>(null);
 
   // Thông tin thanh toán (bảo mật: không bao giờ lưu storage hay log)
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>(
@@ -295,7 +305,7 @@ function CheckoutContent() {
           <div className="flex justify-between items-center pb-2 border-b border-gray-200/60">
             <span className="text-gray-500">Số tiền đã trả:</span>
             <span className="font-bold text-amber-600">
-              {paymentSuccessData.amount.toLocaleString('vi-VN')} đ
+              {formatVnd(paymentSuccessData.amount)}
             </span>
           </div>
           <div className="flex justify-between items-center pb-2 border-b border-gray-200/60">
@@ -360,12 +370,27 @@ function CheckoutContent() {
   }
 
   // Xử lý tạo đơn hàng POST /orders
-  const handleCreateOrder = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const submitCreateOrder = async () => {
     if (isCreatingOrder) return;
+
+    const noteValidation = validateNote(note);
+    if (!noteValidation.isValid) {
+      setNoteError(noteValidation.error || 'Ghi chú tối đa 200 ký tự');
+      return;
+    }
+    setNoteError(null);
+
+    const cartCheck = validateOrderCart(items, receiveType, note);
+    if (!cartCheck.isValid) {
+      setCreateOrderError(cartCheck.error || ORDER_ERROR_MESSAGES.UNKNOWN_ERROR);
+      return;
+    }
 
     setCreateOrderError(null);
     setOutOfStockDetails([]);
+    setIsCreateOrderNetworkError(false);
+    setIsCreateOrderNotFoundError(false);
+    setShowHistoryLinkInOrderError(false);
     setIsCreatingOrder(true);
 
     try {
@@ -403,21 +428,41 @@ function CheckoutContent() {
           // Lỗi hết hàng 409
           setOutOfStockDetails(err.details || []);
           setCreateOrderError(err.message || ORDER_ERROR_MESSAGES.OUT_OF_STOCK);
+        } else if (err.statusCode === 404) {
+          setIsCreateOrderNotFoundError(true);
+          setCreateOrderError(err.message || 'Không tìm thấy sản phẩm hoặc topping trong giỏ hàng');
+        } else if (err.statusCode === 0 || err.statusCode >= 500) {
+          setIsCreateOrderNetworkError(true);
+          setCreateOrderError(
+            err.message || 'Không kết nối được máy chủ, vui lòng thử lại'
+          );
         } else {
           setCreateOrderError(err.message || ORDER_ERROR_MESSAGES.UNKNOWN_ERROR);
         }
       } else {
-        setCreateOrderError(ORDER_ERROR_MESSAGES.UNKNOWN_ERROR);
+        setIsCreateOrderNetworkError(true);
+        setCreateOrderError('Không kết nối được máy chủ, vui lòng thử lại');
       }
     } finally {
       setIsCreatingOrder(false);
     }
   };
 
+  const handleCreateOrder = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await submitCreateOrder();
+  };
+
   // Xử lý thanh toán POST /payments
   const handlePayOrder = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isSubmittingPayment) return;
+
+    const methodCheck = validatePaymentMethod(paymentMethod);
+    if (!methodCheck.isValid) {
+      setPaymentError(methodCheck.error || 'Vui lòng chọn phương thức thanh toán');
+      return;
+    }
 
     const accCheck = validateAccountNumber(accountNumber, paymentMethod);
     if (!accCheck.isValid) {
@@ -558,8 +603,10 @@ function CheckoutContent() {
           setCreatedOrder(null);
           setLastSubmittedPayment(null);
           setStep('order');
+          setShowHistoryLinkInOrderError(true);
+          const serverMsg = err.message ? `${err.message}. ` : '';
           setCreateOrderError(
-            'Đơn hàng trước đó không còn tồn tại trên hệ thống. Vui lòng tiến hành đặt lại.'
+            `${serverMsg}Đơn hàng trước đó không còn tồn tại trên hệ thống. Vui lòng tiến hành đặt lại.`
           );
           return;
         }
@@ -596,8 +643,13 @@ function CheckoutContent() {
             // Bỏ qua lỗi tra cứu
           }
 
+          // Đơn không còn ở trạng thái cho phép thanh toán (CANCELLED, PREPARING...):
+          // dọn pendingOrder để khách không bị kẹt ở đơn cũ
+          clearPendingOrder();
+          setPendingOrder(null);
           setPaymentError(
-            'Đơn hàng không còn ở trạng thái cho phép thanh toán. Vui lòng quay lại giỏ hàng.'
+            err.message ||
+              'Đơn hàng không còn ở trạng thái cho phép thanh toán. Vui lòng quay lại giỏ hàng.'
           );
           return;
         }
@@ -675,7 +727,7 @@ function CheckoutContent() {
               Bạn có đơn hàng đang chờ thanh toán: #{pendingOrder.orderNumber}
             </div>
             <div className="text-xs text-blue-700 mt-0.5">
-              Số tiền: <strong>{pendingOrder.totalAmount.toLocaleString('vi-VN')} đ</strong> (Hình
+              Số tiền: <strong>{formatVnd(pendingOrder.totalAmount)}</strong> (Hình
               thức: {RECEIVE_TYPE_LABELS[pendingOrder.receiveType]})
             </div>
           </div>
@@ -705,15 +757,23 @@ function CheckoutContent() {
           <div className="lg:col-span-7 space-y-5">
             {/* Lỗi hết hàng 409 hoặc lỗi tạo đơn (ví dụ 404 đơn cũ không còn tồn tại) */}
             {createOrderError && (
-              <div className="max-w-xl mx-auto lg:max-w-none bg-red-50 border border-red-200 text-red-700 p-4 sm:p-5 rounded-2xl text-sm space-y-2 shadow-xs">
+              <div
+                role="alert"
+                className="max-w-xl mx-auto lg:max-w-none bg-red-50 border border-red-200 text-red-700 p-4 sm:p-5 rounded-2xl text-sm space-y-2 shadow-xs"
+              >
                 <div className="font-semibold">{createOrderError}</div>
+                {isCreateOrderNotFoundError && (
+                  <p className="text-xs text-red-600">
+                    Món hoặc topping trong giỏ hiện không còn phục vụ. Vui lòng cập nhật lại giỏ hàng.
+                  </p>
+                )}
                 {outOfStockDetails.length > 0 && (
                   <div>
                     <p className="text-xs text-red-600 mb-1">Món hiện không đủ tồn kho:</p>
                     <ul className="list-disc list-inside text-xs font-medium space-y-0.5">
                       {outOfStockDetails.map((item, idx) => (
                         <li key={idx}>
-                          {item.name} {item.available !== undefined ? `(còn ${item.available})` : ''}
+                          {item.name}: còn {item.available ?? 0}
                         </li>
                       ))}
                     </ul>
@@ -725,6 +785,36 @@ function CheckoutContent() {
                         Quay lại giỏ hàng
                       </Link>
                     </div>
+                  </div>
+                )}
+                {(isCreateOrderNotFoundError || isCreateOrderNetworkError || showHistoryLinkInOrderError) && (
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    {isCreateOrderNetworkError && (
+                      <button
+                        type="button"
+                        onClick={() => void submitCreateOrder()}
+                        disabled={isCreatingOrder}
+                        className="px-3.5 py-2 bg-red-600 text-white text-xs font-semibold rounded-xl hover:bg-red-700 transition cursor-pointer disabled:opacity-50"
+                      >
+                        Thử lại
+                      </button>
+                    )}
+                    {isCreateOrderNotFoundError && (
+                      <Link
+                        href="/cart"
+                        className="inline-block px-3.5 py-2 bg-red-600 text-white text-xs font-semibold rounded-xl hover:bg-red-700 transition"
+                      >
+                        Cập nhật lại giỏ hàng
+                      </Link>
+                    )}
+                    {showHistoryLinkInOrderError && (
+                      <Link
+                        href="/orders"
+                        className="inline-block px-3.5 py-2 bg-white hover:bg-red-100/50 text-red-700 border border-red-300 text-xs font-semibold rounded-xl transition"
+                      >
+                        Xem lịch sử đơn
+                      </Link>
+                    )}
                   </div>
                 )}
               </div>
@@ -788,11 +878,33 @@ function CheckoutContent() {
                 rows={3}
                 maxLength={200}
                 value={note}
-                onChange={(e) => setNote(e.target.value)}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setNote(val);
+                  if (noteError) {
+                    const res = validateNote(val);
+                    setNoteError(res.isValid ? null : res.error || null);
+                  }
+                }}
                 placeholder="Ví dụ: Giao nhanh giúp mình, để riêng ống hút..."
-                className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-sm focus:border-amber-600 focus:outline-none"
+                className={`w-full px-3.5 py-2.5 rounded-xl border text-sm focus:outline-none ${
+                  noteError
+                    ? 'border-red-400 bg-red-50/20'
+                    : 'border-gray-200 focus:border-amber-600'
+                }`}
+                aria-invalid={Boolean(noteError)}
+                aria-describedby={noteError ? 'order-note-error' : undefined}
               />
-              <p className="text-[11px] text-gray-400 text-right">{note.length}/200 ký tự</p>
+              <div className="flex justify-between items-center">
+                {noteError ? (
+                  <p id="order-note-error" className="text-xs text-red-600">
+                    {noteError}
+                  </p>
+                ) : (
+                  <span />
+                )}
+                <p className="text-[11px] text-gray-400 text-right">{note.length}/200 ký tự</p>
+              </div>
             </div>
           </div>
 
@@ -805,51 +917,75 @@ function CheckoutContent() {
 
               {/* Danh sách món */}
               <div className="space-y-3 max-h-72 overflow-y-auto pr-1">
-                {items.map((item) => (
-                  <div
-                    key={item.id}
-                    className="flex justify-between items-start text-xs border-b border-gray-50 pb-2.5"
-                  >
-                    <div className="pr-2 flex-1 min-w-0">
-                      <div className="font-semibold text-gray-800">
-                        {item.name} <span className="text-amber-700">x{item.quantity}</span>
-                      </div>
-                      <div className="text-[11px] text-gray-500 space-x-1">
-                        {item.size && (
-                          <span>{SIZE_LABELS[item.size as SizeId] || `Size ${item.size}`}</span>
-                        )}
-                        {item.sugarLevel && (
-                          <span>
-                            • Đường: {SUGAR_LABELS[item.sugarLevel as SugarLevel] || item.sugarLevel}
-                          </span>
-                        )}
-                        {item.iceLevel && (
-                          <span>• Đá: {getIceLabel(item.iceLevel as IceLevel)}</span>
-                        )}
-                      </div>
-                      {item.toppings && item.toppings.length > 0 && (
-                        <div className="text-[11px] text-gray-400">
-                          Topping: {item.toppings.map((t) => t.name).join(', ')}
+                {items.map((item) => {
+                  const matchedOutOfStock = outOfStockDetails.find(
+                    (d) =>
+                      (d.productId && d.productId === item.productId) ||
+                      d.name === item.name
+                  );
+                  return (
+                    <div
+                      key={item.id}
+                      className={`flex justify-between items-start text-xs pb-2.5 ${
+                        matchedOutOfStock
+                          ? 'p-2.5 rounded-xl border border-red-300 bg-red-50/70'
+                          : 'border-b border-gray-50'
+                      }`}
+                    >
+                      <div className="pr-2 flex-1 min-w-0">
+                        <div className="font-semibold text-gray-800 break-words">
+                          {item.name} <span className="text-amber-700">x{item.quantity}</span>
                         </div>
-                      )}
+                        <div className="text-[11px] text-gray-500 space-x-1">
+                          {item.size && (
+                            <span>{SIZE_LABELS[item.size as SizeId] || `Size ${item.size}`}</span>
+                          )}
+                          {item.sugarLevel && (
+                            <span>
+                              • Đường: {SUGAR_LABELS[item.sugarLevel as SugarLevel] || item.sugarLevel}
+                            </span>
+                          )}
+                          {item.iceLevel && (
+                            <span>• Đá: {getIceLabel(item.iceLevel as IceLevel)}</span>
+                          )}
+                        </div>
+                        {item.toppings && item.toppings.length > 0 && (
+                          <div className="text-[11px] text-gray-400">
+                            Topping: {item.toppings.map((t) => t.name).join(', ')}
+                          </div>
+                        )}
+                        {matchedOutOfStock && (
+                          <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                            <span className="inline-block px-2 py-0.5 rounded-full bg-red-100 text-red-700 font-semibold text-[11px]">
+                              Thiếu hàng (còn {matchedOutOfStock.available ?? 0})
+                            </span>
+                            <Link
+                              href="/cart"
+                              className="text-[11px] font-semibold text-red-700 underline hover:text-red-800"
+                            >
+                              Chỉnh số lượng / Xóa
+                            </Link>
+                          </div>
+                        )}
+                      </div>
+                      <div className="font-bold text-gray-900 whitespace-nowrap">
+                        {formatVnd(getLineTotal(item))}
+                      </div>
                     </div>
-                    <div className="font-bold text-gray-900 whitespace-nowrap">
-                      {getLineTotal(item).toLocaleString('vi-VN')} đ
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
 
               {/* Tạm tính & Tổng cộng */}
               <div className="border-t border-gray-100 pt-3 space-y-1 text-sm">
                 <div className="flex justify-between text-gray-600">
                   <span>Tạm tính:</span>
-                  <span>{totalAmount.toLocaleString('vi-VN')} đ</span>
+                  <span>{formatVnd(totalAmount)}</span>
                 </div>
                 <div className="flex justify-between items-baseline pt-2 border-t border-gray-50">
                   <span className="font-bold text-gray-900">Tổng cộng:</span>
                   <span className="text-xl font-black text-amber-600">
-                    {totalAmount.toLocaleString('vi-VN')} đ
+                    {formatVnd(totalAmount)}
                   </span>
                 </div>
                 <p className="text-[11px] text-gray-400 italic pt-1">
@@ -865,7 +1001,7 @@ function CheckoutContent() {
               >
                 {isCreatingOrder
                   ? 'Đang tạo đơn hàng...'
-                  : `Đặt đơn hàng (${totalAmount.toLocaleString('vi-VN')} đ)`}
+                  : `Đặt đơn hàng (${formatVnd(totalAmount)})`}
               </button>
             </div>
           </div>
@@ -879,7 +1015,10 @@ function CheckoutContent() {
           <div className="lg:col-span-7 space-y-5">
             {/* Thông báo lỗi thanh toán nếu có */}
             {paymentError && (
-              <div className="max-w-xl mx-auto lg:max-w-none bg-red-50 border border-red-200 text-red-700 p-4 sm:p-5 rounded-2xl text-xs sm:text-sm shadow-xs space-y-3">
+              <div
+                role="alert"
+                className="max-w-xl mx-auto lg:max-w-none bg-red-50 border border-red-200 text-red-700 p-4 sm:p-5 rounded-2xl text-xs sm:text-sm shadow-xs space-y-3"
+              >
                 <div>
                   <strong>Lỗi thanh toán:</strong> {paymentError}
                 </div>
@@ -898,6 +1037,20 @@ function CheckoutContent() {
                   >
                     Xem lịch sử đơn
                   </Link>
+                  {!pendingOrder && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCreatedOrder(null);
+                        setPaymentError(null);
+                        setStep('order');
+                        router.replace('/checkout');
+                      }}
+                      className="px-3.5 py-1.5 bg-red-600 hover:bg-red-700 text-white font-semibold rounded-xl text-xs transition cursor-pointer"
+                    >
+                      Đặt đơn mới từ giỏ hàng
+                    </button>
+                  )}
                 </div>
               </div>
             )}
@@ -958,9 +1111,9 @@ function CheckoutContent() {
 
             {/* Nhập số thẻ/ví - Bảo mật cao */}
             <div className="bg-white p-5 sm:p-6 rounded-2xl border border-gray-100 shadow-xs space-y-3">
-              <h2 className="text-base font-bold text-gray-900">
+              <label htmlFor="accountNumber" className="block text-base font-bold text-gray-900">
                 {paymentMethod === 'WALLET' ? 'Số ví điện tử' : 'Số thẻ ngân hàng'}
-              </h2>
+              </label>
 
               <div>
                 <input
@@ -1023,7 +1176,7 @@ function CheckoutContent() {
                 <div className="flex justify-between items-baseline pt-2 border-t border-amber-200/60">
                   <span className="text-xs sm:text-sm text-amber-900 font-semibold">Số tiền thanh toán:</span>
                   <span className="text-xl sm:text-2xl font-black text-amber-600">
-                    {activeAmount.toLocaleString('vi-VN')} đ
+                    {formatVnd(activeAmount)}
                   </span>
                 </div>
               </div>
@@ -1038,8 +1191,8 @@ function CheckoutContent() {
                   {isSubmittingPayment
                     ? 'Đang xử lý giao dịch...'
                     : lastSubmittedPayment?.isFailed || createdOrder?.status === 'PAYMENT_FAILED'
-                      ? `Thử lại thanh toán (${activeAmount.toLocaleString('vi-VN')} đ)`
-                      : `Xác nhận thanh toán (${activeAmount.toLocaleString('vi-VN')} đ)`}
+                      ? `Thử lại thanh toán (${formatVnd(activeAmount)})`
+                      : `Xác nhận thanh toán (${formatVnd(activeAmount)})`}
                 </button>
 
                 <button

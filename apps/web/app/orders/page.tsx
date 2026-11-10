@@ -220,7 +220,7 @@ function OrdersHistoryContent() {
               </div>
 
               <div className="pt-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                <p className="text-sm text-gray-700 font-medium line-clamp-1">
+                <p className="text-sm text-gray-700 font-medium line-clamp-2 sm:line-clamp-1 break-words">
                   {summarizeOrderItems(order.items)}
                 </p>
 

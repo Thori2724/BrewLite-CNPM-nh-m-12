@@ -10,8 +10,8 @@ import {
   validatePassword,
   validateDisplayName,
   validateConfirmPassword,
-  extractErrorMessage,
 } from '../../utils/auth';
+import { classifyApiError } from '../../utils/validation';
 import { AUTH_ERROR_MESSAGES } from '../../services/auth-contract';
 
 function RegisterForm() {
@@ -82,10 +82,25 @@ function RegisterForm() {
       }`;
       router.push(loginUrl);
     } catch (err) {
-      const message = extractErrorMessage(err, AUTH_ERROR_MESSAGES.UNKNOWN_ERROR);
-      setErrors({
-        general: message,
-      });
+      const classified = classifyApiError(err, AUTH_ERROR_MESSAGES.UNKNOWN_ERROR);
+      if (classified.statusCode === 409) {
+        // Lỗi 409 ("Email này đã được sử dụng"): hiển thị ngay dưới ô email (A1)
+        setErrors({
+          email: classified.fieldErrors.email || classified.message,
+        });
+      } else if (classified.kind === 'validation') {
+        // Lỗi 400 (mảng chuỗi tiếng Anh): hiển thị thông báo tiếng Việt chung + gắn vào đúng ô nếu nhận diện được (A1)
+        setErrors({
+          general: classified.message,
+          displayName: classified.fieldErrors.displayName,
+          email: classified.fieldErrors.email,
+          password: classified.fieldErrors.password,
+        });
+      } else {
+        setErrors({
+          general: classified.message,
+        });
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -134,6 +149,8 @@ function RegisterForm() {
             autoComplete="name"
             placeholder="Ví dụ: Nguyễn Văn An"
             value={displayName}
+            aria-invalid={Boolean(errors.displayName)}
+            aria-describedby={errors.displayName ? 'register-displayName-error' : undefined}
             onChange={(e) => {
               setDisplayName(e.target.value);
               if (errors.displayName) setErrors((prev) => ({ ...prev, displayName: undefined }));
@@ -145,7 +162,7 @@ function RegisterForm() {
             }`}
           />
           {errors.displayName && (
-            <p role="alert" className="text-xs text-red-600 font-medium">
+            <p id="register-displayName-error" role="alert" className="text-xs text-red-600 font-medium">
               {errors.displayName}
             </p>
           )}
@@ -163,6 +180,8 @@ function RegisterForm() {
             autoComplete="email"
             placeholder="nhapemail@vidu.com"
             value={email}
+            aria-invalid={Boolean(errors.email)}
+            aria-describedby={errors.email ? 'register-email-error' : undefined}
             onChange={(e) => {
               setEmail(e.target.value);
               if (errors.email) setErrors((prev) => ({ ...prev, email: undefined }));
@@ -174,7 +193,7 @@ function RegisterForm() {
             }`}
           />
           {errors.email && (
-            <p role="alert" className="text-xs text-red-600 font-medium">
+            <p id="register-email-error" role="alert" className="text-xs text-red-600 font-medium">
               {errors.email}
             </p>
           )}
@@ -193,6 +212,8 @@ function RegisterForm() {
               autoComplete="new-password"
               placeholder="Tối thiểu 6 ký tự"
               value={password}
+              aria-invalid={Boolean(errors.password)}
+              aria-describedby={errors.password ? 'register-password-error' : undefined}
               onChange={(e) => {
                 setPassword(e.target.value);
                 if (errors.password) setErrors((prev) => ({ ...prev, password: undefined }));
@@ -213,7 +234,7 @@ function RegisterForm() {
             </button>
           </div>
           {errors.password && (
-            <p role="alert" className="text-xs text-red-600 font-medium">
+            <p id="register-password-error" role="alert" className="text-xs text-red-600 font-medium">
               {errors.password}
             </p>
           )}
@@ -231,6 +252,8 @@ function RegisterForm() {
             autoComplete="new-password"
             placeholder="Nhập lại chính xác mật khẩu trên"
             value={confirmPassword}
+            aria-invalid={Boolean(errors.confirmPassword)}
+            aria-describedby={errors.confirmPassword ? 'register-confirmPassword-error' : undefined}
             onChange={(e) => {
               setConfirmPassword(e.target.value);
               if (errors.confirmPassword) {
@@ -244,7 +267,7 @@ function RegisterForm() {
             }`}
           />
           {errors.confirmPassword && (
-            <p role="alert" className="text-xs text-red-600 font-medium">
+            <p id="register-confirmPassword-error" role="alert" className="text-xs text-red-600 font-medium">
               {errors.confirmPassword}
             </p>
           )}
