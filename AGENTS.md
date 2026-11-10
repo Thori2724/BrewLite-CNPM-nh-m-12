@@ -105,13 +105,15 @@ Quy tắc giữ cho 3 người không đụng nhau:
 - Trạng thái đơn: PENDING → PAID → PREPARING → READY → COMPLETED, cộng PAYMENT_FAILED và CANCELLED. Chỉ PENDING, PAYMENT_FAILED mới thanh toán được.
 
 ## 8. Triển khai lên mạng (ĐÃ CHỐT)
-Chi tiết xem tại ADR-006 (`docs/architecture/adr/006-aws-deployment-topology.md`). 6 quyết định đã chốt:
-1. Nền tảng: AWS, region `ap-southeast-1`, theo ADR-006.
-2. Không có tên miền riêng. Địa chỉ public duy nhất là domain mặc định của CloudFront (dạng `https://xxxx.cloudfront.net`), trong dự án gọi là `PUBLIC_URL`.
-3. KHÔNG có tiền tố `/api`. Nginx định tuyến: `/products`, `/orders`, `/auth`, `/payments`, `/health` → `api:3001`; mọi đường dẫn còn lại → `web:3000`. Khớp hợp đồng API mục 1.
-4. Production KHÔNG seed tài khoản demo. Chỉ seed dữ liệu menu.
-5. Tách migration khỏi lúc khởi động API. Production không chạy migrate/seed tự động khi container API khởi động. Migrate chạy bằng container tạm, sau khi sao lưu DB.
-6. Giữ nguyên `docker-compose.yml`, `apps/api/Dockerfile`, `apps/web/Dockerfile` cho môi trường local (#24). Cấu hình production nằm ở file mới `docker-compose.prod.yml`.
+Chi tiết xem tại ADR-009 (`docs/architecture/adr/009-render-deployment.md`). 8 quyết định đã chốt:
+1. Nền tảng: Render (quản lý qua Blueprint `render.yaml`).
+2. Ba dịch vụ độc lập: `brewlite-web` (Docker, `apps/web`), `brewlite-api` (Docker, `apps/api`), `brewlite-db` (Render PostgreSQL 16).
+3. Web và API có HAI domain riêng do Render cấp (dạng `*.onrender.com`). Bỏ quy tắc định tuyến không tiền tố qua Nginx. Web gọi API trực tiếp qua domain của API và bật CORS (`CORS_ORIGIN`).
+4. KHÔNG dùng Nginx, CloudFront, EC2, ECR, SSM, Caddy.
+5. Migration chạy bằng `preDeployCommand: npx prisma migrate deploy` (hoặc chạy từ máy local qua External Database URL nếu dùng gói Free). Service API khởi động bằng `dockerCommand: node dist/main` (ghi đè lệnh CMD trong Dockerfile). Trên Render không tự động migrate hay seed lúc khởi động.
+6. Production KHÔNG seed tài khoản demo. Chỉ seed dữ liệu menu (12 món) qua External Database URL.
+7. Dockerfile của API và Web GIỮ NGUYÊN cho môi trường local (#24). Dockerfile API vẫn giữ CMD migrate và seed cho local.
+8. Secret không vào repo. `JWT_SECRET` do Render sinh tự động hoặc nhập trên Dashboard; `DATABASE_URL` lấy từ kết nối nội bộ của `brewlite-db`.
 
 ## 9. Git (3 người làm song song)
 - Không có nhánh `dev`. Nhánh ghép chung là `some-diagram-and-SRS` (gọi tắt: nhánh some).

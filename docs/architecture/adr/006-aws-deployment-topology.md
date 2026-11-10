@@ -1,7 +1,8 @@
 # ADR-006: Mô hình triển khai trên AWS
 
-- **Trạng thái:** Accepted
-- **Ngày:** 2026-11-03 (Cập nhật 2026-11-10: Bản đầu tiên build image trực tiếp trên EC2 từ mã nguồn; Nginx định tuyến không dùng tiền tố /api/* để khớp hợp đồng API)
+- **Trạng thái:** Superseded by ADR-009
+- **Ghi chú thay thế (2026-11-10):** Được thay thế bởi ADR-009 do chuyển sang nền tảng Render theo sự đồng ý của giảng viên.
+- **Ngày:** 2026-11-03
 
 ## Bối cảnh
 Giảng viên yêu cầu triển khai trên AWS. Production cần: URL frontend qua HTTPS, API có health check, database không public, container registry, log, secret ngoài repository. Nhóm ít kinh nghiệm vận hành và có thời gian ngắn.

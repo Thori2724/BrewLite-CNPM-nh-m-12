@@ -1,0 +1,48 @@
+services:
+  # --- Backend API Service ---
+  - type: web
+    name: brewlite-api
+    runtime: docker
+    plan: free
+    branch: some-diagram-and-SRS
+    dockerfilePath: ./apps/api/Dockerfile
+    dockerContext: ./apps/api
+    healthCheckPath: /health
+    # Khởi động API không chạy lại migrate và seed tự động (tách migrate khỏi lúc khởi động)
+    dockerCommand: node dist/main
+    envVars:
+      - key: PORT
+        value: "10000"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: brewlite-db
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
+      - key: CORS_ORIGIN
+        # Điền thủ công URL của brewlite-web sau khi tạo xong (ví dụ: https://brewlite-web.onrender.com)
+        sync: false
+
+  # --- Frontend Web Service ---
+  - type: web
+    name: brewlite-web
+    runtime: docker
+    plan: free
+    branch: some-diagram-and-SRS
+    dockerfilePath: ./apps/web/Dockerfile
+    dockerContext: ./apps/web
+    envVars:
+      - key: PORT
+        value: "10000"
+      - key: NEXT_PUBLIC_API_URL
+        # Điền thủ công URL của brewlite-api sau khi tạo xong (ví dụ: https://brewlite-api.onrender.com)
+        # Biến này được Render truyền tự động làm Docker build arg (NEXT_PUBLIC_API_URL) khi build web.
+        sync: false
+
+databases:
+  # --- Managed PostgreSQL Database ---
+  - name: brewlite-db
+    plan: free
+    databaseName: brewlite
+    user: brewlite
+    postgresMajorVersion: "16"
