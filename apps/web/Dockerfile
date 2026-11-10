@@ -1,24 +1,22 @@
-FROM node:26.13.0-alpine
+FROM node:26.13.0-slim
 
 WORKDIR /app
 
-# Copy dependency definitions
+# Copy dependency definitions and prisma schema
 COPY package*.json ./
+COPY prisma ./prisma/
 
-# Install dependencies
+# Install all dependencies (keeping devDependencies for prisma CLI and ts-node)
 RUN npm ci
 
-# Copy source code
+# Generate Prisma Client
+RUN npx prisma generate
+
+# Copy source code and build
 COPY . .
-
-# Set build argument and environment variable for Next.js build
-ARG NEXT_PUBLIC_API_URL
-ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
-
-# Build Next.js application
 RUN npm run build
 
-EXPOSE 3000
+EXPOSE 3001
 
-CMD ["npm", "start"]
+CMD ["sh", "-c", "npx prisma generate && npx prisma migrate deploy && node -r ts-node/register prisma/seed.ts && node dist/main"]
 
