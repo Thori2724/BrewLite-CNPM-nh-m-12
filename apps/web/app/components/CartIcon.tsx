@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { useCart } from '../../context/CartContext';
+import { CartIconSvg } from './Icons';
 
 export default function CartIcon() {
   const { totalCount, isHydrated } = useCart();
@@ -13,13 +14,13 @@ export default function CartIcon() {
     <Link
       href="/cart"
       aria-label={`Giỏ hàng${displayCount > 0 ? `, ${displayCount} ly` : ', trống'}`}
-      className="relative cursor-pointer inline-flex items-center"
+      className="relative grid size-10 sm:size-11 shrink-0 place-items-center rounded-control text-bone transition hover:bg-moss/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-moss"
     >
-      <span className="text-2xl" role="img" aria-hidden="true">🛒</span>
-      {/* Badge số lượng: hiển thị kể cả khi = 0 để giữ layout ổn định */}
+      <CartIconSvg className="size-5" />
+      {/* Badge số lượng: hiển thị kể cả khi = 0 để giữ layout ổn định và khớp test A9 */}
       <span
-        className={`absolute -top-1 -right-2 text-white text-xs font-bold rounded-full h-5 w-5 flex items-center justify-center transition-colors ${
-          displayCount > 0 ? 'bg-red-500' : 'bg-gray-400'
+        className={`absolute -top-1 -right-1 grid size-5 place-items-center rounded-full text-[11px] font-bold transition duration-300 ${
+          displayCount > 0 ? 'bg-tan text-noir' : 'bg-bone/40 text-kombu'
         }`}
       >
         {displayCount > 9 ? '9+' : displayCount}
@@ -27,4 +28,3 @@ export default function CartIcon() {
     </Link>
   );
 }
-
