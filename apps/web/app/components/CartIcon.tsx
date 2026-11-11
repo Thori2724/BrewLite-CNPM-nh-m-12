@@ -13,7 +13,7 @@ export default function CartIcon() {
   return (
     <Link
       href="/cart"
-      aria-label={`Giỏ hàng${displayCount > 0 ? `, ${displayCount} ly` : ', trống'}`}
+      aria-label={`Giỏ hàng${displayCount > 0 ? `, ${displayCount} món` : ', trống'}`}
       className="relative grid size-10 sm:size-11 shrink-0 place-items-center rounded-control text-bone transition hover:bg-moss/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-moss"
     >
       <CartIconSvg className="size-5" />
