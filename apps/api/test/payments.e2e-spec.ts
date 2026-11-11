@@ -45,9 +45,9 @@ describe('Payments Integration (POST /payments)', () => {
     const users =
       createdUserEmails.length > 0
         ? await prisma.user.findMany({
-          where: { email: { in: createdUserEmails } },
-          select: { id: true },
-        })
+            where: { email: { in: createdUserEmails } },
+            select: { id: true },
+          })
         : [];
     const userIds = users.map((u) => u.id);
 
