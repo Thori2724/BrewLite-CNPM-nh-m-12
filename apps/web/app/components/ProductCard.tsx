@@ -6,24 +6,40 @@ interface ProductCardProps {
   product: Product;
 }
 
+const CATEGORY_LABELS: Record<string, string> = {
+  COFFEE: 'Cà phê',
+  TEA: 'Trà',
+  MILK_TEA: 'Trà sữa',
+  CAKE: 'Bánh',
+};
+
 export default function ProductCard({ product }: ProductCardProps) {
   const isOutOfStock = product.stock <= 0;
+  const categoryLabel = CATEGORY_LABELS[product.category] || product.category;
 
   return (
-    <div className="bg-white rounded-2xl shadow-xs border border-gray-100 overflow-hidden flex flex-col justify-between relative hover:shadow-md transition">
-      <Link href={`/menu/${product.id}`} className="block group">
+    <div
+      className={`group relative overflow-hidden rounded-card border border-tan/60 bg-cream shadow-soft transition duration-300 hover:-translate-y-1 hover:shadow-raised flex flex-col justify-between ${
+        isOutOfStock ? 'opacity-80' : ''
+      }`}
+    >
+      <Link href={`/menu/${product.id}`} className="block">
         {/* Hình ảnh sản phẩm */}
-        <div className="relative w-full h-40 sm:h-44 lg:h-48 bg-gray-100 overflow-hidden">
+        <div className="relative w-full h-40 sm:h-44 lg:h-48 bg-bone overflow-hidden">
           <img
             src={product.imageUrl}
             alt={product.name}
-            className={`w-full h-full object-cover transition group-hover:scale-105 duration-200 ${
+            className={`w-full h-full object-cover transition duration-300 group-hover:scale-105 ${
               isOutOfStock ? 'grayscale opacity-60' : ''
             }`}
           />
-          {/* Nhãn Hết hàng (Task 12) */}
+          {/* Nhãn danh mục */}
+          <span className="absolute bottom-2.5 left-2.5 rounded-full bg-cream/90 px-2.5 py-0.5 text-xs font-semibold text-kombu backdrop-blur-xs border border-tan/50">
+            {categoryLabel}
+          </span>
+          {/* Nhãn Hết hàng */}
           {isOutOfStock && (
-            <span className="absolute top-2.5 right-2.5 bg-gray-800 text-white text-xs px-2.5 py-1 rounded-md font-semibold shadow-xs">
+            <span className="absolute top-2.5 right-2.5 bg-error text-bone text-xs px-2.5 py-1 rounded-control font-semibold shadow-xs">
               Hết hàng
             </span>
           )}
@@ -31,10 +47,10 @@ export default function ProductCard({ product }: ProductCardProps) {
 
         {/* Thông tin sản phẩm */}
         <div className="p-3.5 sm:p-4">
-          <h3 className="font-semibold text-gray-800 text-sm sm:text-base line-clamp-2 break-words group-hover:text-amber-600 transition">
+          <h3 className="font-display font-bold text-noir text-sm sm:text-base line-clamp-2 break-words group-hover:text-moss transition">
             {product.name}
           </h3>
-          <p className="text-amber-600 font-bold text-sm sm:text-base mt-1">
+          <p className="text-kombu font-bold text-sm sm:text-base mt-1.5">
             {formatVnd(product.basePrice)}
           </p>
         </div>
@@ -46,10 +62,10 @@ export default function ProductCard({ product }: ProductCardProps) {
           <button
             type="button"
             disabled={isOutOfStock}
-            className={`w-full py-2.5 rounded-xl text-xs sm:text-sm font-semibold transition ${
+            className={`w-full py-2.5 rounded-control text-xs sm:text-sm font-semibold transition ${
               !isOutOfStock
-                ? 'bg-amber-600 text-white hover:bg-amber-700 active:scale-95 cursor-pointer'
-                : 'bg-gray-200 text-gray-400 cursor-not-allowed pointer-events-none'
+                ? 'bg-kombu text-bone hover:bg-moss active:scale-98 cursor-pointer shadow-xs'
+                : 'bg-tan/40 text-noir/40 cursor-not-allowed pointer-events-none'
             }`}
           >
             {!isOutOfStock ? '+ Thêm' : 'Tạm hết'}
