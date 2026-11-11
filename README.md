@@ -146,9 +146,62 @@ Kết quả đúng:
 
 Nhấn `Ctrl + C` tại cửa sổ terminal đang chạy API.
 
-## Cấu trúc thư mục (Sprint 1)
+## Triển khai và Tự động hóa (CI/CD)
 
-- `apps/web` — giao diện Next.js (sẽ thêm sau)
+Dự án áp dụng quy trình tự động hóa đầy đủ bằng **GitHub Actions** theo chuẩn:
+`Push/Tag` → `Lint và Test` → `Build` → `Docker Image Push Registry` → `Deploy` → `Smoke Test`
+
+### 1. Quy trình CI (`.github/workflows/ci.yml`)
+- Tự động kích hoạt khi có Pull Request vào nhánh `some-diagram-and-SRS` hoặc `main`.
+- Chạy kiểm tra độc lập cho cả `apps/api` và `apps/web`: `npm ci` → `npm run lint` → `npm test` → `npm run build`.
+- Quy tắc bảo vệ nhánh (Branch Protection Rule): Bắt buộc CI phải xanh mới được phép gộp PR.
+
+### 2. Pipeline CD Triển khai (`.github/workflows/cd.yml`)
+- Tự động kích hoạt khi push tag phiên bản (`v*`), push code lên nhánh chính, hoặc kích hoạt thủ công (`workflow_dispatch`).
+- **Giai đoạn 1 (Quality Gate):** Chạy lint, test, build để đảm bảo chất lượng.
+- **Giai đoạn 2 (Docker Registry):** Build Docker image cho API và Web, gắn tag commit SHA (`sha-<commit>`), sau đó đẩy lên GitHub Container Registry (GHCR: `ghcr.io`).
+- **Giai đoạn 3 (Database Migration):** Chạy `npx prisma migrate deploy` an toàn vào cơ sở dữ liệu Render PostgreSQL qua kết nối bảo mật. Nếu migration lỗi, pipeline dừng ngay lập tức.
+- **Giai đoạn 4 (Deploy Render):** Gọi Deploy Hook để Render triển khai phiên bản mới.
+- **Giai đoạn 5 (Smoke Test):** Tự động thăm dò endpoint `GET /health` của API và trang chủ Web trên production. Pipeline sẽ báo lỗi nếu dịch vụ không phản hồi 200 OK.
+
+### 3. Cấu hình GitHub Secrets (cho CD)
+Để kích hoạt đầy đủ pipeline CD, truy cập GitHub Repo: **Settings → Secrets and variables → Actions** và cấu hình các biến sau:
+- `RENDER_EXTERNAL_DATABASE_URL`: Chuỗi kết nối bên ngoài của cơ sở dữ liệu Render PostgreSQL (dùng chạy migration an toàn từ xa).
+- `RENDER_API_DEPLOY_HOOK`: URL Deploy Hook của service `brewlite-api` trên Render Dashboard (Settings → Deploy Hook).
+- `RENDER_WEB_DEPLOY_HOOK`: URL Deploy Hook của service `brewlite-web` trên Render Dashboard.
+- `PRODUCTION_API_URL`: Domain công khai của API (ví dụ: `https://brewlite-api.onrender.com`).
+- `PRODUCTION_WEB_URL`: Domain công khai của Web (ví dụ: `https://brewlite-web.onrender.com`).
+
+### 4. Kiểm tra Smoke Test thủ công
+Sau khi deploy, bạn có thể kiểm tra trạng thái hoạt động trên môi trường thật bằng lệnh:
+```bash
+# Kiểm tra API Health Check (kết quả mong đợi: {"status":"ok"})
+curl https://brewlite-api.onrender.com/health
+
+# Kiểm tra Web Frontend (kết quả mong đợi: mã HTTP 200)
+curl -I https://brewlite-web.onrender.com
+```
+
+### 5. Quy trình Rollback (Hoàn nguyên khi có sự cố)
+Nếu bản deploy mới gặp lỗi hoặc không vượt qua bài kiểm tra Smoke Test:
+1. **Cách 1 - Rollback qua GitHub Actions (`.github/workflows/rollback.yml`):**
+   - Vào tab **Actions** → Chọn workflow **Rollback Deployment** → Nhấn **Run workflow**.
+   - Chọn dịch vụ cần rollback (`all`, `api`, hoặc `web`), nhập lý do sự cố và mã commit cần phục hồi.
+2. **Cách 2 - Rollback trực tiếp trên Render Dashboard (1-click):**
+   - Đăng nhập [Render Dashboard](https://dashboard.render.com).
+   - Chọn service bị lỗi (`brewlite-api` hoặc `brewlite-web`) → Vào mục **Deploys**.
+   - Tìm bản deploy ổn định trước đó (Healthy) → Nhấn nút ba chấm `...` → Chọn **Rollback to this deploy** (hoặc **Re-deploy**).
+3. **Rollback Database Migration (nếu có sự cố schema):**
+   - Chạy lệnh khắc phục migration trên máy dev bằng External Database URL:
+     ```bash
+     npx prisma migrate resolve --rolled-back <migration_name>
+     ```
+
+## Cấu trúc thư mục
+
+- `apps/web` — giao diện Next.js
 - `apps/api` — API NestJS
-- `docs/` — yêu cầu, sơ đồ, kiến trúc
+- `docs/` — yêu cầu, sơ đồ, kiến trúc hệ thống
 - `docker-compose.yml` — chạy PostgreSQL local
+- `render.yaml` — định nghĩa hạ tầng triển khai trên Render PaaS
+- `.github/workflows/` — kịch bản CI (`ci.yml`), CD (`cd.yml`) và Rollback (`rollback.yml`)
