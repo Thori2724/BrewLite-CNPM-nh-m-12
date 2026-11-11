@@ -262,23 +262,29 @@ describe('Trang chi tiết món (ProductDetailPage)', () => {
       expect(screen.getByRole('heading', { level: 1, name: 'Cà phê sữa đá' })).toBeInTheDocument();
     });
 
-    // 1. Kiểm tra Size: Size S được chọn (active border-amber-600), không phải Size M
+    // 1. Kiểm tra Size: Size S được chọn (active bg-kombu, aria-pressed), không phải Size M
     const sizeSBtn = screen.getByRole('button', { name: /Size S/ });
     const sizeMBtn = screen.getByRole('button', { name: /Size M/ });
-    expect(sizeSBtn.className).toContain('border-amber-600');
-    expect(sizeMBtn.className).not.toContain('border-amber-600');
+    expect(sizeSBtn).toHaveAttribute('aria-pressed', 'true');
+    expect(sizeMBtn).toHaveAttribute('aria-pressed', 'false');
+    expect(sizeSBtn.className).toContain('bg-kombu');
+    expect(sizeMBtn.className).not.toContain('bg-kombu');
 
     // 2. Kiểm tra Đường: 100% được chọn, không phải 50%
     const sugar100Btn = screen.getByRole('button', { name: '100%' });
     const sugar50Btn = screen.getByRole('button', { name: '50%' });
-    expect(sugar100Btn.className).toContain('border-amber-600');
-    expect(sugar50Btn.className).not.toContain('border-amber-600');
+    expect(sugar100Btn).toHaveAttribute('aria-pressed', 'true');
+    expect(sugar50Btn).toHaveAttribute('aria-pressed', 'false');
+    expect(sugar100Btn.className).toContain('bg-kombu');
+    expect(sugar50Btn.className).not.toContain('bg-kombu');
 
     // 3. Kiểm tra Đá: Đá vừa được chọn, không phải Ít đá
     const iceNormalBtn = screen.getByRole('button', { name: 'Đá vừa' });
     const iceLowBtn = screen.getByRole('button', { name: 'Ít đá' });
-    expect(iceNormalBtn.className).toContain('border-amber-600');
-    expect(iceLowBtn.className).not.toContain('border-amber-600');
+    expect(iceNormalBtn).toHaveAttribute('aria-pressed', 'true');
+    expect(iceLowBtn).toHaveAttribute('aria-pressed', 'false');
+    expect(iceNormalBtn.className).toContain('bg-kombu');
+    expect(iceLowBtn.className).not.toContain('bg-kombu');
 
     // 4. Giá tạm tính vẫn là 29.000đ (giá gốc 29.000 + Size S phụ thu 0đ)
     expect(screen.getAllByText(/29\.000/).length).toBeGreaterThan(0);
