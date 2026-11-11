@@ -2,10 +2,12 @@
 
 | Mục | Nội dung |
 |---|---|
-| Phiên bản | 1.0 |
-| Ngày | 2026-11-03 |
+| Phiên bản | 2.0 (Đồng bộ Hợp đồng API & Triển khai Render) |
+| Ngày | 2026-11-10 |
 | Phương pháp trình bày | C4 (Context, Container) kết hợp kiến trúc phân lớp bên trong backend |
-| Tài liệu liên quan | `docs/requirements/`, `docs/diagrams/`, `docs/architecture/adr/`, `docs/deployment.md` |
+| Tài liệu liên quan | `docs/requirements/`, `docs/diagrams/`, `docs/architecture/adr/`, `docs/deployment.md`, `docs/api-contract.md` |
+
+---
 
 ## 1. Mục tiêu và các yếu tố chi phối kiến trúc
 
@@ -13,15 +15,15 @@ Kiến trúc được chọn để thỏa mãn luồng nghiệp vụ tối thi�
 
 | Yếu tố chi phối | Ảnh hưởng đến kiến trúc |
 |---|---|
-| Ràng buộc công nghệ: Next.js, NestJS, PostgreSQL, Docker | Ba thành phần chính được cố định; mọi thành phần khác chỉ bổ sung |
-| Triển khai production trên AWS (yêu cầu của giảng viên) | Chọn tổ hợp dịch vụ AWS đơn giản, đủ HTTPS, registry, log, health check (ADR-006) |
-| NFR hiệu năng: API phản hồi < 500 ms với dữ liệu mẫu | Một DB duy nhất, truy vấn qua index, không có bước gọi mạng thừa |
-| NFR bảo mật: băm mật khẩu, JWT, validate đầu vào, secret không nằm trong repo | Guard JWT, ValidationPipe, quản lý secret tách khỏi mã nguồn (ADR-004) |
-| Tính đúng đắn nghiệp vụ: không bán quá tồn kho, không thanh toán hai lần | Transaction, khóa lạc quan, Idempotency-Key, state machine (ADR-005) |
-| Khả năng triển khai và truy vết | Đóng gói Docker, CI/CD tự động, tag image theo commit SHA (ADR-007) |
-| Nguồn lực: nhóm nhỏ, thời gian ngắn | Ưu tiên giải pháp đơn giản, ít thành phần vận hành (modular monolith, một máy chủ) |
+| Ràng buộc công nghệ: Next.js, NestJS, PostgreSQL, Docker | Ba thành phần chính được cố định; giao tiếp qua REST API độc lập. |
+| Triển khai production trên Render (theo ADR-009, thay thế ADR-006) | Sử dụng PaaS Render quản lý qua Blueprint `render.yaml`, có HTTPS tự động, database an toàn, tự động hóa CI/CD qua GHCR và Render Deploy Hook. |
+| NFR hiệu năng: API phản hồi < 500 ms với dữ liệu mẫu | Một DB duy nhất, truy vấn qua index, không có bước gọi mạng trung gian thừa. |
+| NFR bảo mật: băm mật khẩu, JWT 24 giờ, validate đầu vào, secret ngoài repo | Guard JWT, ValidationPipe, mật khẩu băm bcrypt, token JWT có hiệu lực 24 giờ, quản lý secret tách rời khỏi mã nguồn (ADR-004). |
+| Tính đúng đắn nghiệp vụ: không bán quá kho, chống thanh toán hai lần | Transaction ACID trừ kho có điều kiện `stock >= tổng số lượng cần`, Idempotency-Key theo từng người dùng, state machine (ADR-005). |
+| Khả năng triển khai và truy vết | Đóng gói Docker, CI/CD tự động qua GitHub Actions, đẩy image gắn commit SHA lên GitHub Container Registry (ADR-007). |
+| Nguồn lực: nhóm nhỏ, thời gian ngắn | Ưu tiên giải pháp đơn giản, chuẩn hóa, không dùng microservices hay framework quản lý state phức tạp. |
 
-> Khi đối chiếu với SRS, ghi thêm mã NFR tương ứng vào cột bên trái của bảng này.
+---
 
 ## 2. C4 – Mức 1: System Context
 
@@ -33,167 +35,202 @@ flowchart LR
     BAR["Nhân viên quầy / Quản lý<br/>(ngoài phạm vi MVP)"]
 
     KH -->|"Xem menu, đặt đơn, thanh toán, theo dõi đơn"| BL
-    BL -->|"Yêu cầu thanh toán"| PAY
-    BAR -.->|"Cập nhật trạng thái đơn (mở rộng)"| BL
+    BL -->|"Yêu cầu thanh toán mô phỏng"| PAY
+    BAR -.->|"Cập nhật trạng thái đơn (mở rộng tương lai)"| BL
 ```
 
-- Dịch vụ thanh toán là **mô phỏng**, nằm sau một interface để có thể thay bằng cổng thật (Momo/VNPay/Stripe) mà không đổi nghiệp vụ.
-- Nhân viên quầy và quản lý nằm ngoài MVP; trạng thái `PREPARING`, `READY`, `COMPLETED` vẫn được mô hình hóa trong state machine để mở rộng.
+- Dịch vụ thanh toán là **mô phỏng**, nằm sau một interface (`PaymentGateway`) để có thể thay bằng cổng thật (Momo/VNPay/ZaloPay) mà không làm thay đổi logic nghiệp vụ.
+- Giao diện nhân viên quầy và quản lý nằm ngoài MVP hiện tại; các trạng thái `PREPARING`, `READY`, `COMPLETED` vẫn được mô hình hóa trong state machine để mở rộng sau này.
 
-## 3. C4 – Mức 2: Container
+---
+
+## 3. C4 – Mức 2: Container (Kiến trúc Render PaaS)
 
 ```mermaid
 flowchart LR
-    U["Khách hàng<br/>Trình duyệt / PWA"]
+    U["Khách hàng<br/>(Trình duyệt Web máy tính / Di động)"]
 
-    subgraph AWS["AWS (region ap-southeast-1)"]
-        CF["Amazon CloudFront<br/>HTTPS 443"]
-        subgraph EC2["EC2 + Docker Compose"]
-            NG["nginx<br/>reverse proxy :80"]
-            WEB["web: Next.js :3000"]
-            API["api: NestJS :3001"]
-            DB[("postgres :5432<br/>Docker volume trên EBS")]
-        end
-        ECR["Amazon ECR<br/>container registry"]
-        CW["CloudWatch Logs"]
+    subgraph RENDER["Nền tảng Cloud Render (PaaS)"]
+        WEB["brewlite-web<br/>Next.js 16 (cổng 10000)<br/>https://brewlite-web.onrender.com"]
+        API["brewlite-api<br/>NestJS 11 (cổng 10000)<br/>https://brewlite-api.onrender.com"]
+        DB[("brewlite-db<br/>Managed PostgreSQL 16<br/>(Mạng nội bộ Render)")]
     end
 
-    U -->|"HTTPS"| CF
-    CF -->|"HTTP :80"| NG
-    NG -->|"/"| WEB
-    NG -->|"/api/*"| API
-    WEB -->|"SSR gọi API nội bộ"| API
-    API -->|"Prisma, TCP 5432 (mạng nội bộ Docker)"| DB
-    API -.->|"log"| CW
-    ECR -.->|"pull image khi deploy"| EC2
+    subgraph GITHUB["Hệ sinh thái GitHub"]
+        GHCR["GitHub Container Registry (GHCR)<br/>ghcr.io/... (Docker Images gắn commit SHA)"]
+        GHA["GitHub Actions (CI/CD Pipeline)"]
+    end
+
+    U -->|"HTTPS :443 (Gọi trang web)"| WEB
+    U -->|"HTTPS :443 (REST API trực tiếp kèm CORS)"| API
+    WEB -->|"SSR / Fetch dữ liệu API qua NEXT_PUBLIC_API_URL"| API
+    API -->|"Prisma TCP 5432 (Chuỗi kết nối nội bộ DATABASE_URL)"| DB
+    GHA -->|"Build & Push Docker Image"| GHCR
+    GHA -->|"Kích hoạt triển khai qua Deploy Hook"| RENDER
 ```
 
-| Container | Công nghệ | Trách nhiệm | Mã nguồn |
+| Container / Dịch vụ | Công nghệ | Trách nhiệm | Mã nguồn / Quản lý |
 |---|---|---|---|
-| Web client (PWA) | Next.js, React, TypeScript, TailwindCSS, Zustand | Giao diện desktop-first, giỏ hàng phía client, gọi REST API | `apps/web` |
-| API | NestJS, TypeScript, class-validator, Passport JWT, Prisma | Nghiệp vụ: sản phẩm, xác thực, đơn hàng, thanh toán, khuyến mãi, điểm thưởng | `apps/api` |
-| Database | PostgreSQL 16 | Lưu dữ liệu bền vững; không mở cổng ra Internet | `apps/api/prisma` (schema, migration, seed) |
-| Reverse proxy | nginx | Một điểm vào duy nhất: `/` → web, `/api/*` → api | `nginx/default.conf` |
-| CDN | Amazon CloudFront | HTTPS cho người dùng, phân phối nội dung tĩnh của Next.js, chuyển tiếp `/api/*` không cache | Cấu hình AWS, ghi trong `docs/deployment.md` |
+| `brewlite-web` | Next.js 16, React 19, TypeScript, Tailwind CSS v4 | Giao diện desktop-first, giỏ hàng localStorage, gọi REST API trực tiếp | `apps/web` |
+| `brewlite-api` | NestJS 11, TypeScript, class-validator, Passport JWT, Prisma | Nghiệp vụ: sản phẩm, xác thực, đơn hàng, thanh toán mô phỏng, health check | `apps/api` |
+| `brewlite-db` | Render Managed PostgreSQL 16 | Lưu trữ dữ liệu an toàn, bền vững; mạng nội bộ bảo vệ dữ liệu | `apps/api/prisma` |
+| `GHCR` | GitHub Container Registry (`ghcr.io`) | Lưu trữ Docker image được gắn nhãn commit SHA phục vụ truy vết | `.github/workflows/cd.yml` |
 
-Frontend và API cùng một tên miền (đường dẫn `/api`), nên không phát sinh CORS giữa hai thành phần trong production.
+> **Cấu hình Tên miền và CORS:**
+> Frontend và API sở hữu hai tên miền riêng biệt do Render cấp phát tự động có sẵn HTTPS (`brewlite-web.onrender.com` và `brewlite-api.onrender.com`).
+> - Web gọi API trực tiếp qua domain của API thông qua biến môi trường `NEXT_PUBLIC_API_URL` được nung vào lúc build.
+> - API cấu hình bật CORS qua biến môi trường `CORS_ORIGIN` trỏ chính xác về domain của Web để đảm bảo an toàn truy cập chéo nguồn.
+> - Bỏ hoàn toàn tiền tố `/api` (API gọi thẳng các endpoint gốc: `/products`, `/orders`, `/payments`, `/auth/login`, `/health`).
 
-## 4. Kiến trúc frontend (Next.js / PWA)
+---
 
-- **Desktop-first:** TailwindCSS, bố cục theo wireframe 5 màn hình (Menu, Chi tiết, Giỏ hàng, Thanh toán, Xác nhận).
-- **PWA:** có `manifest.webmanifest` và service worker cache phần vỏ ứng dụng; dữ liệu đơn hàng luôn lấy trực tuyến.
-- **Trạng thái:** giỏ hàng lưu bằng Zustand (kèm `localStorage`); dữ liệu từ API quản lý bằng React Query (loading/empty/error rõ ràng).
-- **Xác thực:** token JWT gắn vào header `Authorization: Bearer`; route đặt đơn và lịch sử đơn yêu cầu đăng nhập.
-- **Thanh toán:** client sinh `Idempotency-Key` (UUID) cho mỗi lần xác nhận thanh toán và gửi lại cùng key khi retry.
-- **Validate:** kiểm tra cơ bản ở form (kiểu, bắt buộc), nhưng backend mới là nơi quyết định.
+## 4. Kiến trúc Frontend (Next.js App Router)
 
-## 5. Kiến trúc backend (NestJS theo module/domain)
+- **Ưu tiên màn hình máy tính (Desktop-first):** Thiết kế giao diện ưu tiên trải nghiệm trên máy tính theo yêu cầu đồ án, đồng thời áp dụng Tailwind CSS để đáp ứng responsive mượt mà trên thiết bị di động. Không triển khai PWA (không dùng Service Worker, không có manifest offline).
+- **Quản lý trạng thái:**
+  - Dữ liệu giỏ hàng được lưu trữ bền vững tại `localStorage` của trình duyệt thông qua React Context (`CartContext`). Giỏ hàng chỉ được gửi lên máy chủ khi khách hàng bấm Đặt đơn.
+  - Không sử dụng các thư viện quản lý state nặng như Zustand hoặc React Query.
+- **Trang theo dõi đơn hàng:** Trang theo dõi đơn hàng (`/orders/:id`) chỉ tải dữ liệu một lần khi người dùng mở trang hoặc khi bấm nút "Tải lại", tuyệt đối **không tự động polling mỗi 5 giây**.
+- **Xác thực:** Lưu trữ mã `accessToken` (thời hạn 24 giờ) phía Client và gắn vào HTTP Header `Authorization: Bearer <accessToken>`. Khi gặp mã lỗi 401 Unauthorized, giao diện tự động điều hướng về màn hình đăng nhập.
+- **Thanh toán:** Client sinh `Idempotency-Key` (chuỗi ngẫu nhiên từ 8-100 ký tự) cho mỗi lần xác nhận thanh toán. Khi thanh toán thất bại (`PAYMENT_FAILED`), nút "Thử lại thanh toán" sẽ tái sử dụng cùng đơn hàng đó và gửi kèm một `Idempotency-Key` **mới**.
+- **Kiểm soát giá:** Giao diện chỉ tính toán giá tạm tính để hiển thị cho người dùng xem trước, tuyệt đối không gửi `unitPrice` hay `totalAmount` lên server.
 
-Phân lớp trong mỗi module: **Controller → Service (nghiệp vụ) → Repository/Prisma**. Controller không chứa nghiệp vụ.
+---
+
+## 5. Kiến trúc Backend (NestJS Modular Monolith)
+
+Mỗi module tuân thủ cấu trúc phân lớp chặt chẽ: **Controller → Service (nghiệp vụ) → Repository / Prisma**. Controller chỉ làm nhiệm vụ validate đầu vào và điều hướng, không chứa logic nghiệp vụ.
 
 | Module | Trách nhiệm | Endpoint chính |
 |---|---|---|
-| `auth` | Đăng ký, đăng nhập, băm mật khẩu bcrypt, phát JWT, `JwtAuthGuard` | `POST /auth/register`, `POST /auth/login` |
-| `users` | Thông tin người dùng, điểm tích lũy | (nội bộ) |
-| `products` | Menu, chi tiết, size/topping, tồn kho | `GET /products`, `GET /products/:id` |
-| `orders` | Tạo đơn, tính tiền phía server, state machine, lịch sử đơn | `POST /orders`, `GET /orders/me` |
-| `payments` | Thanh toán qua `PaymentGateway`, kiểm tra idempotency | `POST /payments` |
-| `promotions` | Kiểm tra và áp mã giảm giá | (gọi từ `orders`) |
-| `loyalty` | Ghi `LoyaltyTransaction`, cộng điểm sau khi đơn `PAID` | (gọi từ `payments`) |
-| `health` | Kiểm tra sống và kết nối DB | `GET /health` |
-| `common` | Pipe validate, exception filter, logging interceptor, cấu hình | – |
+| `auth` | Đăng ký, đăng nhập, băm mật khẩu bcrypt, phát JWT token 24 giờ, `JwtAuthGuard` | `POST /auth/register`, `POST /auth/login` |
+| `products` | Menu danh mục, tìm kiếm, chi tiết món, cấu hình size/topping, tồn kho | `GET /products`, `GET /products/:id` |
+| `orders` | Tạo đơn, tính tiền server, trừ kho ACID, máy trạng thái, lịch sử đơn | `POST /orders`, `GET /orders/me`, `GET /orders/:id` |
+| `payments` | Cổng thanh toán mô phỏng (`PaymentGateway`), kiểm tra Idempotency theo user | `POST /payments` |
+| `health` | Kiểm tra trạng thái sẵn sàng của dịch vụ API | `GET /health` |
+| `prisma` | Quản lý kết nối PostgreSQL và thực thi Prisma Transaction | – |
+| `common` | ValidationPipe toàn cục, Filter xử lý ngoại lệ chuẩn, Interceptor ghi log | – |
+| `promotions` | *(Phạm vi mở rộng tương lai - Chưa hiện thực trong code)* | – |
+| `loyalty` | *(Phạm vi mở rộng tương lai - Chưa hiện thực trong code)* | – |
 
-Các quyết định nghiệp vụ quan trọng:
+### Các quyết định nghiệp vụ cốt lõi:
 
-- **State machine đơn hàng:** `PENDING → PAID → PREPARING → READY → COMPLETED`; nhánh `PAYMENT_FAILED` (được thử lại) và `CANCELLED`. Hàm `assertTransition` chặn chuyển trạng thái không hợp lệ.
-- **Tạo đơn và trừ tồn kho trong một transaction:** cập nhật có điều kiện (`WHERE stock >= qty AND version = ?`) để hai khách đặt đồng thời không vượt tồn kho; thất bại thì rollback toàn bộ.
-- **Thanh toán idempotent:** bảng `Payment` có ràng buộc duy nhất trên `idempotencyKey`; cùng key gửi lại trả về kết quả cũ, không tạo đơn hoặc giao dịch thứ hai.
-- **Tính tiền ở server:** server tự tính `lineTotal` và `total` từ giá trong DB, không tin giá client gửi lên.
-- **Dịch vụ thanh toán mô phỏng:** `PaymentGateway` là interface; `MockPaymentGateway` trả thành công/thất bại theo quy tắc cấu hình được (dùng để test cả hai nhánh).
+1. **Máy trạng thái đơn hàng (State Machine):**
+   - Vòng đời: `PENDING` $\to$ `PAID` $\to$ `PREPARING` $\to$ `READY` $\to$ `COMPLETED`.
+   - Nhánh phụ: `PAYMENT_FAILED` (cho phép thanh toán lại nhiều lần) và `CANCELLED`.
+   - Hàm `validateTransition` chặn đứng mọi hành vi chuyển trạng thái trái phép.
+2. **Tạo đơn và trừ tồn kho trong một Transaction (ACID):**
+   - Bỏ hoàn toàn khóa lạc quan và cột `version`.
+   - Toàn bộ quá trình tạo đơn và trừ tồn kho được gói gọn trong 1 Transaction với điều kiện `stock >= tổng số lượng cần` (được cộng gộp theo từng món). Nếu không đủ số lượng, giao dịch tự động hủy và trả về lỗi 409 Conflict kèm danh sách món thiếu.
+3. **Thanh toán Idempotent theo từng người dùng:**
+   - Khóa `Idempotency-Key` được phân biệt theo từng người dùng (`userId` + `idempotencyKey`).
+   - Gửi lại cùng key và cùng `orderId` sẽ trả lại kết quả giao dịch cũ với mã HTTP 200 OK, đảm bảo không trừ tiền 2 lần.
+4. **Server độc quyền tính giá:**
+   - Server tự tính giá `unitPrice` và `totalAmount` dựa trên cơ sở dữ liệu (giá gốc + phụ thu size + tổng giá topping), không bao giờ tin cậy giá gửi từ client.
+5. **Cổng thanh toán mô phỏng:**
+   - Giả lập thất bại khi số tài khoản tận cùng `0000`, các số khác thành công. Chỉ lưu 4 số cuối (`accountLast4`), tuyệt đối không lưu và không ghi log số tài khoản đầy đủ.
 
-## 6. Dữ liệu, migration và seed
+---
 
-- PostgreSQL 16; truy cập qua Prisma. Mô hình dữ liệu bám theo class diagram: `User`, `Product`, `Order`, `OrderItem`, `Payment`, `Promotion`, `LoyaltyTransaction`.
-- **Migration:** `prisma migrate dev` ở local; `prisma migrate deploy` ở production, chạy như một bước riêng trước khi khởi động API phiên bản mới. Migration viết theo hướng tương thích ngược để rollback ứng dụng không cần rollback DB.
-- **Seed:** `prisma db seed` tạo menu mẫu, tài khoản mẫu, mã khuyến mãi mẫu; chạy lại được.
-- **Sao lưu:** `pg_dump` trước mỗi lần migrate ở production (xem `docs/deployment.md`).
+## 6. Dữ liệu, Migration và Seed
 
-## 7. Luồng xử lý chính
+- **Hệ quản trị CSDL:** PostgreSQL 16 quản trị qua Prisma ORM.
+- **Mô hình dữ liệu hiện thực (7 bảng):** `User`, `Product`, `Topping`, `Order`, `OrderItem`, `OrderItemTopping`, `Payment`. *(Không tạo các bảng `Size`, `Promotion`, `LoyaltyTransaction`)*.
+- **Quy trình Migration:**
+   - Ở local: Chạy `npx prisma migrate dev`.
+   - Ở production: Chạy `npx prisma migrate deploy` qua kết nối an toàn `RENDER_EXTERNAL_DATABASE_URL` từ CI/máy dev. Tách biệt hoàn toàn khỏi lúc khởi động container API (container chạy lệnh `node dist/main`).
+- **Seed dữ liệu:**
+   - File `prisma/seed.ts` sử dụng lệnh `upsert` theo đúng các mã ID cố định trong Hợp đồng API. Chạy seed nhiều lần không bao giờ bị nhân đôi dữ liệu.
+   - Production tuyệt đối không nạp tài khoản demo, chỉ nạp 12 món ăn/uống và 4 loại topping mẫu.
 
-Luồng đặt và thanh toán được mô tả đầy đủ trong `docs/diagrams/sequence-checkout.puml`. Tóm tắt: Client gửi `POST /orders` kèm JWT → API xác thực, validate, mở transaction tạo đơn `PENDING` và trừ tồn kho → Client gửi `POST /payments` kèm `Idempotency-Key` → API gọi `PaymentGateway` → thành công: đơn `PAID`, cộng điểm; thất bại: đơn `PAYMENT_FAILED`, giỏ hàng giữ nguyên.
+---
+
+## 7. Luồng xử lý chính (End-to-End Checkout)
+
+Luồng nghiệp vụ hoàn chỉnh từ giỏ hàng đến xác nhận đơn hàng:
+1. Client gửi `POST /orders` kèm token JWT $\to$ API xác thực, kiểm tra dữ liệu đầu vào, mở Transaction kiểm tra tồn kho cộng gộp và trừ kho $\to$ Trả về đơn hàng mới ở trạng thái `PENDING` với mã `orderNumber` tăng dần.
+2. Client gửi `POST /payments` kèm header `Idempotency-Key` $\to$ API kiểm tra tính duy nhất của key theo người dùng $\to$ Gọi cổng thanh toán mô phỏng $\to$ 
+   - Nếu tài khoản kết thúc `0000`: Đơn hàng chuyển sang `PAYMENT_FAILED`, lưu payment `FAILED`. Khách hàng có thể bấm "Thử lại thanh toán" với `Idempotency-Key` mới.
+   - Nếu tài khoản hợp lệ: Đơn hàng chuyển sang `PAID`, lưu payment `SUCCESS`.
+3. Client truy vấn chi tiết đơn `GET /orders/:id` để hiển thị màn hình xác nhận đơn và theo dõi trạng thái đơn hàng.
+
+---
 
 ## 8. Các mối quan tâm xuyên suốt
 
 | Chủ đề | Giải pháp |
 |---|---|
-| Logging | NestJS Logger xuất JSON ra stdout (kèm request id); Docker logging driver `awslogs` đẩy lên CloudWatch Logs. Không ghi mật khẩu, token, Idempotency-Key đầy đủ vào log |
-| Health check | `GET /health` trả trạng thái API và kiểm tra kết nối DB; dùng cho `HEALTHCHECK` của Docker và smoke test sau deploy |
-| Cấu hình | `@nestjs/config`, kiểm tra biến môi trường khi khởi động (thiếu biến thì không chạy); `.env.example` liệt kê đủ biến, không chứa giá trị thật |
-| Secret | Local: `.env` (đã nằm trong `.gitignore`). CI: GitHub Actions Secrets. Production: file `.env` trên EC2 quyền 600, không đưa vào image |
-| Bảo mật | bcrypt, JWT hết hạn ngắn, `ValidationPipe` (whitelist), helmet, giới hạn tốc độ cho `/auth/*`, DB không public |
-| Xử lý lỗi | Exception filter trả định dạng lỗi thống nhất; mã HTTP đúng ngữ nghĩa (400, 401, 404, 409 cho hết hàng/xung đột, 422...) |
+| **Logging** | NestJS Logger xuất JSON ra stdout. Tuyệt đối không ghi mật khẩu, JWT token, hay số tài khoản đầy đủ vào log. |
+| **Health check** | Endpoint `GET /health` kiểm tra tính sẵn sàng của API; phục vụ smoke test tự động và Docker health check. |
+| **Cấu hình** | `@nestjs/config`, kiểm tra biến môi trường khi khởi động; file `.env.example` liệt kê đầy đủ biến mẫu. |
+| **Quản lý Secret** | Secret không bao giờ đưa vào Git. Quản lý an toàn trên GitHub Actions Secrets và Render Dashboard Environment Variables. |
+| **Bảo mật** | Băm mật khẩu bằng bcrypt, token JWT có hiệu lực 24 giờ, `ValidationPipe` whitelist loại bỏ trường thừa, database không mở cổng công khai tự do. |
+| **Xử lý lỗi** | Filter ngoại lệ chuẩn hóa thông báo lỗi: validate đầu vào trả mảng chi tiết tiếng Anh, lỗi nghiệp vụ trả thông báo tiếng Việt theo đúng Hợp đồng API. |
 
-## 9. Môi trường và triển khai
+---
 
-Ba ranh giới môi trường:
+## 9. Môi trường và Triển khai thực tế
+
+Ba ranh giới môi trường được chuẩn hóa:
 
 | Môi trường | Thành phần | Mục đích |
 |---|---|---|
-| Local | Máy dev, `docker-compose.yml` (web, api, postgres) | Phát triển và chạy thử |
-| CI | GitHub Actions, GitHub Secrets | Lint, test, build, build image, push ECR, ra lệnh deploy |
-| Production | AWS: CloudFront, EC2 (Docker Compose), ECR, CloudWatch | Phiên bản chạy thật cho người dùng |
+| **Local** | Máy dev cá nhân, `docker-compose.yml` (PostgreSQL), API cổng 3001, Web cổng 3000 | Phát triển, chạy thử và kiểm thử unit/integration |
+| **CI/CD** | GitHub Actions (`ci.yml`, `cd.yml`, `rollback.yml`), GitHub Secrets, GHCR | Tự động hóa kiểm thử, đóng gói Docker image, chạy migration và deploy |
+| **Production** | Render Cloud Platform: `brewlite-web`, `brewlite-api`, `brewlite-db` | Hệ thống triển khai thực tế công khai qua HTTPS |
 
-**Truy vết deployment diagram:** mỗi node trong sơ đồ triển khai phải tên trùng với bảng dưới đây.
+### Bảng đối chiếu Node trong Deployment Diagram (Mục 9)
 
-| Node trong deployment diagram | Thành phần kiến trúc | Mã nguồn / cấu hình |
+Mọi tên node trong sơ đồ triển khai (Deployment Diagram) được đồng bộ chính xác theo bảng dưới đây:
+
+| Node trong Deployment Diagram | Thành phần kiến trúc thực tế | Cấu hình & Vị trí |
 |---|---|---|
-| Thiết bị người dùng (Browser/PWA) | Web client (mục 4) | `apps/web` |
-| Amazon CloudFront | CDN/HTTPS (mục 3) | Cấu hình AWS, `docs/deployment.md` |
-| EC2 instance (Docker Engine) | Máy chủ chạy container | `docker-compose.prod.yml`, `docs/deployment.md` |
-| Container nginx | Reverse proxy | `nginx/default.conf` |
-| Container web (Next.js) | Web client (mục 4) | `apps/web/Dockerfile` |
-| Container api (NestJS) | Backend (mục 5) | `apps/api/Dockerfile` |
-| Container postgres + Docker volume (EBS) | Dữ liệu (mục 6) | `docker-compose.prod.yml`, `apps/api/prisma` |
-| Amazon ECR | Container registry | `.github/workflows/deploy.yml` |
-| GitHub Actions | CI/CD (ADR-007) | `.github/workflows/ci.yml`, `deploy.yml` |
-| GitHub Secrets | Secret của CI | Không nằm trong repository |
-| Tệp `.env` trên EC2 | Secret/cấu hình runtime | Mẫu: `.env.example` |
-| AWS Systems Manager (Run Command) | Kênh deploy từ CI vào EC2 | `.github/workflows/deploy.yml` |
-| Amazon CloudWatch Logs | Logging (mục 8) | Cấu hình `logging` trong `docker-compose.prod.yml` |
+| `Thiết bị người dùng (Trình duyệt Web)` | Khách hàng truy cập máy tính / điện thoại | Giao diện Web Next.js |
+| `Render PaaS (Nền tảng Cloud)` | Hạ tầng đám mây Render | Quản lý qua `render.yaml` |
+| `brewlite-web (Web Service)` | Web Service Next.js 16 (cổng 10000, HTTPS) | `apps/web/Dockerfile`, `render.yaml` |
+| `brewlite-api (Web Service)` | API Web Service NestJS 11 (cổng 10000, HTTPS) | `apps/api/Dockerfile`, `render.yaml` |
+| `brewlite-db (Managed PostgreSQL 16)` | Database PostgreSQL được quản lý, mạng nội bộ | `render.yaml` |
+| `GitHub Container Registry (GHCR)` | Registry lưu trữ image Docker gắn commit SHA | `ghcr.io/...`, `.github/workflows/cd.yml` |
+| `GitHub Actions (CI/CD Pipeline)` | Tự động hóa kiểm thử và triển khai | `.github/workflows/cd.yml`, `rollback.yml` |
+| `GitHub Secrets` | Quản lý secret của CI/CD (`RENDER_EXTERNAL_DATABASE_URL`, v.v.) | GitHub Repository Settings |
+| `Biến môi trường trên Render Dashboard` | Secret và tham số runtime (`JWT_SECRET`, `CORS_ORIGIN`, v.v.) | Render Dashboard Service Environment |
 
-Cổng và giao thức: người dùng → CloudFront **HTTPS 443**; CloudFront → nginx **HTTP 80** (Security Group chỉ cho phép dải IP của CloudFront); nginx → web **3000**, api **3001** (mạng nội bộ Docker); api → postgres **5432** (mạng nội bộ Docker, không map ra host). Không mở cổng 22.
+---
 
 ## 10. Lý do chọn, ưu điểm, hạn chế và trade-off
 
 | Quyết định | Ưu điểm | Hạn chế | Trade-off đã chấp nhận |
 |---|---|---|---|
-| Modular monolith (NestJS) thay vì microservices | Đơn giản, dễ test, một lần deploy, transaction DB nguyên vẹn | Mở rộng theo từng module khó hơn | Nhóm nhỏ và thời gian ngắn, nghiệp vụ cần transaction chặt (đơn + tồn kho) |
-| Monorepo, hai package độc lập | Một repo, một lịch sử, tài liệu và code cùng chỗ | Không có công cụ build chung | Không dùng Nx/Turborepo để giảm độ phức tạp |
-| PostgreSQL + Prisma | Kiểu an toàn, migration rõ ràng, seed tái tạo được | Prisma bó buộc một số truy vấn phức tạp | Chấp nhận dùng truy vấn thô (raw) ở chỗ khóa lạc quan nếu cần |
-| Một EC2 chạy Docker Compose | Rẻ, dễ hiểu, giống môi trường local | Một điểm lỗi duy nhất, không tự mở rộng | Đổi lấy tốc độ triển khai; xem phương án ECS/RDS trong ADR-006 |
-| PostgreSQL chạy trong container (volume trên EBS) | Không cần cấu hình mạng riêng cho RDS, rẻ | Sao lưu, vá lỗi, HA do nhóm tự lo | Có `pg_dump` trước migrate; nêu RDS là hướng nâng cấp |
-| CloudFront phía trước | HTTPS miễn tên miền riêng, CDN cho nội dung tĩnh | Đoạn CloudFront → EC2 là HTTP | Giới hạn Security Group theo dải IP CloudFront và dùng header bí mật xác thực nguồn |
-| JWT lưu phía client, không có refresh token | Đơn giản, đủ cho MVP | Rủi ro XSS đánh cắp token; hết hạn thì phải đăng nhập lại | Token sống ngắn, CSP và helmet, nêu cookie HttpOnly là hướng nâng cấp |
+| **Modular monolith (NestJS)** thay vì microservices | Đơn giản, dễ kiểm thử, một lần deploy, transaction ACID nguyên vẹn | Khó mở rộng riêng lẻ từng module | Phù hợp năng lực nhóm nhỏ và thời hạn ngắn; nghiệp vụ cần transaction chặt. |
+| **PaaS Render** thay vì tự dựng AWS EC2 / Nginx | Tự động cấp phát HTTPS, quản lý hạ tầng chuẩn qua Blueprint `render.yaml`, miễn phí | Gói Free có thời gian cold start khoảng 50 giây; DB tự hết hạn sau 30 ngày | Giảm gánh nặng vận hành máy chủ, tránh phức tạp thanh toán quốc tế trên AWS. |
+| **GHCR (GitHub Container Registry)** thay vì Docker Hub | Tích hợp sẵn với GitHub Actions bằng `GITHUB_TOKEN`, không bị giới hạn lượt kéo | Yêu cầu chuẩn hóa tên repo chữ thường | Tự động hóa liền mạch trong cùng hệ sinh thái GitHub. |
+| **PostgreSQL 16 + Prisma** | Kiểu dữ liệu an toàn, migration truy vết được trong Git, seed nạp lại an toàn | Prisma hạn chế một số truy vấn raw phức tạp | Không dùng cột version, kiểm tra tồn kho trực tiếp trong transaction. |
+| **Desktop-first, không làm PWA** | Tối ưu hiển thị màn hình lớn theo yêu cầu giảng viên, giao diện rõ ràng | Không cài đặt thành app offline trên điện thoại | Tránh phức tạp Service Worker và đồng bộ dữ liệu ngoại tuyến. |
+| **JWT 24 giờ không Refresh Token** | Đơn giản, tiện lợi cho khách dùng trong ngày, hoàn toàn stateless | Khó thu hồi token đơn lẻ trước 24 giờ | Chấp nhận đánh đổi để giữ kiến trúc tinh gọn đúng hợp đồng API. |
 
-## 11. Rủi ro kiến trúc và giảm thiểu
+---
 
-| Rủi ro | Giảm thiểu |
+## 11. Rủi ro kiến trúc và giải pháp giảm thiểu
+
+| Rủi ro | Giải pháp giảm thiểu |
 |---|---|
-| EC2 hỏng làm mất dịch vụ và dữ liệu | Snapshot EBS, `pg_dump` định kỳ lưu ra S3 hoặc ngoài máy; tài liệu khôi phục trong `docs/deployment.md` |
-| Lộ secret qua repo hoặc log | `.gitignore`, `.env.example`, GitHub Secrets, quét log CI, không in biến môi trường |
-| Máy EC2 thiếu RAM | Chọn cấu hình tối thiểu 2 GB RAM; build image ở CI, không build trên EC2 |
-| Chi phí AWS vượt dự kiến | Đặt AWS Budget cảnh báo, tắt tài nguyên không dùng sau khi chấm |
-| Migration lỗi làm hỏng DB | Sao lưu trước migrate, migration tương thích ngược, smoke test sau deploy |
-| Triển khai thất bại | Pipeline dừng và có workflow rollback về tag image trước đó |
+| **Cold Start trên Render Free** | Cấu hình vòng lặp thử lại (retry loop) trong script Smoke Test và thông báo người dùng đợi 50s ở lần gọi đầu. |
+| **Database gói Free hết hạn sau 30 ngày** | Định kỳ sao lưu dữ liệu hoặc nâng cấp gói trước khi hết hạn; tài liệu khôi phục ghi rõ trong `docs/deployment.md`. |
+| **Lộ khóa bảo mật qua Git** | Tuyệt đối không commit file `.env`; lưu trữ an toàn trên GitHub Secrets và Render Dashboard. |
+| **Lỗi schema làm hỏng database** | Tách riêng bước chạy migration qua CI; có sẵn quy trình rollback qua `npx prisma migrate resolve` hoặc workflow `rollback.yml`. |
+| **Khách hàng thanh toán trùng lặp** | Bắt buộc gửi `Idempotency-Key` phân biệt theo user; replay key cũ trả 200 OK kết quả cũ mà không trừ thêm tiền. |
+
+---
 
 ## 12. Danh sách ADR
 
-| ADR | Quyết định |
-|---|---|
-| [001](adr/001-monorepo.md) | Monorepo với hai package độc lập |
-| [002](adr/002-modular-monolith-nestjs-rest.md) | Modular monolith NestJS, giao tiếp REST/JSON |
-| [003](adr/003-postgresql-prisma-migrations.md) | PostgreSQL với Prisma, migration và seed |
-| [004](adr/004-jwt-authentication.md) | Xác thực bằng JWT và bcrypt |
-| [005](adr/005-mock-payment-idempotency-transactions.md) | Thanh toán mô phỏng, idempotency, transaction |
-| [006](adr/006-aws-deployment-topology.md) | Mô hình triển khai trên AWS |
-| [007](adr/007-cicd-github-actions.md) | CI/CD bằng GitHub Actions |
+| ADR | Tiêu đề quyết định | Trạng thái |
+|---|---|---|
+| [001](adr/001-monorepo.md) | Monorepo với hai package độc lập | Accepted |
+| [002](adr/002-modular-monolith-nestjs-rest.md) | Modular monolith NestJS, giao tiếp REST/JSON | Accepted (Updated) |
+| [003](adr/003-postgresql-prisma-migrations.md) | PostgreSQL với Prisma, migration và seed | Accepted (Updated) |
+| [004](adr/004-jwt-authentication.md) | Xác thực bằng JWT 24 giờ và bcrypt | Accepted (Updated) |
+| [005](adr/005-mock-payment-idempotency-transactions.md) | Thanh toán mô phỏng, Idempotency và Giao dịch ACID | Accepted (Updated) |
+| [006](adr/006-aws-deployment-topology.md) | Mô hình triển khai trên AWS | Superseded by ADR-009 |
+| [007](adr/007-cicd-github-actions.md) | CI/CD bằng GitHub Actions và Triển khai Render | Accepted (Updated) |
+| [009](adr/009-render-deployment.md) | Mô hình triển khai trên Render PaaS | Accepted |
