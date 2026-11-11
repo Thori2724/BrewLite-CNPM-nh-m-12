@@ -214,8 +214,8 @@ function ProductDetailContent() {
   // 1. Trạng thái Loading
   if (loading) {
     return (
-      <div className="max-w-md mx-auto py-16 text-center text-gray-500 text-sm">
-        <div className="animate-spin inline-block w-8 h-8 border-3 border-amber-600 border-t-transparent rounded-full mb-3" />
+      <div className="max-w-md mx-auto py-16 text-center text-noir/70 text-sm">
+        <div className="animate-spin inline-block w-8 h-8 border-3 border-kombu border-t-transparent rounded-full mb-3" />
         <p>Đang tải chi tiết món...</p>
       </div>
     );
@@ -224,15 +224,15 @@ function ProductDetailContent() {
   // 2. Trạng thái Lỗi API
   if (error) {
     return (
-      <div className="max-w-md mx-auto bg-white border border-gray-100 rounded-2xl p-6 sm:p-8 shadow-xs text-center space-y-4 my-6">
-        <div className="bg-red-50 border border-red-100 text-red-600 p-4 rounded-xl text-sm">
+      <div className="max-w-md mx-auto bg-cream border border-error/40 rounded-card p-6 sm:p-8 shadow-soft text-center space-y-4 my-6">
+        <div className="bg-cream border border-error/30 text-error p-4 rounded-control text-sm">
           {error}
         </div>
         <div>
           <button
             type="button"
             onClick={handleRetry}
-            className="px-5 py-2.5 bg-amber-600 text-white rounded-xl text-sm font-semibold hover:bg-amber-700 transition cursor-pointer"
+            className="px-5 py-2.5 bg-kombu text-bone rounded-control text-sm font-semibold hover:bg-noir transition cursor-pointer"
           >
             Thử lại
           </button>
@@ -244,13 +244,13 @@ function ProductDetailContent() {
   // 3. Trạng thái Không tìm thấy sản phẩm
   if (!product) {
     return (
-      <div className="max-w-md mx-auto bg-white border border-gray-100 rounded-2xl py-12 px-6 text-center text-gray-500 shadow-xs my-6">
+      <div className="max-w-md mx-auto bg-cream border border-tan/60 rounded-card py-12 px-6 text-center text-noir shadow-soft my-6">
         <span className="text-4xl block mb-3">🍽️</span>
-        <h2 className="text-lg font-bold text-gray-800 mb-1">Không tìm thấy món ăn hoặc đồ uống này</h2>
-        <p className="text-sm mb-6 text-gray-400">Có thể món này đã bị xóa hoặc đường dẫn không chính xác.</p>
+        <h2 className="text-lg font-display font-bold text-noir mb-1">Không tìm thấy món ăn hoặc đồ uống này</h2>
+        <p className="text-sm mb-6 text-noir/60">Có thể món này đã bị xóa hoặc đường dẫn không chính xác.</p>
         <Link
           href="/"
-          className="inline-block px-5 py-2.5 bg-amber-600 text-white text-sm font-semibold rounded-xl hover:bg-amber-700 transition shadow-xs"
+          className="inline-block px-5 py-2.5 bg-kombu text-bone text-sm font-semibold rounded-control hover:bg-noir transition shadow-soft"
         >
           Quay lại Menu
         </Link>
@@ -269,31 +269,31 @@ function ProductDetailContent() {
       <div>
         <Link
           href="/"
-          className="inline-flex items-center text-sm font-medium text-gray-600 hover:text-amber-600 transition"
+          className="inline-flex items-center text-sm font-semibold text-noir/70 hover:text-kombu transition"
         >
-          <span className="mr-1">←</span> Quay lại Menu
+          <span className="mr-1.5">←</span> Quay lại Menu
         </Link>
       </div>
 
       {/* Thông báo thêm vào giỏ thành công */}
       {addedSuccess && (
-        <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-xl text-sm font-medium text-center">
+        <div className="bg-cream border border-moss text-kombu px-4 py-3 rounded-control text-sm font-semibold text-center shadow-soft">
           ✓ Đã thêm vào giỏ hàng! Xem tại biểu tượng 🛒
         </div>
       )}
 
       {/* Thông báo lỗi khi thêm vào giỏ hàng thất bại */}
       {cartError && (
-        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm font-medium text-center">
+        <div className="bg-cream border border-error/40 text-error px-4 py-3 rounded-control text-sm font-medium text-center shadow-soft">
           {cartError}
         </div>
       )}
 
       {/* Bố cục 2 cột trên máy tính, 1 cột trên điện thoại */}
-      <div className="grid grid-cols-1 md:grid-cols-12 gap-6 lg:gap-8 bg-white p-4 sm:p-6 lg:p-8 rounded-2xl border border-gray-100 shadow-xs">
+      <div className="grid grid-cols-1 md:grid-cols-12 gap-6 lg:gap-8 bg-cream p-4 sm:p-6 lg:p-8 rounded-card border border-tan/60 shadow-soft">
         {/* CỘT TRÁI: Ảnh món và thông tin cơ bản */}
         <div className="md:col-span-5 md:sticky md:top-24 self-start">
-          <div className="relative w-full h-64 sm:h-80 md:h-72 lg:h-80 bg-gray-100 rounded-2xl overflow-hidden shadow-inner">
+          <div className="relative w-full h-64 sm:h-80 md:h-72 lg:h-80 bg-bone rounded-card overflow-hidden shadow-inner border border-tan/40">
             <img
               src={product.imageUrl}
               alt={product.name}
@@ -301,23 +301,23 @@ function ProductDetailContent() {
             />
             {/* Nhãn hết hàng (stock = 0) */}
             {isOutOfStock && (
-              <span className="absolute top-3 right-3 bg-gray-800 text-white text-xs px-3 py-1.5 rounded-md font-bold shadow">
+              <span className="absolute top-3 right-3 bg-error text-bone text-xs px-3 py-1.5 rounded-control font-bold shadow-xs">
                 Hết hàng
               </span>
             )}
-            <span className="absolute bottom-3 left-3 bg-black/60 text-white text-xs px-2.5 py-1 rounded-md">
+            <span className="absolute bottom-3 left-3 bg-kombu/85 text-bone text-xs px-2.5 py-1 rounded-control font-semibold backdrop-blur-xs">
               {CATEGORY_LABELS[product.category] || product.category}
             </span>
           </div>
 
           <div className="mt-4 space-y-1.5">
-            <h1 className="text-xl sm:text-2xl font-bold text-gray-900 break-words">{product.name}</h1>
-            <p className="text-amber-600 font-extrabold text-lg sm:text-xl">
+            <h1 className="text-xl sm:text-2xl font-display font-bold text-noir break-words">{product.name}</h1>
+            <p className="text-kombu font-bold text-lg sm:text-xl">
               {formatVnd(product.basePrice)}{' '}
-              <span className="text-xs font-normal text-gray-400">(giá gốc)</span>
+              <span className="text-xs font-normal text-noir/50">(giá gốc)</span>
             </p>
             {isOutOfStock && (
-              <p className="text-xs text-red-600 font-medium bg-red-50 border border-red-100 rounded-lg px-3 py-2 mt-2">
+              <p className="text-xs text-error font-medium bg-cream border border-error/30 rounded-control px-3 py-2 mt-2">
                 Món này hiện đang tạm hết nguyên liệu, chưa thể đặt thêm vào giỏ hàng.
               </p>
             )}
@@ -329,29 +329,36 @@ function ProductDetailContent() {
           {/* 1. Chọn Size (ẩn nếu mảng rỗng) */}
           {hasSizes && (
             <div>
-              <span className="block text-sm font-bold text-gray-800 mb-2">
-                Chọn kích cỡ (Size) <span className="text-red-500">*</span>
+              <span className="block text-sm font-bold text-noir mb-2">
+                Chọn kích cỡ (Size) <span className="text-error">*</span>
               </span>
               <div className="grid grid-cols-3 gap-2.5">
-                {product.sizes.map((size) => (
-                  <button
-                    key={size.value}
-                    type="button"
-                    aria-pressed={selectedSize === size.value}
-                    disabled={isOutOfStock}
-                    onClick={() => setSelectedSize(size.value)}
-                    className={`py-2.5 px-2 sm:px-3 rounded-xl border text-center transition ${
-                      selectedSize === size.value
-                        ? 'border-amber-600 bg-amber-50 text-amber-900 font-bold shadow-xs'
-                        : 'border-gray-200 text-gray-700 hover:bg-gray-50'
-                    } ${isOutOfStock ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
-                  >
-                    <div className="text-xs sm:text-sm">{size.label}</div>
-                    <div className="text-xs text-amber-700 font-semibold mt-0.5">
-                      {size.extraPrice > 0 ? `+${formatVnd(size.extraPrice)}` : 'Gốc'}
-                    </div>
-                  </button>
-                ))}
+                {product.sizes.map((size) => {
+                  const isSelected = selectedSize === size.value;
+                  return (
+                    <button
+                      key={size.value}
+                      type="button"
+                      aria-pressed={isSelected}
+                      disabled={isOutOfStock}
+                      onClick={() => setSelectedSize(size.value)}
+                      className={`py-2.5 px-2 sm:px-3 rounded-control border text-center transition ${
+                        isSelected
+                          ? 'border-kombu bg-kombu text-bone font-bold shadow-xs'
+                          : 'border-tan bg-cream text-noir hover:bg-tan/30'
+                      } ${isOutOfStock ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                    >
+                      <div className="text-xs sm:text-sm">{size.label}</div>
+                      <div
+                        className={`text-xs font-semibold mt-0.5 ${
+                          isSelected ? 'text-tan' : 'text-kombu'
+                        }`}
+                      >
+                        {size.extraPrice > 0 ? `+${formatVnd(size.extraPrice)}` : 'Gốc'}
+                      </div>
+                    </button>
+                  );
+                })}
               </div>
             </div>
           )}
@@ -359,26 +366,29 @@ function ProductDetailContent() {
           {/* 2. Chọn Đá (ẩn nếu mảng rỗng) */}
           {hasIceLevels && (
             <div>
-              <span className="block text-sm font-bold text-gray-800 mb-2">
+              <span className="block text-sm font-bold text-noir mb-2">
                 Lượng đá
               </span>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                {product.iceLevels.map((ice) => (
-                  <button
-                    key={ice.value}
-                    type="button"
-                    aria-pressed={selectedIce === ice.value}
-                    disabled={isOutOfStock}
-                    onClick={() => setSelectedIce(ice.value)}
-                    className={`py-2 px-2.5 rounded-xl border text-xs font-medium text-center transition ${
-                      selectedIce === ice.value
-                        ? 'border-amber-600 bg-amber-50 text-amber-900 font-bold'
-                        : 'border-gray-200 text-gray-600 hover:bg-gray-50'
-                    } ${isOutOfStock ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
-                  >
-                    {ice.label}
-                  </button>
-                ))}
+                {product.iceLevels.map((ice) => {
+                  const isSelected = selectedIce === ice.value;
+                  return (
+                    <button
+                      key={ice.value}
+                      type="button"
+                      aria-pressed={isSelected}
+                      disabled={isOutOfStock}
+                      onClick={() => setSelectedIce(ice.value)}
+                      className={`py-2 px-2.5 rounded-control border text-xs font-medium text-center transition ${
+                        isSelected
+                          ? 'border-kombu bg-kombu text-bone font-bold shadow-xs'
+                          : 'border-tan bg-cream text-noir hover:bg-tan/30'
+                      } ${isOutOfStock ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                    >
+                      {ice.label}
+                    </button>
+                  );
+                })}
               </div>
             </div>
           )}
@@ -386,26 +396,29 @@ function ProductDetailContent() {
           {/* 3. Chọn Đường (ẩn nếu mảng rỗng) */}
           {hasSugarLevels && (
             <div>
-              <span className="block text-sm font-bold text-gray-800 mb-2">
+              <span className="block text-sm font-bold text-noir mb-2">
                 Lượng đường
               </span>
               <div className="grid grid-cols-3 sm:grid-cols-5 gap-1.5 sm:gap-2">
-                {product.sugarLevels.map((sugar) => (
-                  <button
-                    key={sugar.value}
-                    type="button"
-                    aria-pressed={selectedSugar === sugar.value}
-                    disabled={isOutOfStock}
-                    onClick={() => setSelectedSugar(sugar.value)}
-                    className={`py-2 px-1 rounded-xl border text-xs font-medium text-center transition ${
-                      selectedSugar === sugar.value
-                        ? 'border-amber-600 bg-amber-50 text-amber-900 font-bold'
-                        : 'border-gray-200 text-gray-600 hover:bg-gray-50'
-                    } ${isOutOfStock ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
-                  >
-                    {sugar.label}
-                  </button>
-                ))}
+                {product.sugarLevels.map((sugar) => {
+                  const isSelected = selectedSugar === sugar.value;
+                  return (
+                    <button
+                      key={sugar.value}
+                      type="button"
+                      aria-pressed={isSelected}
+                      disabled={isOutOfStock}
+                      onClick={() => setSelectedSugar(sugar.value)}
+                      className={`py-2 px-1 rounded-control border text-xs font-medium text-center transition ${
+                        isSelected
+                          ? 'border-kombu bg-kombu text-bone font-bold shadow-xs'
+                          : 'border-tan bg-cream text-noir hover:bg-tan/30'
+                      } ${isOutOfStock ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                    >
+                      {sugar.label}
+                    </button>
+                  );
+                })}
               </div>
             </div>
           )}
@@ -414,16 +427,16 @@ function ProductDetailContent() {
           {hasToppings && (
             <div>
               <div className="flex justify-between items-center mb-2">
-                <span className="text-sm font-bold text-gray-800">
-                  Topping thêm <span className="text-xs font-normal text-gray-500">(Tối đa {MAX_TOPPINGS})</span>
+                <span className="text-sm font-bold text-noir">
+                  Topping thêm <span className="text-xs font-normal text-noir/60">(Tối đa {MAX_TOPPINGS})</span>
                 </span>
-                <span className="text-xs text-gray-400">
+                <span className="text-xs text-noir/60">
                   Đã chọn {selectedToppings.length}/{MAX_TOPPINGS}
                 </span>
               </div>
 
               {toppingWarning && (
-                <p className="text-xs text-red-600 mb-2 font-medium">{toppingWarning}</p>
+                <p className="text-xs text-error mb-2 font-medium">{toppingWarning}</p>
               )}
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -433,10 +446,10 @@ function ProductDetailContent() {
                     <div
                       key={topping.id}
                       onClick={() => !isOutOfStock && toggleTopping(topping)}
-                      className={`flex items-center justify-between p-2.5 sm:p-3 rounded-xl border cursor-pointer transition ${
+                      className={`flex items-center justify-between p-2.5 sm:p-3 rounded-control border cursor-pointer transition ${
                         isChecked
-                          ? 'border-amber-600 bg-amber-50/50'
-                          : 'border-gray-200 hover:bg-gray-50'
+                          ? 'border-kombu bg-tan/30 shadow-xs'
+                          : 'border-tan bg-cream hover:bg-tan/20'
                       } ${isOutOfStock ? 'opacity-50 cursor-not-allowed' : ''}`}
                     >
                       <div className="flex items-center gap-2.5 min-w-0">
@@ -446,11 +459,11 @@ function ProductDetailContent() {
                           disabled={isOutOfStock}
                           onChange={() => {}}
                           aria-label={topping.name}
-                          className="w-4 h-4 text-amber-600 rounded border-gray-300 focus:ring-amber-500 pointer-events-none shrink-0"
+                          className="w-4 h-4 accent-kombu rounded border-tan focus:ring-moss pointer-events-none shrink-0"
                         />
-                        <span className="text-xs font-medium text-gray-800 break-words">{topping.name}</span>
+                        <span className="text-xs font-semibold text-noir break-words">{topping.name}</span>
                       </div>
-                      <span className="text-xs font-semibold text-amber-700 shrink-0 ml-2">
+                      <span className="text-xs font-bold text-kombu shrink-0 ml-2">
                         +{formatVnd(topping.price)}
                       </span>
                     </div>
@@ -463,10 +476,10 @@ function ProductDetailContent() {
           {/* 5. Ghi chú */}
           <div>
             <div className="flex justify-between items-center mb-1.5">
-              <label htmlFor="item-note" className="text-sm font-bold text-gray-800">
+              <label htmlFor="item-note" className="text-sm font-bold text-noir">
                 Ghi chú cho quán
               </label>
-              <span className="text-xs text-gray-400">
+              <span className="text-xs text-noir/50">
                 {note.length}/{MAX_NOTE_LENGTH}
               </span>
             </div>
@@ -478,29 +491,29 @@ function ProductDetailContent() {
               value={note}
               onChange={(e) => setNote(e.target.value)}
               placeholder="Ví dụ: ít ngọt, pha đậm vị trà..."
-              className="w-full px-3.5 py-2.5 text-xs sm:text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500 disabled:bg-gray-100 disabled:text-gray-400"
+              className="w-full px-3.5 py-2.5 text-xs sm:text-sm bg-cream border border-tan rounded-control text-noir placeholder:text-noir/40 focus:outline-none focus:border-moss focus:ring-2 focus:ring-moss/30 disabled:bg-bone disabled:text-noir/40"
             />
           </div>
 
           {/* 6. Số lượng và Giá tạm tính */}
-          <div className="pt-4 border-t border-gray-100 space-y-4">
+          <div className="pt-4 border-t border-tan/40 space-y-4">
             <div className="flex items-center justify-between">
-              <span className="text-sm font-bold text-gray-800">Số lượng</span>
-              <div className="flex items-center border border-gray-200 rounded-xl overflow-hidden">
+              <span className="text-sm font-bold text-noir">Số lượng</span>
+              <div className="flex items-center border border-tan rounded-control overflow-hidden bg-cream">
                 <button
                   type="button"
                   disabled={isOutOfStock || quantity <= MIN_QUANTITY}
                   onClick={handleDecreaseQuantity}
-                  className="w-9 h-9 flex items-center justify-center bg-gray-50 hover:bg-gray-100 text-gray-600 disabled:opacity-40 disabled:cursor-not-allowed font-bold cursor-pointer"
+                  className="w-9 h-9 flex items-center justify-center bg-bone hover:bg-tan/40 text-noir disabled:opacity-40 disabled:cursor-not-allowed font-bold cursor-pointer transition"
                 >
                   -
                 </button>
-                <span className="w-11 text-center text-sm font-bold text-gray-800">{quantity}</span>
+                <span className="w-11 text-center text-sm font-bold text-noir">{quantity}</span>
                 <button
                   type="button"
                   disabled={isOutOfStock || quantity >= MAX_QUANTITY}
                   onClick={handleIncreaseQuantity}
-                  className="w-9 h-9 flex items-center justify-center bg-gray-50 hover:bg-gray-100 text-gray-600 disabled:opacity-40 disabled:cursor-not-allowed font-bold cursor-pointer"
+                  className="w-9 h-9 flex items-center justify-center bg-bone hover:bg-tan/40 text-noir disabled:opacity-40 disabled:cursor-not-allowed font-bold cursor-pointer transition"
                 >
                   +
                 </button>
@@ -508,18 +521,18 @@ function ProductDetailContent() {
             </div>
 
             {quantityWarning && (
-              <p className="text-xs text-red-600 font-medium">{quantityWarning}</p>
+              <p className="text-xs text-error font-medium">{quantityWarning}</p>
             )}
 
             {/* Hiển thị giá tạm tính */}
-            <div className="bg-amber-50/70 p-4 rounded-xl border border-amber-100">
+            <div className="bg-tan/30 p-4 rounded-control border border-tan/60">
               <div className="flex justify-between items-baseline">
-                <span className="text-xs sm:text-sm text-amber-900 font-semibold">Tạm tính:</span>
-                <span className="text-xl font-black text-amber-600">
+                <span className="text-xs sm:text-sm text-noir font-bold">Tạm tính:</span>
+                <span className="text-xl sm:text-2xl font-bold text-kombu">
                   {formatVnd(estimatedPrice)}
                 </span>
               </div>
-              <p className="text-[11px] sm:text-xs text-gray-500 mt-1">
+              <p className="text-[11px] sm:text-xs text-noir/60 mt-1">
                 * Giá chính thức do máy chủ tính toán khi tạo đơn hàng.
               </p>
             </div>
@@ -529,10 +542,10 @@ function ProductDetailContent() {
               type="button"
               disabled={isOutOfStock}
               onClick={handleAddToCart}
-              className={`w-full py-3.5 rounded-xl text-sm font-bold transition shadow-sm ${
+              className={`w-full py-3.5 rounded-control text-sm font-bold transition shadow-soft ${
                 !isOutOfStock
-                  ? 'bg-amber-600 text-white hover:bg-amber-700 active:scale-98 cursor-pointer'
-                  : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                  ? 'bg-kombu text-bone hover:bg-noir active:scale-98 cursor-pointer'
+                  : 'bg-tan/40 text-noir/40 cursor-not-allowed'
               }`}
             >
               {!isOutOfStock
@@ -550,8 +563,8 @@ export default function ProductDetailPage() {
   return (
     <Suspense
       fallback={
-        <div className="max-w-md mx-auto py-16 text-center text-gray-500 text-sm">
-          <div className="animate-spin inline-block w-8 h-8 border-3 border-amber-600 border-t-transparent rounded-full mb-3" />
+        <div className="max-w-md mx-auto py-16 text-center text-noir/70 text-sm">
+          <div className="animate-spin inline-block w-8 h-8 border-3 border-kombu border-t-transparent rounded-full mb-3" />
           <p>Đang tải chi tiết món...</p>
         </div>
       }

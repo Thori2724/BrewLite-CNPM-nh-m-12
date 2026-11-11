@@ -86,26 +86,26 @@ function LoginForm() {
   // Tránh nhấp nháy form nếu đã đăng nhập và đang chuyển hướng
   if (!isHydrated || (isHydrated && isAuthenticated)) {
     return (
-      <div className="max-w-md mx-auto py-16 text-center text-gray-500 text-sm">
-        <div className="animate-spin inline-block w-6 h-6 border-2 border-amber-600 border-t-transparent rounded-full mb-2"></div>
+      <div className="max-w-md mx-auto py-16 text-center text-noir/65 text-sm">
+        <div className="animate-spin inline-block w-6 h-6 border-2 border-kombu border-t-transparent rounded-full mb-2"></div>
         <p>Đang kiểm tra trạng thái đăng nhập...</p>
       </div>
     );
   }
 
   return (
-    <div className="max-w-md w-full mx-auto my-6 sm:my-10 bg-white p-6 sm:p-8 rounded-2xl border border-gray-100 shadow-xs space-y-6">
+    <div className="max-w-md w-full mx-auto my-6 sm:my-10 bg-cream p-6 sm:p-8 rounded-card border border-tan/60 shadow-soft space-y-6">
       {/* Tiêu đề */}
       <div className="text-center space-y-1">
-        <h1 className="text-2xl font-bold text-gray-900">Đăng nhập tài khoản</h1>
-        <p className="text-sm text-gray-500">Chào mừng bạn quay lại với BrewLite ☕</p>
+        <h1 className="font-display text-2xl sm:text-3xl font-bold text-noir">Đăng nhập tài khoản</h1>
+        <p className="text-sm text-noir/65">Chào mừng bạn quay lại với BrewLite ☕</p>
       </div>
 
       {/* Thông báo phiên hết hạn */}
       {isExpired && !errors.general && (
         <div
           role="alert"
-          className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-800 text-sm flex items-start gap-2"
+          className="p-3 bg-tan/25 border border-tan/80 rounded-control text-noir text-sm flex items-start gap-2"
         >
           <span className="text-base leading-none">⚠️</span>
           <span>{AUTH_ERROR_MESSAGES.SESSION_EXPIRED}</span>
@@ -116,7 +116,7 @@ function LoginForm() {
       {isRegistered && !errors.general && (
         <div
           role="alert"
-          className="p-3 bg-green-50 border border-green-200 rounded-xl text-green-800 text-sm flex items-start gap-2"
+          className="p-3 bg-moss/15 border border-moss/40 rounded-control text-kombu text-sm flex items-start gap-2"
         >
           <span className="text-base leading-none">✅</span>
           <span>{AUTH_ERROR_MESSAGES.REGISTRATION_SUCCESS}</span>
@@ -127,7 +127,7 @@ function LoginForm() {
       {errors.general && (
         <div
           role="alert"
-          className="p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm flex items-start gap-2"
+          className="p-3 bg-error/10 border border-error/40 rounded-control text-error text-sm flex items-start gap-2 font-medium"
         >
           <span className="text-base leading-none">⚠️</span>
           <span>{errors.general}</span>
@@ -138,7 +138,7 @@ function LoginForm() {
       <form onSubmit={handleSubmit} noValidate className="space-y-4">
         {/* Trường Email */}
         <div className="space-y-1">
-          <label htmlFor="email" className="block text-sm font-medium text-gray-700">
+          <label htmlFor="email" className="block text-sm font-semibold text-noir">
             Địa chỉ email
           </label>
           <input
@@ -154,14 +154,14 @@ function LoginForm() {
               setEmail(e.target.value);
               if (errors.email) setErrors((prev) => ({ ...prev, email: undefined }));
             }}
-            className={`w-full px-3.5 py-2.5 bg-gray-50 border rounded-xl text-sm focus:outline-none focus:ring-2 ${
+            className={`w-full px-3.5 py-2.5 bg-bone border rounded-control text-sm text-noir placeholder:text-noir/40 focus:outline-none focus:ring-2 ${
               errors.email
-                ? 'border-red-400 focus:ring-red-400 bg-red-50/20'
-                : 'border-gray-200 focus:ring-amber-500'
+                ? 'border-error text-error bg-error/10 focus:ring-error/30'
+                : 'border-tan focus:ring-moss/30 focus:border-moss'
             }`}
           />
           {errors.email && (
-            <p id="login-email-error" role="alert" className="text-xs text-red-600 font-medium">
+            <p id="login-email-error" role="alert" className="text-xs text-error font-medium">
               {errors.email}
             </p>
           )}
@@ -169,7 +169,7 @@ function LoginForm() {
 
         {/* Trường Mật khẩu */}
         <div className="space-y-1">
-          <label htmlFor="password" className="block text-sm font-medium text-gray-700">
+          <label htmlFor="password" className="block text-sm font-semibold text-noir">
             Mật khẩu
           </label>
           <div className="relative">
@@ -186,23 +186,23 @@ function LoginForm() {
                 setPassword(e.target.value);
                 if (errors.password) setErrors((prev) => ({ ...prev, password: undefined }));
               }}
-              className={`w-full px-3.5 py-2.5 bg-gray-50 border rounded-xl text-sm pr-12 focus:outline-none focus:ring-2 ${
+              className={`w-full px-3.5 py-2.5 bg-bone border rounded-control text-sm text-noir placeholder:text-noir/40 pr-12 focus:outline-none focus:ring-2 ${
                 errors.password
-                  ? 'border-red-400 focus:ring-red-400 bg-red-50/20'
-                  : 'border-gray-200 focus:ring-amber-500'
+                  ? 'border-error text-error bg-error/10 focus:ring-error/30'
+                  : 'border-tan focus:ring-moss/30 focus:border-moss'
               }`}
             />
             <button
               type="button"
               onClick={() => setShowPassword(!showPassword)}
               aria-label={showPassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-1 text-sm font-medium cursor-pointer"
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-noir/50 hover:text-noir p-1 text-sm font-medium cursor-pointer"
             >
               {showPassword ? 'Ẩn' : 'Hiện'}
             </button>
           </div>
           {errors.password && (
-            <p id="login-password-error" role="alert" className="text-xs text-red-600 font-medium">
+            <p id="login-password-error" role="alert" className="text-xs text-error font-medium">
               {errors.password}
             </p>
           )}
@@ -212,10 +212,10 @@ function LoginForm() {
         <button
           type="submit"
           disabled={isSubmitting}
-          className={`w-full py-3 rounded-xl font-bold text-sm text-white transition shadow-sm ${
+          className={`w-full py-3 rounded-control font-bold text-sm shadow-soft transition ${
             isSubmitting
-              ? 'bg-amber-400 cursor-not-allowed opacity-75'
-              : 'bg-amber-600 hover:bg-amber-700 active:scale-98 cursor-pointer'
+              ? 'bg-tan/40 text-noir/40 cursor-not-allowed opacity-75'
+              : 'bg-kombu text-bone hover:bg-noir active:scale-[0.98] cursor-pointer'
           }`}
         >
           {isSubmitting ? 'Đang đăng nhập...' : 'Đăng nhập'}
@@ -223,11 +223,11 @@ function LoginForm() {
       </form>
 
       {/* Điều hướng sang đăng ký */}
-      <div className="text-center text-xs sm:text-sm text-gray-500 pt-3 border-t border-gray-100">
+      <div className="text-center text-xs sm:text-sm text-noir/65 pt-3 border-t border-tan/40">
         Chưa có tài khoản?{' '}
         <Link
           href={`/register${redirectParam ? `?redirect=${encodeURIComponent(targetRedirect)}` : ''}`}
-          className="text-amber-600 font-semibold hover:underline"
+          className="text-kombu font-bold underline decoration-moss underline-offset-4 hover:text-noir"
         >
           Đăng ký ngay
         </Link>
@@ -240,8 +240,8 @@ export default function LoginPage() {
   return (
     <Suspense
       fallback={
-        <div className="max-w-md mx-auto py-16 text-center text-gray-500 text-sm">
-          <div className="animate-spin inline-block w-6 h-6 border-2 border-amber-600 border-t-transparent rounded-full mb-2"></div>
+        <div className="max-w-md mx-auto py-16 text-center text-noir/65 text-sm">
+          <div className="animate-spin inline-block w-6 h-6 border-2 border-kombu border-t-transparent rounded-full mb-2"></div>
           <p>Đang tải trang đăng nhập...</p>
         </div>
       }

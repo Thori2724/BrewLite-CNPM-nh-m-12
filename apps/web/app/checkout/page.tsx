@@ -259,8 +259,8 @@ function CheckoutContent() {
   // 1. Đang kiểm tra đăng nhập, chưa nạp xong giỏ hàng hoặc đang kiểm tra đơn từ ?orderId=
   if (isChecking || !isReady || !isHydrated || isCheckingQueryOrder) {
     return (
-      <div className="max-w-md mx-auto py-20 text-center text-gray-500 text-sm">
-        <div className="animate-spin inline-block w-8 h-8 border-3 border-amber-600 border-t-transparent rounded-full mb-3" />
+      <div className="max-w-md mx-auto py-20 text-center text-noir/65 text-sm">
+        <div className="animate-spin inline-block w-8 h-8 border-3 border-kombu border-t-transparent rounded-full mb-3" />
         <p>Đang chuẩn bị trang thanh toán...</p>
       </div>
     );
@@ -280,43 +280,43 @@ function CheckoutContent() {
       pendingOrder?.orderId;
 
     return (
-      <div className="max-w-lg mx-auto my-6 bg-white border border-gray-100 rounded-2xl p-6 sm:p-8 shadow-xs text-center">
-        <div className="w-20 h-20 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto mb-5 text-4xl shadow-xs">
+      <div className="max-w-lg mx-auto my-6 bg-cream border border-tan/60 rounded-card p-6 sm:p-8 shadow-soft text-center">
+        <div className="w-20 h-20 bg-kombu text-bone rounded-full flex items-center justify-center mx-auto mb-5 text-4xl font-bold shadow-soft">
           ✓
         </div>
-        <h1 className="text-2xl font-bold text-gray-900 mb-2">Thanh toán thành công!</h1>
-        <p className="text-sm text-gray-600 mb-6">
+        <h1 className="font-display text-2xl font-bold text-noir mb-2">Thanh toán thành công!</h1>
+        <p className="text-sm text-noir/65 mb-6">
           Cảm ơn bạn đã đặt món tại BrewLite. Quán đang chuẩn bị đồ uống cho bạn.
         </p>
 
-        <div className="bg-gray-50/80 border border-gray-100 rounded-2xl p-5 text-left text-sm space-y-3 mb-6">
-          <div className="flex justify-between items-center pb-2 border-b border-gray-200/60">
-            <span className="text-gray-500">Mã đơn hàng:</span>
-            <span className="font-bold text-gray-900">
+        <div className="bg-bone/60 border border-tan/60 rounded-card p-5 text-left text-sm space-y-3 mb-6">
+          <div className="flex justify-between items-center pb-2 border-b border-tan/60">
+            <span className="text-noir/65">Mã đơn hàng:</span>
+            <span className="font-bold text-noir">
               {finalOrderNum !== undefined ? `#${finalOrderNum}` : 'Đơn hàng'}
             </span>
           </div>
-          <div className="flex justify-between items-center pb-2 border-b border-gray-200/60">
-            <span className="text-gray-500">Trạng thái:</span>
-            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-green-100 text-green-800">
+          <div className="flex justify-between items-center pb-2 border-b border-tan/60">
+            <span className="text-noir/65">Trạng thái:</span>
+            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-caption font-bold bg-moss text-kombu">
               Đã thanh toán
             </span>
           </div>
-          <div className="flex justify-between items-center pb-2 border-b border-gray-200/60">
-            <span className="text-gray-500">Số tiền đã trả:</span>
-            <span className="font-bold text-amber-600">
+          <div className="flex justify-between items-center pb-2 border-b border-tan/60">
+            <span className="text-noir/65">Số tiền đã trả:</span>
+            <span className="font-bold font-display text-base text-kombu">
               {formatVnd(paymentSuccessData.amount)}
             </span>
           </div>
-          <div className="flex justify-between items-center pb-2 border-b border-gray-200/60">
-            <span className="text-gray-500">Phương thức:</span>
-            <span className="font-medium text-gray-800">
+          <div className="flex justify-between items-center pb-2 border-b border-tan/60">
+            <span className="text-noir/65">Phương thức:</span>
+            <span className="font-semibold text-noir">
               {PAYMENT_METHOD_LABELS[paymentSuccessData.method] || paymentSuccessData.method}
             </span>
           </div>
           <div className="flex justify-between items-center">
-            <span className="text-gray-500">Số tài khoản:</span>
-            <span className="font-mono text-xs text-gray-600">
+            <span className="text-noir/65">Số tài khoản:</span>
+            <span className="font-mono text-xs text-noir/70">
               •••• {paymentSuccessData.accountLast4}
             </span>
           </div>
@@ -326,20 +326,20 @@ function CheckoutContent() {
           {finalOrderId && (
             <Link
               href={`/orders/${finalOrderId}`}
-              className="w-full sm:w-auto px-5 py-3 bg-amber-600 hover:bg-amber-700 text-white font-semibold rounded-xl text-sm transition shadow-sm text-center"
+              className="w-full sm:w-auto min-h-11 inline-flex items-center justify-center px-5 py-2.5 bg-kombu hover:bg-noir text-bone font-semibold rounded-control text-sm transition shadow-soft text-center"
             >
               Xem chi tiết & Theo dõi đơn
             </Link>
           )}
           <Link
             href="/orders"
-            className="w-full sm:w-auto px-5 py-3 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 font-semibold rounded-xl text-sm transition text-center"
+            className="w-full sm:w-auto min-h-11 inline-flex items-center justify-center px-5 py-2.5 bg-cream hover:bg-tan/30 text-noir border border-tan font-semibold rounded-control text-sm transition text-center"
           >
             Xem lịch sử đơn
           </Link>
           <Link
             href="/"
-            className="w-full sm:w-auto px-5 py-3 bg-white hover:bg-gray-50 text-gray-700 border border-gray-200 font-semibold rounded-xl text-sm transition text-center"
+            className="w-full sm:w-auto min-h-11 inline-flex items-center justify-center px-5 py-2.5 bg-cream hover:bg-tan/30 text-noir/80 border border-tan font-semibold rounded-control text-sm transition text-center"
           >
             ← Quay lại Thực đơn
           </Link>
@@ -351,17 +351,17 @@ function CheckoutContent() {
   // 3. Giỏ hàng rỗng và không có đơn chờ thanh toán
   if (items.length === 0 && !pendingOrder && !queryOrderId && step === 'order') {
     return (
-      <div className="max-w-md mx-auto my-6 bg-white border border-gray-100 rounded-2xl py-12 px-6 text-center shadow-xs">
-        <div className="w-20 h-20 bg-amber-50 rounded-full flex items-center justify-center mx-auto mb-4 text-3xl">
+      <div className="max-w-md mx-auto my-6 bg-cream border border-tan/60 rounded-card py-12 px-6 text-center shadow-soft">
+        <div className="w-20 h-20 bg-tan/45 rounded-full flex items-center justify-center mx-auto mb-4 text-3xl text-kombu">
           🛒
         </div>
-        <h1 className="text-xl font-bold text-gray-800 mb-2">Giỏ hàng của bạn đang trống</h1>
-        <p className="text-sm text-gray-500 mb-6">
+        <h1 className="font-display text-xl sm:text-2xl font-bold text-noir mb-2">Giỏ hàng của bạn đang trống</h1>
+        <p className="text-sm text-noir/65 mb-6">
           Vui lòng chọn món trước khi tiến hành đặt đơn và thanh toán.
         </p>
         <Link
           href="/"
-          className="inline-block px-6 py-2.5 bg-amber-600 text-white font-semibold rounded-xl text-sm hover:bg-amber-700 transition shadow-sm"
+          className="inline-flex min-h-11 items-center justify-center px-6 py-2.5 bg-kombu text-bone font-semibold rounded-control text-sm hover:bg-noir transition shadow-soft"
         >
           ← Xem Menu chọn món
         </Link>
@@ -709,27 +709,27 @@ function CheckoutContent() {
   return (
     <div className="max-w-5xl mx-auto space-y-6">
       {/* Tiêu đề & Nút quay lại */}
-      <div className="flex items-center justify-between border-b border-gray-200 pb-4">
+      <div className="flex items-center justify-between border-b border-tan/60 pb-4">
         <Link
           href="/cart"
-          className="inline-flex items-center text-xs sm:text-sm font-medium text-gray-600 hover:text-amber-600 transition"
+          className="inline-flex items-center text-xs sm:text-sm font-semibold text-noir/65 hover:text-kombu transition"
         >
           <span className="mr-1">←</span> Quay lại Giỏ hàng
         </Link>
-        <span className="text-xs sm:text-sm font-medium text-gray-500">
+        <span className="text-xs sm:text-sm font-bold uppercase tracking-wider text-kombu">
           {step === 'order' ? 'Bước 1/2: Đặt đơn' : 'Bước 2/2: Thanh toán'}
         </span>
       </div>
 
       {/* Banner đơn chờ thanh toán nếu có và đang ở bước tạo đơn */}
       {pendingOrder && step === 'order' && (
-        <div className="max-w-3xl mx-auto bg-blue-50 border border-blue-200 text-blue-900 p-4 sm:p-5 rounded-2xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 shadow-xs">
+        <div className="max-w-3xl mx-auto bg-tan/30 border border-tan text-noir p-4 sm:p-5 rounded-card flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 shadow-soft">
           <div>
-            <div className="font-bold text-sm">
+            <div className="font-bold text-sm text-noir">
               Bạn có đơn hàng đang chờ thanh toán: #{pendingOrder.orderNumber}
             </div>
-            <div className="text-xs text-blue-700 mt-0.5">
-              Số tiền: <strong>{formatVnd(pendingOrder.totalAmount)}</strong> (Hình
+            <div className="text-xs text-noir/70 mt-0.5">
+              Số tiền: <strong className="font-bold text-kombu">{formatVnd(pendingOrder.totalAmount)}</strong> (Hình
               thức: {RECEIVE_TYPE_LABELS[pendingOrder.receiveType]})
             </div>
           </div>
@@ -737,14 +737,14 @@ function CheckoutContent() {
             <button
               type="button"
               onClick={handleResumePendingOrder}
-              className="flex-1 sm:flex-none px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold transition cursor-pointer"
+              className="flex-1 sm:flex-none px-4 py-2 bg-kombu hover:bg-noir text-bone rounded-control text-xs font-semibold transition shadow-soft cursor-pointer"
             >
               Tiếp tục thanh toán
             </button>
             <button
               type="button"
               onClick={handleCancelPendingOrder}
-              className="px-3 py-2 bg-white hover:bg-gray-50 text-gray-700 border border-gray-200 rounded-xl text-xs font-medium transition cursor-pointer"
+              className="px-3 py-2 bg-cream hover:bg-tan/30 text-noir border border-tan rounded-control text-xs font-medium transition cursor-pointer"
             >
               Hủy đơn này
             </button>
@@ -761,18 +761,18 @@ function CheckoutContent() {
             {createOrderError && (
               <div
                 role="alert"
-                className="max-w-xl mx-auto lg:max-w-none bg-red-50 border border-red-200 text-red-700 p-4 sm:p-5 rounded-2xl text-sm space-y-2 shadow-xs"
+                className="max-w-xl mx-auto lg:max-w-none bg-error/10 border border-error/45 text-error rounded-card p-4 sm:p-5 text-sm space-y-2 shadow-soft"
               >
-                <div className="font-semibold">{createOrderError}</div>
+                <div className="font-bold text-error">{createOrderError}</div>
                 {isCreateOrderNotFoundError && (
-                  <p className="text-xs text-red-600">
+                  <p className="text-xs text-noir/80">
                     Món hoặc topping trong giỏ hiện không còn phục vụ. Vui lòng cập nhật lại giỏ hàng.
                   </p>
                 )}
                 {outOfStockDetails.length > 0 && (
                   <div>
-                    <p className="text-xs text-red-600 mb-1">Món hiện không đủ tồn kho:</p>
-                    <ul className="list-disc list-inside text-xs font-medium space-y-0.5">
+                    <p className="text-xs text-noir/80 mb-1">Món hiện không đủ tồn kho:</p>
+                    <ul className="list-disc list-inside text-xs font-semibold text-noir space-y-0.5">
                       {outOfStockDetails.map((item, idx) => (
                         <li key={idx}>
                           {item.name}: còn {item.available ?? 0}
@@ -782,7 +782,7 @@ function CheckoutContent() {
                     <div className="mt-3">
                       <Link
                         href="/cart"
-                        className="inline-block px-3.5 py-2 bg-red-600 text-white text-xs font-semibold rounded-xl hover:bg-red-700 transition"
+                        className="inline-block px-3.5 py-2 bg-error text-bone text-xs font-semibold rounded-control hover:opacity-90 transition"
                       >
                         Quay lại giỏ hàng
                       </Link>
@@ -796,7 +796,7 @@ function CheckoutContent() {
                         type="button"
                         onClick={() => void submitCreateOrder()}
                         disabled={isCreatingOrder}
-                        className="px-3.5 py-2 bg-red-600 text-white text-xs font-semibold rounded-xl hover:bg-red-700 transition cursor-pointer disabled:opacity-50"
+                        className="px-3.5 py-2 bg-kombu text-bone text-xs font-semibold rounded-control hover:bg-noir transition cursor-pointer disabled:opacity-50"
                       >
                         Thử lại
                       </button>
@@ -804,7 +804,7 @@ function CheckoutContent() {
                     {isCreateOrderNotFoundError && (
                       <Link
                         href="/cart"
-                        className="inline-block px-3.5 py-2 bg-red-600 text-white text-xs font-semibold rounded-xl hover:bg-red-700 transition"
+                        className="inline-block px-3.5 py-2 bg-error text-bone text-xs font-semibold rounded-control hover:opacity-90 transition"
                       >
                         Cập nhật lại giỏ hàng
                       </Link>
@@ -812,7 +812,7 @@ function CheckoutContent() {
                     {showHistoryLinkInOrderError && (
                       <Link
                         href="/orders"
-                        className="inline-block px-3.5 py-2 bg-white hover:bg-red-100/50 text-red-700 border border-red-300 text-xs font-semibold rounded-xl transition"
+                        className="inline-block px-3.5 py-2 bg-cream hover:bg-tan/30 text-noir border border-tan text-xs font-semibold rounded-control transition"
                       >
                         Xem lịch sử đơn
                       </Link>
@@ -823,14 +823,14 @@ function CheckoutContent() {
             )}
 
             {/* 1. Hình thức nhận hàng */}
-            <div className="bg-white p-5 sm:p-6 rounded-2xl border border-gray-100 shadow-xs space-y-3.5">
-              <h2 className="text-base font-bold text-gray-900">1. Hình thức nhận hàng</h2>
+            <div className="bg-cream p-5 sm:p-6 rounded-card border border-tan/60 shadow-soft space-y-3.5">
+              <h2 className="font-display text-base font-bold text-noir">1. Hình thức nhận hàng</h2>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <label
-                  className={`flex items-center gap-3 p-4 rounded-xl border-2 cursor-pointer transition ${
+                  className={`flex items-center gap-3 p-4 rounded-control border-2 cursor-pointer transition ${
                     receiveType === 'AT_COUNTER'
-                      ? 'border-amber-600 bg-amber-50/50'
-                      : 'border-gray-100 hover:border-gray-200 bg-white'
+                      ? 'border-kombu bg-tan/30'
+                      : 'border-tan bg-cream hover:border-moss'
                   }`}
                 >
                   <input
@@ -839,19 +839,19 @@ function CheckoutContent() {
                     value="AT_COUNTER"
                     checked={receiveType === 'AT_COUNTER'}
                     onChange={() => setReceiveType('AT_COUNTER')}
-                    className="accent-amber-600 w-4 h-4 shrink-0"
+                    className="accent-kombu w-4 h-4 shrink-0"
                   />
                   <div>
-                    <div className="text-sm font-semibold text-gray-800">Tại quầy</div>
-                    <div className="text-xs text-gray-500">Uống tại quán</div>
+                    <div className="text-sm font-bold text-noir">Tại quầy</div>
+                    <div className="text-xs text-noir/65">Uống tại quán</div>
                   </div>
                 </label>
 
                 <label
-                  className={`flex items-center gap-3 p-4 rounded-xl border-2 cursor-pointer transition ${
+                  className={`flex items-center gap-3 p-4 rounded-control border-2 cursor-pointer transition ${
                     receiveType === 'TAKE_AWAY'
-                      ? 'border-amber-600 bg-amber-50/50'
-                      : 'border-gray-100 hover:border-gray-200 bg-white'
+                      ? 'border-kombu bg-tan/30'
+                      : 'border-tan bg-cream hover:border-moss'
                   }`}
                 >
                   <input
@@ -860,19 +860,19 @@ function CheckoutContent() {
                     value="TAKE_AWAY"
                     checked={receiveType === 'TAKE_AWAY'}
                     onChange={() => setReceiveType('TAKE_AWAY')}
-                    className="accent-amber-600 w-4 h-4 shrink-0"
+                    className="accent-kombu w-4 h-4 shrink-0"
                   />
                   <div>
-                    <div className="text-sm font-semibold text-gray-800">Mang đi</div>
-                    <div className="text-xs text-gray-500">Đóng gói mang về</div>
+                    <div className="text-sm font-bold text-noir">Mang đi</div>
+                    <div className="text-xs text-noir/65">Đóng gói mang về</div>
                   </div>
                 </label>
               </div>
             </div>
 
             {/* 2. Ghi chú đơn hàng */}
-            <div className="bg-white p-5 sm:p-6 rounded-2xl border border-gray-100 shadow-xs space-y-3">
-              <label htmlFor="orderNote" className="block text-sm font-bold text-gray-900">
+            <div className="bg-cream p-5 sm:p-6 rounded-card border border-tan/60 shadow-soft space-y-3">
+              <label htmlFor="orderNote" className="block font-display text-base font-bold text-noir">
                 2. Ghi chú đơn hàng (không bắt buộc)
               </label>
               <textarea
@@ -889,31 +889,31 @@ function CheckoutContent() {
                   }
                 }}
                 placeholder="Ví dụ: Giao nhanh giúp mình, để riêng ống hút..."
-                className={`w-full px-3.5 py-2.5 rounded-xl border text-sm focus:outline-none ${
+                className={`w-full px-3.5 py-2.5 rounded-control border text-sm outline-none transition placeholder:text-noir/45 ${
                   noteError
-                    ? 'border-red-400 bg-red-50/20'
-                    : 'border-gray-200 focus:border-amber-600'
+                    ? 'border-error bg-error/10 text-noir focus:border-error focus:ring-2 focus:ring-error/30'
+                    : 'border-tan bg-bone text-noir focus:border-moss focus:ring-2 focus:ring-moss/30'
                 }`}
                 aria-invalid={Boolean(noteError)}
                 aria-describedby={noteError ? 'order-note-error' : undefined}
               />
               <div className="flex justify-between items-center">
                 {noteError ? (
-                  <p id="order-note-error" className="text-xs text-red-600">
+                  <p id="order-note-error" className="text-xs text-error font-semibold">
                     {noteError}
                   </p>
                 ) : (
                   <span />
                 )}
-                <p className="text-[11px] text-gray-400 text-right">{note.length}/200 ký tự</p>
+                <p className="text-[11px] text-noir/50 text-right">{note.length}/200 ký tự</p>
               </div>
             </div>
           </div>
 
           {/* CỘT PHẢI (5 CỘT): Tóm tắt đơn hàng & Nút đặt đơn (dính khi cuộn trên màn lớn) */}
           <div className="lg:col-span-5 lg:sticky lg:top-24 space-y-4">
-            <div className="bg-white p-5 sm:p-6 rounded-2xl border border-gray-100 shadow-xs space-y-4">
-              <h2 className="text-base font-bold text-gray-900 border-b border-gray-100 pb-3">
+            <div className="bg-cream p-5 sm:p-6 rounded-card border border-tan/60 shadow-soft space-y-4">
+              <h2 className="font-display text-base font-bold text-noir border-b border-tan/60 pb-3">
                 Tóm tắt đơn hàng ({items.length} món)
               </h2>
 
@@ -930,15 +930,15 @@ function CheckoutContent() {
                       key={item.id}
                       className={`flex justify-between items-start text-xs pb-2.5 ${
                         matchedOutOfStock
-                          ? 'p-2.5 rounded-xl border border-red-300 bg-red-50/70'
-                          : 'border-b border-gray-50'
+                          ? 'p-2.5 rounded-control border border-error/50 bg-error/10'
+                          : 'border-b border-tan/40'
                       }`}
                     >
                       <div className="pr-2 flex-1 min-w-0">
-                        <div className="font-semibold text-gray-800 break-words">
-                          {item.name} <span className="text-amber-700">x{item.quantity}</span>
+                        <div className="font-bold text-noir break-words">
+                          {item.name} <span className="text-kombu">x{item.quantity}</span>
                         </div>
-                        <div className="text-[11px] text-gray-500 space-x-1">
+                        <div className="text-[11px] text-noir/65 space-x-1">
                           {item.size && (
                             <span>{SIZE_LABELS[item.size as SizeId] || `Size ${item.size}`}</span>
                           )}
@@ -952,25 +952,25 @@ function CheckoutContent() {
                           )}
                         </div>
                         {item.toppings && item.toppings.length > 0 && (
-                          <div className="text-[11px] text-gray-400">
+                          <div className="text-[11px] text-noir/55">
                             Topping: {item.toppings.map((t) => t.name).join(', ')}
                           </div>
                         )}
                         {matchedOutOfStock && (
                           <div className="mt-1.5 flex flex-wrap items-center gap-2">
-                            <span className="inline-block px-2 py-0.5 rounded-full bg-red-100 text-red-700 font-semibold text-[11px]">
+                            <span className="inline-block px-2 py-0.5 rounded-full bg-error/20 text-error font-semibold text-[11px]">
                               Thiếu hàng (còn {matchedOutOfStock.available ?? 0})
                             </span>
                             <Link
                               href="/cart"
-                              className="text-[11px] font-semibold text-red-700 underline hover:text-red-800"
+                              className="text-[11px] font-semibold text-error underline hover:opacity-80"
                             >
                               Chỉnh số lượng / Xóa
                             </Link>
                           </div>
                         )}
                       </div>
-                      <div className="font-bold text-gray-900 whitespace-nowrap">
+                      <div className="font-bold text-noir whitespace-nowrap">
                         {formatVnd(getLineTotal(item))}
                       </div>
                     </div>
@@ -979,18 +979,18 @@ function CheckoutContent() {
               </div>
 
               {/* Tạm tính & Tổng cộng */}
-              <div className="border-t border-gray-100 pt-3 space-y-1 text-sm">
-                <div className="flex justify-between text-gray-600">
+              <div className="border-t border-tan/60 pt-3 space-y-1 text-sm">
+                <div className="flex justify-between text-noir/70">
                   <span>Tạm tính:</span>
                   <span>{formatVnd(totalAmount)}</span>
                 </div>
-                <div className="flex justify-between items-baseline pt-2 border-t border-gray-50">
-                  <span className="font-bold text-gray-900">Tổng cộng:</span>
-                  <span className="text-xl font-black text-amber-600">
+                <div className="flex justify-between items-baseline pt-2 border-t border-tan/40">
+                  <span className="font-bold text-noir">Tổng cộng:</span>
+                  <span className="font-display text-xl font-bold text-kombu">
                     {formatVnd(totalAmount)}
                   </span>
                 </div>
-                <p className="text-[11px] text-gray-400 italic pt-1">
+                <p className="text-[11px] text-noir/50 italic pt-1">
                   * Giá tạm tính. Tổng tiền chính thức do server xác nhận khi tạo đơn.
                 </p>
               </div>
@@ -999,7 +999,7 @@ function CheckoutContent() {
               <button
                 type="submit"
                 disabled={isCreatingOrder || items.length === 0}
-                className="w-full py-3.5 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-xl text-sm transition shadow-sm disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                className="w-full min-h-11 py-3.5 bg-kombu hover:bg-noir text-bone font-bold rounded-control text-sm transition shadow-soft disabled:opacity-45 disabled:cursor-not-allowed cursor-pointer"
               >
                 {isCreatingOrder
                   ? 'Đang tạo đơn hàng...'
@@ -1019,23 +1019,23 @@ function CheckoutContent() {
             {paymentError && (
               <div
                 role="alert"
-                className="max-w-xl mx-auto lg:max-w-none bg-red-50 border border-red-200 text-red-700 p-4 sm:p-5 rounded-2xl text-xs sm:text-sm shadow-xs space-y-3"
+                className="max-w-xl mx-auto lg:max-w-none bg-error/10 border border-error/45 text-error rounded-card p-4 sm:p-5 text-xs sm:text-sm shadow-soft space-y-3"
               >
                 <div>
-                  <strong>Lỗi thanh toán:</strong> {paymentError}
+                  <strong className="font-bold">Lỗi thanh toán:</strong> {paymentError}
                 </div>
                 <div className="flex flex-wrap gap-2 pt-1">
                   {(createdOrder?.id || pendingOrder?.orderId) && (
                     <Link
                       href={`/orders/${createdOrder?.id || pendingOrder?.orderId}`}
-                      className="inline-block px-3.5 py-1.5 bg-white hover:bg-red-100/50 text-red-700 border border-red-300 font-semibold rounded-xl text-xs transition"
+                      className="inline-block px-3.5 py-1.5 bg-cream hover:bg-tan/30 text-noir border border-tan font-semibold rounded-control text-xs transition"
                     >
                       Xem chi tiết & Theo dõi đơn
                     </Link>
                   )}
                   <Link
                     href="/orders"
-                    className="inline-block px-3.5 py-1.5 bg-white hover:bg-red-100/50 text-red-700 border border-red-300 font-semibold rounded-xl text-xs transition"
+                    className="inline-block px-3.5 py-1.5 bg-cream hover:bg-tan/30 text-noir border border-tan font-semibold rounded-control text-xs transition"
                   >
                     Xem lịch sử đơn
                   </Link>
@@ -1048,7 +1048,7 @@ function CheckoutContent() {
                         setStep('order');
                         router.replace('/checkout');
                       }}
-                      className="px-3.5 py-1.5 bg-red-600 hover:bg-red-700 text-white font-semibold rounded-xl text-xs transition cursor-pointer"
+                      className="px-3.5 py-1.5 bg-kombu hover:bg-noir text-bone font-semibold rounded-control text-xs transition cursor-pointer"
                     >
                       Đặt đơn mới từ giỏ hàng
                     </button>
@@ -1058,14 +1058,14 @@ function CheckoutContent() {
             )}
 
             {/* Chọn phương thức thanh toán */}
-            <div className="bg-white p-5 sm:p-6 rounded-2xl border border-gray-100 shadow-xs space-y-3.5">
-              <h2 className="text-base font-bold text-gray-900">Chọn phương thức thanh toán</h2>
+            <div className="bg-cream p-5 sm:p-6 rounded-card border border-tan/60 shadow-soft space-y-3.5">
+              <h2 className="font-display text-base font-bold text-noir">Chọn phương thức thanh toán</h2>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <label
-                  className={`flex items-center gap-3 p-4 rounded-xl border-2 cursor-pointer transition ${
+                  className={`flex items-center gap-3 p-4 rounded-control border-2 cursor-pointer transition ${
                     paymentMethod === 'WALLET'
-                      ? 'border-amber-600 bg-amber-50/50'
-                      : 'border-gray-100 hover:border-gray-200 bg-white'
+                      ? 'border-kombu bg-tan/30'
+                      : 'border-tan bg-cream hover:border-moss'
                   }`}
                 >
                   <input
@@ -1077,19 +1077,19 @@ function CheckoutContent() {
                       setPaymentMethod('WALLET');
                       setAccountNumberError(null);
                     }}
-                    className="accent-amber-600 w-4 h-4 shrink-0"
+                    className="accent-kombu w-4 h-4 shrink-0"
                   />
                   <div>
-                    <div className="text-sm font-semibold text-gray-800">Ví điện tử</div>
-                    <div className="text-[11px] text-gray-500">Momo, ZaloPay (8 - 19 số)</div>
+                    <div className="text-sm font-bold text-noir">Ví điện tử</div>
+                    <div className="text-[11px] text-noir/65">Momo, ZaloPay (8 - 19 số)</div>
                   </div>
                 </label>
 
                 <label
-                  className={`flex items-center gap-3 p-4 rounded-xl border-2 cursor-pointer transition ${
+                  className={`flex items-center gap-3 p-4 rounded-control border-2 cursor-pointer transition ${
                     paymentMethod === 'CARD'
-                      ? 'border-amber-600 bg-amber-50/50'
-                      : 'border-gray-100 hover:border-gray-200 bg-white'
+                      ? 'border-kombu bg-tan/30'
+                      : 'border-tan bg-cream hover:border-moss'
                   }`}
                 >
                   <input
@@ -1101,19 +1101,19 @@ function CheckoutContent() {
                       setPaymentMethod('CARD');
                       setAccountNumberError(null);
                     }}
-                    className="accent-amber-600 w-4 h-4 shrink-0"
+                    className="accent-kombu w-4 h-4 shrink-0"
                   />
                   <div>
-                    <div className="text-sm font-semibold text-gray-800">Thẻ ngân hàng</div>
-                    <div className="text-[11px] text-gray-500">ATM, Visa (8 - 19 số)</div>
+                    <div className="text-sm font-bold text-noir">Thẻ ngân hàng</div>
+                    <div className="text-[11px] text-noir/65">ATM, Visa (8 - 19 số)</div>
                   </div>
                 </label>
               </div>
             </div>
 
             {/* Nhập số thẻ/ví - Bảo mật cao */}
-            <div className="bg-white p-5 sm:p-6 rounded-2xl border border-gray-100 shadow-xs space-y-3">
-              <label htmlFor="accountNumber" className="block text-base font-bold text-gray-900">
+            <div className="bg-cream p-5 sm:p-6 rounded-card border border-tan/60 shadow-soft space-y-3">
+              <label htmlFor="accountNumber" className="block font-display text-base font-bold text-noir">
                 {paymentMethod === 'WALLET' ? 'Số ví điện tử' : 'Số thẻ ngân hàng'}
               </label>
 
@@ -1133,20 +1133,20 @@ function CheckoutContent() {
                       ? 'Nhập số ví điện tử (8 - 19 chữ số)...'
                       : 'Nhập số thẻ ngân hàng (8 - 19 chữ số)...'
                   }
-                  className={`w-full px-3.5 py-2.5 rounded-xl border text-sm focus:outline-none ${
+                  className={`w-full h-11 px-3.5 py-2.5 rounded-control border text-sm outline-none transition placeholder:text-noir/45 ${
                     accountNumberError
-                      ? 'border-red-400 bg-red-50/20'
-                      : 'border-gray-200 focus:border-amber-600'
+                      ? 'border-error bg-error/10 text-noir focus:border-error focus:ring-2 focus:ring-error/30'
+                      : 'border-tan bg-bone text-noir focus:border-moss focus:ring-2 focus:ring-moss/30'
                   }`}
                   aria-invalid={Boolean(accountNumberError)}
                   aria-describedby={accountNumberError ? 'acc-error' : undefined}
                 />
                 {accountNumberError && (
-                  <p id="acc-error" className="text-xs text-red-600 mt-1">
+                  <p id="acc-error" className="text-xs text-error font-semibold mt-1">
                     {accountNumberError}
                   </p>
                 )}
-                <p className="text-[11px] text-gray-400 mt-2">
+                <p className="rounded-control bg-tan/35 px-4 py-2.5 text-center text-xs text-noir/65 mt-2">
                   🔒 Thanh toán mô phỏng, không dùng thẻ thật. Thông tin thanh toán được gửi trực tiếp
                   và không bao giờ lưu trữ trên thiết bị.
                 </p>
@@ -1156,28 +1156,28 @@ function CheckoutContent() {
 
           {/* CỘT PHẢI (5 CỘT): Tóm tắt đơn cần thanh toán & Nút hành động (dính khi cuộn trên màn lớn) */}
           <div className="lg:col-span-5 lg:sticky lg:top-24 space-y-4">
-            <div className="bg-white p-5 sm:p-6 rounded-2xl border border-gray-100 shadow-xs space-y-4">
-              <h2 className="text-base font-bold text-gray-900 border-b border-gray-100 pb-3">
+            <div className="bg-cream p-5 sm:p-6 rounded-card border border-tan/60 shadow-soft space-y-4">
+              <h2 className="font-display text-base font-bold text-noir border-b border-tan/60 pb-3">
                 Thông tin thanh toán
               </h2>
 
               {/* Thông tin đơn hàng cần thanh toán */}
-              <div className="bg-amber-50/70 border border-amber-200 rounded-xl p-4 space-y-2.5">
+              <div className="bg-tan/30 border border-tan/60 rounded-control p-4 space-y-2.5">
                 <div className="flex justify-between items-center text-xs sm:text-sm">
-                  <span className="text-amber-900 font-semibold">Mã đơn hàng:</span>
-                  <span className="font-extrabold text-amber-900 text-base">
+                  <span className="text-noir/70 font-semibold">Mã đơn hàng:</span>
+                  <span className="font-display font-bold text-kombu text-base">
                     {activeOrderNumber !== null ? `#${activeOrderNumber}` : 'Đơn hàng mới'}
                   </span>
                 </div>
                 <div className="flex justify-between items-center text-xs sm:text-sm">
-                  <span className="text-amber-900 font-semibold">Hình thức nhận:</span>
-                  <span className="font-semibold text-amber-900">
+                  <span className="text-noir/70 font-semibold">Hình thức nhận:</span>
+                  <span className="font-semibold text-noir">
                     {RECEIVE_TYPE_LABELS[activeReceiveType]}
                   </span>
                 </div>
-                <div className="flex justify-between items-baseline pt-2 border-t border-amber-200/60">
-                  <span className="text-xs sm:text-sm text-amber-900 font-semibold">Số tiền thanh toán:</span>
-                  <span className="text-xl sm:text-2xl font-black text-amber-600">
+                <div className="flex justify-between items-baseline pt-2 border-t border-tan/60">
+                  <span className="text-xs sm:text-sm text-noir font-semibold">Số tiền thanh toán:</span>
+                  <span className="font-display text-xl sm:text-2xl font-bold text-kombu">
                     {formatVnd(activeAmount)}
                   </span>
                 </div>
@@ -1188,7 +1188,7 @@ function CheckoutContent() {
                 <button
                   type="submit"
                   disabled={isSubmittingPayment}
-                  className="w-full py-3.5 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-xl text-sm transition shadow-sm disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                  className="w-full min-h-11 py-3.5 bg-kombu hover:bg-noir text-bone font-bold rounded-control text-sm transition shadow-soft disabled:opacity-45 disabled:cursor-not-allowed cursor-pointer"
                 >
                   {isSubmittingPayment
                     ? 'Đang xử lý giao dịch...'
@@ -1201,7 +1201,7 @@ function CheckoutContent() {
                   type="button"
                   onClick={() => setStep('order')}
                   disabled={isSubmittingPayment}
-                  className="w-full py-2.5 text-xs text-gray-500 hover:text-gray-700 transition cursor-pointer"
+                  className="w-full py-2.5 text-xs font-semibold text-noir/65 hover:text-noir transition cursor-pointer"
                 >
                   ← Thay đổi thông tin đơn hàng
                 </button>
@@ -1218,7 +1218,7 @@ export default function CheckoutPage() {
   return (
     <Suspense
       fallback={
-        <div className="max-w-md mx-auto py-20 text-center text-gray-500 text-sm">
+        <div className="max-w-md mx-auto py-20 text-center text-noir/65 text-sm">
           Đang tải trang đặt đơn và thanh toán...
         </div>
       }
