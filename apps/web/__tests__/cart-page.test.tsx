@@ -66,7 +66,7 @@ describe('Component CartIcon', () => {
 
     await waitFor(() => {
       expect(screen.getByText('3')).toBeInTheDocument();
-      const link = screen.getByRole('link', { name: /giỏ hàng, 3 ly/i });
+      const link = screen.getByRole('link', { name: /giỏ hàng, 3 món/i });
       expect(link).toBeInTheDocument();
     });
   });
@@ -120,7 +120,7 @@ describe('Trang Giỏ hàng (CartPage)', () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByRole('heading', { level: 1, name: /Giỏ hàng \(3 ly\)/i })).toBeInTheDocument();
+      expect(screen.getByRole('heading', { level: 1, name: /Giỏ hàng \(3 món\)/i })).toBeInTheDocument();
     });
 
     // Món 1: Đồ uống
