@@ -434,7 +434,9 @@ function CheckoutContent() {
         } else if (err.statusCode === 0 || err.statusCode >= 500) {
           setIsCreateOrderNetworkError(true);
           setCreateOrderError(
-            err.message || 'Không kết nối được máy chủ, vui lòng thử lại'
+            err.statusCode >= 500
+              ? 'Không kết nối được máy chủ, vui lòng thử lại'
+              : err.message || 'Không kết nối được máy chủ, vui lòng thử lại'
           );
         } else {
           setCreateOrderError(err.message || ORDER_ERROR_MESSAGES.UNKNOWN_ERROR);
