@@ -146,6 +146,19 @@ Kết quả đúng:
 
 Nhấn `Ctrl + C` tại cửa sổ terminal đang chạy API.
 
+## Kiểm thử End-to-End (E2E)
+
+Kiểm thử trọn vẹn luồng từ Menu -> Chi tiết món -> Đăng nhập -> Đặt đơn -> Thanh toán Idempotency -> Xác nhận đơn (Task 5.2):
+
+```powershell
+# Chạy với API local (khi API cổng 3001 đang chạy)
+.\tests\run-e2e.ps1
+
+# Hoặc chạy kiểm thử trực tiếp trên môi trường production Render
+.\tests\run-e2e.ps1 -ApiUrl https://brewlite-api.onrender.com
+```
+Chi tiết về 16 kịch bản kiểm thử xem tại [`tests/README.md`](file:///tests/README.md).
+
 ## Triển khai và Tự động hóa (CI/CD)
 
 Dự án áp dụng quy trình tự động hóa đầy đủ bằng **GitHub Actions** theo chuẩn:
