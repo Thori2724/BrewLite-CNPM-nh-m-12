@@ -2,6 +2,7 @@
 
 - **Trạng thái:** Accepted
 - **Ngày:** 2026-11-03
+- **Ghi chú cập nhật (2026-11-10):** Phần CD sẽ được cập nhật theo ADR-009 (ECR và SSM không còn áp dụng trên Render). Chi tiết pipeline deploy sẽ được thực hiện ở nhiệm vụ #26.
 
 ## Bối cảnh
 Đề bài yêu cầu CI chạy khi mở pull request (Install → Lint → Unit Test → Build) và pipeline CD (lint/test → build image → push registry → deploy → migration → smoke test → rollback). Mã nguồn đã nằm trên GitHub.
