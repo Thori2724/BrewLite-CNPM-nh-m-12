@@ -188,11 +188,23 @@ NEXT_PUBLIC_USE_MOCK_ORDERS=true
 
 ---
 
-## 8. Các lệnh kiểm tra chất lượng (Quality Gate)
+## 8. Chạy test và kiểm tra chất lượng (Quality Gate)
 
-### Chạy kiểm thử tự động (Unit & Component Test):
+### Chạy test (Unit & Component Test với Vitest):
+
+Toàn bộ bài kiểm thử tự động trong `apps/web/__tests__` sử dụng **Vitest** và **React Testing Library** với `fetch` mock (chạy độc lập, không cần khởi động máy chủ Backend).
+
+Mở PowerShell tại thư mục `apps/web` và chạy:
+
 ```powershell
-npm.cmd test
+cd apps/web
+npm.cmd run test
+```
+
+Chạy riêng bộ kiểm thử Giỏ hàng và Luồng thanh toán (Dòng 20 — mã kiểm thử `A1–A10`, `B1–B11`):
+
+```powershell
+npm.cmd run test -- __tests__/cart-and-payment-flow.test.tsx
 ```
 
 ### Chạy kiểm tra kiểu TypeScript:
