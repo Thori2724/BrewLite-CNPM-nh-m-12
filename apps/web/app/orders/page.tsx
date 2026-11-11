@@ -24,18 +24,18 @@ function formatVndPrice(amount: number): string {
 function getOrderStatusBadgeClass(status: OrderStatus): string {
   switch (status) {
     case 'PAID':
-    case 'READY':
     case 'COMPLETED':
-      return 'bg-green-100 text-green-800 border border-green-200';
+      return 'bg-moss text-kombu font-bold';
     case 'PENDING':
-      return 'bg-amber-100 text-amber-800 border border-amber-200';
     case 'PREPARING':
-      return 'bg-blue-100 text-blue-800 border border-blue-200';
+      return 'bg-warning text-noir font-bold';
+    case 'READY':
+      return 'bg-tan/50 text-noir border border-tan font-bold';
     case 'PAYMENT_FAILED':
-      return 'bg-red-100 text-red-800 border border-red-200';
     case 'CANCELLED':
+      return 'bg-error/15 text-error border border-error/30 font-bold';
     default:
-      return 'bg-gray-100 text-gray-700 border border-gray-200';
+      return 'bg-tan/40 text-noir font-semibold';
   }
 }
 
@@ -109,9 +109,9 @@ function OrdersHistoryContent() {
     return (
       <div
         data-testid="orders-history-loading"
-        className="max-w-4xl mx-auto py-16 text-center text-gray-500 text-sm space-y-4"
+        className="max-w-4xl mx-auto py-16 text-center text-noir/65 text-sm space-y-4"
       >
-        <div className="animate-spin inline-block w-8 h-8 border-3 border-amber-600 border-t-transparent rounded-full" />
+        <div className="animate-spin inline-block w-8 h-8 border-3 border-kombu border-t-transparent rounded-full" />
         <p>Đang tải danh sách đơn hàng...</p>
       </div>
     );
@@ -122,16 +122,16 @@ function OrdersHistoryContent() {
     return (
       <div
         data-testid="orders-history-error"
-        className="max-w-md mx-auto my-8 bg-white border border-gray-100 rounded-2xl p-6 sm:p-8 text-center shadow-xs space-y-4"
+        className="max-w-md mx-auto my-8 bg-cream border border-tan/60 rounded-card p-6 sm:p-8 text-center shadow-soft space-y-4"
       >
-        <div className="bg-red-50 border border-red-200 text-red-700 p-4 rounded-xl text-sm font-medium">
+        <div className="bg-error/10 border border-error/45 text-error p-4 rounded-control text-sm font-semibold">
           {error}
         </div>
         <div>
           <button
             type="button"
             onClick={handleManualReload}
-            className="px-5 py-2.5 bg-amber-600 hover:bg-amber-700 text-white font-semibold rounded-xl text-sm transition cursor-pointer"
+            className="px-5 py-2.5 bg-kombu hover:bg-noir text-bone font-semibold rounded-control text-sm transition shadow-soft cursor-pointer"
           >
             Thử lại
           </button>
@@ -143,22 +143,22 @@ function OrdersHistoryContent() {
   return (
     <div className="max-w-4xl mx-auto space-y-6">
       {/* Tiêu đề & Nút Tải lại */}
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-200 pb-4">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-tan/60 pb-4">
         <div className="space-y-1">
           <Link
             href="/"
-            className="inline-flex items-center text-xs sm:text-sm font-medium text-gray-600 hover:text-amber-600 transition"
+            className="inline-flex items-center text-xs sm:text-sm font-semibold text-noir/65 hover:text-kombu transition"
           >
             <span className="mr-1">←</span> Quay lại Menu
           </Link>
-          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Đơn hàng của tôi</h1>
+          <h1 className="font-display text-xl sm:text-2xl font-bold text-noir">Đơn hàng của tôi</h1>
         </div>
 
         <button
           type="button"
           onClick={handleManualReload}
           disabled={isReloading}
-          className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-white hover:bg-gray-50 text-gray-700 border border-gray-200 rounded-xl text-xs sm:text-sm font-semibold transition shadow-2xs disabled:opacity-50 cursor-pointer"
+          className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-cream hover:bg-tan/30 text-noir border border-tan rounded-control text-xs sm:text-sm font-semibold transition shadow-soft disabled:opacity-45 cursor-pointer"
         >
           <span>↻</span>
           <span>{isReloading ? 'Đang tải lại...' : 'Tải lại'}</span>
@@ -169,19 +169,19 @@ function OrdersHistoryContent() {
       {orders.length === 0 ? (
         <div
           data-testid="orders-history-empty"
-          className="max-w-md mx-auto my-8 bg-white border border-gray-100 rounded-2xl py-12 px-6 text-center shadow-xs space-y-4"
+          className="max-w-md mx-auto my-8 bg-cream border border-tan/60 rounded-card py-12 px-6 text-center shadow-soft space-y-4"
         >
-          <div className="w-20 h-20 bg-amber-50 rounded-full flex items-center justify-center mx-auto text-3xl">
+          <div className="w-20 h-20 bg-tan/45 rounded-full flex items-center justify-center mx-auto text-3xl text-kombu">
             📋
           </div>
-          <h2 className="text-lg font-bold text-gray-800">Bạn chưa có đơn hàng nào</h2>
-          <p className="text-sm text-gray-500">
+          <h2 className="font-display text-lg font-bold text-noir">Bạn chưa có đơn hàng nào</h2>
+          <p className="text-sm text-noir/65">
             Hãy khám phá thực đơn BrewLite và đặt ngay món đồ uống yêu thích của bạn nhé!
           </p>
           <div className="pt-2">
             <Link
               href="/"
-              className="inline-block px-6 py-2.5 bg-amber-600 hover:bg-amber-700 text-white font-semibold rounded-xl text-sm transition shadow-sm"
+              className="inline-block px-6 py-2.5 bg-kombu hover:bg-noir text-bone font-semibold rounded-control text-sm transition shadow-soft"
             >
               Xem menu
             </Link>
@@ -195,40 +195,40 @@ function OrdersHistoryContent() {
               key={order.id}
               href={`/orders/${order.id}`}
               data-testid={`order-card-${order.orderNumber}`}
-              className="block bg-white hover:bg-amber-50/20 border border-gray-100 hover:border-amber-200 rounded-2xl p-4 sm:p-5 shadow-xs transition group"
+              className="block bg-cream hover:bg-tan/20 border border-tan/60 hover:border-tan rounded-card p-4 sm:p-5 shadow-soft hover:shadow-raised transition group"
             >
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-gray-100">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-tan/40">
                 <div className="flex items-center gap-3 flex-wrap">
-                  <span className="text-lg sm:text-xl font-black text-gray-900 group-hover:text-amber-700 transition">
+                  <span className="font-display text-lg sm:text-xl font-bold text-noir group-hover:text-kombu transition">
                     #{order.orderNumber}
                   </span>
                   <span
-                    className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold ${getOrderStatusBadgeClass(
+                    className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-caption font-bold ${getOrderStatusBadgeClass(
                       order.status
                     )}`}
                   >
                     {ORDER_STATUS_LABELS[order.status] || order.status}
                   </span>
-                  <span className="text-xs font-medium text-gray-500 bg-gray-100 px-2.5 py-0.5 rounded-lg">
+                  <span className="text-caption font-semibold text-noir/70 bg-bone/70 border border-tan/50 px-2.5 py-0.5 rounded-control">
                     {RECEIVE_TYPE_LABELS[order.receiveType] || order.receiveType}
                   </span>
                 </div>
 
-                <div className="text-xs text-gray-500">
+                <div className="text-xs text-noir/60">
                   {formatVietnamDateTime(order.createdAt)}
                 </div>
               </div>
 
               <div className="pt-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                <p className="text-sm text-gray-700 font-medium line-clamp-2 sm:line-clamp-1 break-words">
+                <p className="text-sm text-noir/75 font-medium line-clamp-2 sm:line-clamp-1 break-words">
                   {summarizeOrderItems(order.items)}
                 </p>
 
                 <div className="flex items-center justify-between sm:justify-end gap-3 shrink-0">
-                  <span className="text-base sm:text-lg font-extrabold text-amber-600">
+                  <span className="font-display text-base sm:text-lg font-bold text-kombu">
                     {formatVndPrice(order.totalAmount)}
                   </span>
-                  <span className="text-xs font-semibold text-amber-700 group-hover:translate-x-0.5 transition">
+                  <span className="text-xs font-semibold text-kombu group-hover:translate-x-0.5 transition">
                     Chi tiết →
                   </span>
                 </div>
@@ -245,7 +245,7 @@ export default function OrdersHistoryPage() {
   return (
     <Suspense
       fallback={
-        <div className="max-w-4xl mx-auto py-16 text-center text-gray-500 text-sm">
+        <div className="max-w-4xl mx-auto py-16 text-center text-noir/65 text-sm">
           Đang tải lịch sử đơn hàng...
         </div>
       }
