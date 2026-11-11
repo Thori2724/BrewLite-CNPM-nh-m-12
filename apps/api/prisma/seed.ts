@@ -49,7 +49,7 @@ const products = [
   },
   {
     id: '11111111-0000-0000-0000-000000000005',
-    name: 'Trà vải hoa hồng',
+    name: 'Trà atiso đỏ',
     category: Category.TEA,
     basePrice: 42000,
     imageUrl: 'https://images.unsplash.com/photo-1576092768241-dec231879fc3?w=500',
@@ -58,7 +58,7 @@ const products = [
   },
   {
     id: '11111111-0000-0000-0000-000000000006',
-    name: 'Trà sen vàng',
+    name: 'Trà chanh mật ong',
     category: Category.TEA,
     basePrice: 45000,
     imageUrl: 'https://images.unsplash.com/photo-1597481499750-3e6b22637e12?w=500',
@@ -77,7 +77,7 @@ const products = [
   },
   {
     id: '11111111-0000-0000-0000-000000000008',
-    name: 'Trà sữa Oolong nướng',
+    name: 'Trà sữa khoai môn',
     category: Category.MILK_TEA,
     basePrice: 42000,
     imageUrl: 'https://images.unsplash.com/photo-1525385133512-2f3bdd039054?w=500',
