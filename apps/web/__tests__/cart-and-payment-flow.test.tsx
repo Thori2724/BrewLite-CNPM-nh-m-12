@@ -351,14 +351,14 @@ describe('Dòng 20 — Kiểm thử Giỏ hàng và Luồng Thanh toán (A1–A1
 
       // Ban đầu: 2 ly trà sữa (106.000đ) + 1 bánh (30.000đ) = 3 món, tổng 136.000đ
       await waitFor(() => {
-        expect(screen.getByRole('link', { name: /giỏ hàng, 3 ly/i })).toBeInTheDocument();
+        expect(screen.getByRole('link', { name: /giỏ hàng, 3 món/i })).toBeInTheDocument();
         expect(screen.getAllByText('136.000đ').length).toBeGreaterThan(0);
       });
 
       // Xóa dòng Trà sữa truyền thống -> còn 1 bánh, tổng 30.000đ
       await user.click(screen.getByRole('button', { name: 'Xóa Trà sữa truyền thống' }));
       await waitFor(() => {
-        expect(screen.getByRole('link', { name: /giỏ hàng, 1 ly/i })).toBeInTheDocument();
+        expect(screen.getByRole('link', { name: /giỏ hàng, 1 món/i })).toBeInTheDocument();
         expect(screen.getAllByText('30.000đ').length).toBeGreaterThan(0);
       });
 
@@ -570,7 +570,7 @@ describe('Dòng 20 — Kiểm thử Giỏ hàng và Luồng Thanh toán (A1–A1
       await user.click(screen.getByRole('button', { name: 'Đổi dòng 1 thành 8' }));
       // 8 + 3 = 11 (> 9 hiển thị 9+, aria-label vẫn báo 11 ly)
       expect(screen.getByText('9+')).toBeInTheDocument();
-      expect(screen.getByRole('link', { name: 'Giỏ hàng, 11 ly' })).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: 'Giỏ hàng, 11 món' })).toBeInTheDocument();
 
       await user.click(screen.getByRole('button', { name: 'Xóa dòng 1' }));
       expect(screen.getByText('3')).toBeInTheDocument();
