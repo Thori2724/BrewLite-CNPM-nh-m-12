@@ -156,3 +156,4 @@ vite.config.ts.timestamp-*
 .turbo
 
 .role.local
+AGENTS.md
