@@ -13,19 +13,19 @@ repeat while () is (thêm món khác) not (xong)
 :Xem giỏ hàng (sửa / xóa món), chọn hình thức nhận hàng\n(Tại quầy / Mang đi), nhấn "Đặt đơn";
 
 |Hệ thống BrewLite|
-:Kiểm tra đăng nhập (JWT 24h);
-if () then (chưa đăng nhập / token hết hạn)
+:Kiểm tra đăng nhập (JWT);
+if () then (chưa đăng nhập / JWT hết hạn)
   |Khách hàng|
   :Đăng nhập hoặc đăng ký\n(giỏ hàng được giữ nguyên);
   |Hệ thống BrewLite|
 else (đã đăng nhập)
 endif
 
-:Kiểm tra giỏ hàng và tồn kho cộng gộp;
-if () then (hợp lệ, đủ hàng trong kho)
-  :Tạo đơn PENDING, lưu chi tiết OrderItem\nvà trừ trực tiếp tồn kho (Transaction ACID);
-else (giỏ rỗng / không đủ tồn kho)
-  :Báo lỗi 409 Conflict, không tạo đơn,\ngiữ nguyên giỏ hàng;
+:Kiểm tra giỏ hàng và tồn kho;
+if () then (hợp lệ, đủ hàng)
+  :Tạo đơn PENDING, lưu chi tiết món\nvà trừ tồn kho (một transaction);
+else (giỏ rỗng / hết hàng)
+  :Báo lỗi, không tạo đơn,\ngiữ nguyên giỏ hàng;
   stop
 endif
 
@@ -37,12 +37,12 @@ repeat
   |Hệ thống BrewLite|
   :Gửi yêu cầu thanh toán kèm Idempotency-Key;
   |Cổng thanh toán mô phỏng|
-  :Xử lý giao dịch mô phỏng, trả kết quả;
+  :Xử lý giao dịch, trả kết quả;
   |Hệ thống BrewLite|
   if () then (thành công)
     :Cập nhật đơn sang PAID, tạo bản ghi thanh toán,\nlàm rỗng giỏ hàng;
     |Khách hàng|
-    :Nhận màn hình xác nhận (mã đơn orderNumber),\nxem chi tiết và theo dõi trạng thái đơn;
+    :Nhận màn hình xác nhận (mã đơn),\ntheo dõi trạng thái đơn;
     |Nhân viên quầy|
     :Xem đơn mới (PAID), nhận pha chế (PREPARING);
     :Pha xong (READY);
@@ -50,10 +50,10 @@ repeat
     |Khách hàng|
     :Nhận đồ uống;
     stop
-  else (thất bại / tài khoản đuôi 0000)
-    :Cập nhật đơn sang PAYMENT_FAILED,\ngiữ nguyên tồn kho và giỏ hàng;
-    |Khách hàng|
+  else (thất bại / quá thời gian chờ)
+    :Cập nhật đơn sang PAYMENT_FAILED,\ngiữ tồn kho và giỏ hàng;
   endif
-repeat while () is (khách bấm "Thử lại thanh toán"\nvới Idempotency-Key mới) not (rời đi / đóng trình duyệt)
+repeat while () is (khách thử lại trong 15 phút) not (quá 15 phút / bỏ đi)
+:Chuyển đơn sang CANCELLED, hoàn trả tồn kho;
 stop
 @enduml

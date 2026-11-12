@@ -1,0 +1,166 @@
+@startuml class-domain
+title BrewLite – Class Diagram (Domain)
+skinparam classAttributeIconSize 0
+skinparam linetype ortho
+skinparam roundcorner 8
+
+class User {
+  - id: UUID
+  - email: String {unique}
+  - passwordHash: String
+  - displayName: String
+  - role: Role
+  - createdAt: DateTime
+}
+
+class Product {
+  - id: UUID
+  - name: String
+  - category: Category
+  - basePrice: Int
+  - imageUrl: String
+  - stock: Int
+  - isVisible: Boolean
+}
+
+class Topping {
+  - id: UUID
+  - name: String
+  - price: Int
+}
+
+class Order {
+  - id: UUID
+  - orderNumber: Int
+  - status: OrderStatus
+  - receiveType: ReceiveType
+  - totalAmount: Int
+  - note: String
+  - createdAt: DateTime
+}
+
+class OrderItem {
+  - id: UUID
+  - productName: String
+  - unitPrice: Int
+  - quantity: Int
+  - size: Size
+  - sugarLevel: SugarLevel
+  - iceLevel: IceLevel
+  - note: String
+  - lineTotal: Int
+}
+
+class Payment {
+  - id: UUID
+  - amount: Int
+  - method: PaymentMethod
+  - status: PaymentStatus
+  - idempotencyKey: String
+  - accountLast4: String
+  - createdAt: DateTime
+}
+
+class Promotion {
+  - id: UUID
+  - code: String {unique}
+  - discountType: DiscountType
+  - discountValue: Int
+  - minOrderAmount: Int
+  - validFrom: DateTime
+  - validTo: DateTime
+  - isActive: Boolean
+}
+note top of Promotion : Phạm vi mở rộng, chưa hiện thực trong code (Task 2.3)
+
+class LoyaltyTransaction {
+  - id: UUID
+  - points: Int
+  - type: LoyaltyType
+  - createdAt: DateTime
+}
+note top of LoyaltyTransaction : Phạm vi mở rộng, chưa hiện thực trong code (Task 2.3)
+
+' ===== Quan hệ =====
+User "1" -- "0..*" Order : places >
+Order "1" *-- "1..*" OrderItem : contains >
+OrderItem "0..*" --> "1" Product : refers to >
+OrderItem "0..*" -- "0..*" Topping : has >
+Order "1" *-- "0..*" Payment : paid by >
+Order "0..*" -- "0..1" Promotion : applies >
+User "1" -- "0..*" LoyaltyTransaction : owns >
+Order "1" -- "0..1" LoyaltyTransaction : generates >
+
+' ===== Enum trạng thái và phân loại =====
+enum Role {
+  CUSTOMER
+  STAFF
+  ADMIN
+}
+
+enum OrderStatus {
+  PENDING
+  PAYMENT_FAILED
+  PAID
+  PREPARING
+  READY
+  COMPLETED
+  CANCELLED
+}
+note bottom of OrderStatus : Các trạng thái PREPARING, READY, COMPLETED, CANCELLED\nchưa có API kích hoạt trong phiên bản này
+
+enum ReceiveType {
+  AT_COUNTER
+  TAKE_AWAY
+}
+
+enum PaymentMethod {
+  WALLET
+  CARD
+}
+
+enum PaymentStatus {
+  SUCCESS
+  FAILED
+}
+
+enum DiscountType {
+  PERCENT
+  FIXED
+}
+
+enum LoyaltyType {
+  EARN
+  REDEEM
+}
+
+enum Category {
+  TEA
+  COFFEE
+  MILK_TEA
+  CAKE
+}
+
+enum Size {
+  S
+  M
+  L
+}
+
+enum SugarLevel {
+  P0
+  P30
+  P50
+  P70
+  P100
+}
+
+enum IceLevel {
+  NONE
+  LOW
+  NORMAL
+  FULL
+}
+
+@enduml
+

@@ -2,14 +2,14 @@
 title BrewLite – Class Diagram (Domain)
 skinparam classAttributeIconSize 0
 skinparam linetype ortho
-skinparam roundcorner 8
 
 class User {
   - id: UUID
   - email: String {unique}
   - passwordHash: String
-  - displayName: String
+  - fullName: String
   - role: Role
+  - loyaltyPoints: int
   - createdAt: DateTime
 }
 
@@ -17,47 +17,49 @@ class Product {
   - id: UUID
   - name: String
   - category: Category
-  - basePrice: Int
+  - basePrice: Decimal
   - imageUrl: String
-  - stock: Int
-  - isVisible: Boolean
+  - stock: int
+  - isVisible: boolean
 }
 
 class Topping {
   - id: UUID
   - name: String
-  - price: Int
+  - price: Decimal
 }
 
 class Order {
   - id: UUID
-  - orderNumber: Int
   - status: OrderStatus
   - receiveType: ReceiveType
-  - totalAmount: Int
+  - subtotal: Decimal
+  - discountAmount: Decimal
+  - totalAmount: Decimal
   - note: String
   - createdAt: DateTime
+  - expiresAt: DateTime
 }
 
 class OrderItem {
   - id: UUID
   - productName: String
-  - unitPrice: Int
-  - quantity: Int
+  - unitPrice: Decimal
+  - quantity: int
   - size: Size
   - sugarLevel: SugarLevel
   - iceLevel: IceLevel
   - note: String
-  - lineTotal: Int
+  - lineTotal: Decimal
 }
 
 class Payment {
   - id: UUID
-  - amount: Int
+  - amount: Decimal
   - method: PaymentMethod
   - status: PaymentStatus
-  - idempotencyKey: String
-  - accountLast4: String
+  - idempotencyKey: String {unique}
+  - gatewayRef: String
   - createdAt: DateTime
 }
 
@@ -65,21 +67,19 @@ class Promotion {
   - id: UUID
   - code: String {unique}
   - discountType: DiscountType
-  - discountValue: Int
-  - minOrderAmount: Int
+  - discountValue: Decimal
+  - minOrderAmount: Decimal
   - validFrom: DateTime
   - validTo: DateTime
-  - isActive: Boolean
+  - isActive: boolean
 }
-note top of Promotion : Phạm vi mở rộng, chưa hiện thực trong code (Task 2.3)
 
 class LoyaltyTransaction {
   - id: UUID
-  - points: Int
+  - points: int
   - type: LoyaltyType
   - createdAt: DateTime
 }
-note top of LoyaltyTransaction : Phạm vi mở rộng, chưa hiện thực trong code (Task 2.3)
 
 ' ===== Quan hệ =====
 User "1" -- "0..*" Order : places >
@@ -107,7 +107,6 @@ enum OrderStatus {
   COMPLETED
   CANCELLED
 }
-note bottom of OrderStatus : Các trạng thái PREPARING, READY, COMPLETED, CANCELLED\nchưa có API kích hoạt trong phiên bản này
 
 enum ReceiveType {
   AT_COUNTER
@@ -115,8 +114,8 @@ enum ReceiveType {
 }
 
 enum PaymentMethod {
-  WALLET
-  CARD
+  E_WALLET
+  BANK_CARD
 }
 
 enum PaymentStatus {
