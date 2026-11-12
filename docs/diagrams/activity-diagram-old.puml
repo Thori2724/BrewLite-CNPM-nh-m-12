@@ -1,0 +1,60 @@
+@startuml
+title Activity diagram - Luồng đặt hàng end-to-end BrewLite
+skinparam shadowing false
+skinparam conditionStyle diamond
+
+|Khách hàng|
+start
+repeat
+  :Xem menu, tìm món;
+  :Xem chi tiết, chọn size / đường / đá / topping;
+  :Thêm món vào giỏ hàng;
+repeat while () is (thêm món khác) not (xong)
+:Xem giỏ hàng (sửa / xóa món), chọn hình thức nhận hàng\n(Tại quầy / Mang đi), nhấn "Đặt đơn";
+
+|Hệ thống BrewLite|
+:Kiểm tra đăng nhập (JWT);
+if () then (chưa đăng nhập / JWT hết hạn)
+  |Khách hàng|
+  :Đăng nhập hoặc đăng ký\n(giỏ hàng được giữ nguyên);
+  |Hệ thống BrewLite|
+else (đã đăng nhập)
+endif
+
+:Kiểm tra giỏ hàng và tồn kho;
+if () then (hợp lệ, đủ hàng)
+  :Tạo đơn PENDING, lưu chi tiết món\nvà trừ tồn kho (một transaction);
+else (giỏ rỗng / hết hàng)
+  :Báo lỗi, không tạo đơn,\ngiữ nguyên giỏ hàng;
+  stop
+endif
+
+:Hiển thị các phương thức thanh toán\n(Ví điện tử / Thẻ ngân hàng);
+
+repeat
+  |Khách hàng|
+  :Chọn phương thức và xác nhận thanh toán;
+  |Hệ thống BrewLite|
+  :Gửi yêu cầu thanh toán kèm Idempotency-Key;
+  |Cổng thanh toán mô phỏng|
+  :Xử lý giao dịch, trả kết quả;
+  |Hệ thống BrewLite|
+  if () then (thành công)
+    :Cập nhật đơn sang PAID, tạo bản ghi thanh toán,\nlàm rỗng giỏ hàng;
+    |Khách hàng|
+    :Nhận màn hình xác nhận (mã đơn),\ntheo dõi trạng thái đơn;
+    |Nhân viên quầy|
+    :Xem đơn mới (PAID), nhận pha chế (PREPARING);
+    :Pha xong (READY);
+    :Giao nước cho khách (COMPLETED);
+    |Khách hàng|
+    :Nhận đồ uống;
+    stop
+  else (thất bại / quá thời gian chờ)
+    :Cập nhật đơn sang PAYMENT_FAILED,\ngiữ tồn kho và giỏ hàng;
+  endif
+repeat while () is (khách thử lại trong 15 phút) not (quá 15 phút / bỏ đi)
+:Chuyển đơn sang CANCELLED, hoàn trả tồn kho;
+stop
+@enduml
+

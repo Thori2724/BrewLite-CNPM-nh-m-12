@@ -233,4 +233,5 @@ Mọi tên node trong sơ đồ triển khai (Deployment Diagram) được đồ
 | [005](adr/005-mock-payment-idempotency-transactions.md) | Thanh toán mô phỏng, Idempotency và Giao dịch ACID | Accepted (Updated) |
 | [006](adr/006-aws-deployment-topology.md) | Mô hình triển khai trên AWS | Superseded by ADR-009 |
 | [007](adr/007-cicd-github-actions.md) | CI/CD bằng GitHub Actions và Triển khai Render | Accepted (Updated) |
+| [008](adr/008-uu-tien-giao-dien-web.md) | Ưu tiên Giao diện Web trên Máy tính (Desktop-First) | Accepted |
 | [009](adr/009-render-deployment.md) | Mô hình triển khai trên Render PaaS | Accepted |
