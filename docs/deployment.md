@@ -82,4 +82,33 @@ Vì sử dụng gói Free không có Shell, chúng ta chạy migration và nạp
 
 ## 4. Pipeline CD và Quy trình Rollback
 
-*(Phần này để trống - sẽ được thiết kế và hoàn thiện trong nhiệm vụ #26 và #32)*
+### 4.1 Quy trình Pipeline CD (`.github/workflows/cd.yml`)
+Quy trình CD tự động hóa đầy đủ 5 bước theo tiêu chí Task 5.3:
+`Push/Tag` → `Lint và Test (Quality Gate)` → `Docker Build & Push Registry (GHCR)` → `Safe Migration` → `Deploy to Render` → `Smoke Test`
+
+1. **Giai đoạn 1 (Quality Gate):** Chạy lint, test, build độc lập cho cả `apps/api` và `apps/web`. Bất kỳ lỗi nào sẽ dừng pipeline ngay lập tức.
+2. **Giai đoạn 2 (Docker Registry GHCR):** Đóng gói Docker image cho API và Web, gắn tag commit SHA (`sha-<commit>`) và `latest`, sau đó đẩy lên GitHub Container Registry (`ghcr.io/thori2724/brewlite-api` và `brewlite-web`) bằng quyền `packages: write` của `GITHUB_TOKEN`.
+3. **Giai đoạn 3 (Database Migration):** Chạy lệnh `npx prisma migrate deploy` từ môi trường CI kết nối an toàn tới Render PostgreSQL qua secret `RENDER_EXTERNAL_DATABASE_URL`. Nếu migration lỗi, dừng pipeline, không deploy mã nguồn mới.
+4. **Giai đoạn 4 (Deploy Render):** Gọi Deploy Hook URL qua cURL để kích hoạt Render triển khai image/commit mới cho `brewlite-api` và `brewlite-web`.
+5. **Giai đoạn 5 (Smoke Test):** Tự động gửi request kiểm tra `GET https://brewlite-api.onrender.com/health` (có retry 10 lần, chờ 15s giữa các lần do Render cold start) và kiểm tra trang chủ Web. Nếu không đạt 200 OK, pipeline báo lỗi để kích hoạt rollback.
+
+### 4.2 Danh sách GitHub Secrets cần thiết lập
+Truy cập GitHub Repo > **Settings** > **Secrets and variables** > **Actions**:
+- `RENDER_EXTERNAL_DATABASE_URL`: External Database URL của `brewlite-db` trên Render.
+- `RENDER_API_DEPLOY_HOOK`: Deploy Hook URL của `brewlite-api` (Render Dashboard > Settings > Deploy Hook).
+- `RENDER_WEB_DEPLOY_HOOK`: Deploy Hook URL của `brewlite-web` (Render Dashboard > Settings > Deploy Hook).
+- `PRODUCTION_API_URL`: Domain công khai của API (ví dụ: `https://brewlite-api.onrender.com`).
+- `PRODUCTION_WEB_URL`: Domain công khai của Web (ví dụ: `https://brewlite-web.onrender.com`).
+
+### 4.3 Quy trình Rollback (Hoàn nguyên sự cố)
+1. **Rollback 1-click trên Render Dashboard:**
+   - Vào Render Dashboard > Chọn service bị lỗi (`brewlite-api` hoặc `brewlite-web`).
+   - Vào tab **Deploys** > Tìm bản deploy ổn định gần nhất > Bấm biểu tượng `...` > Chọn **Rollback to this deploy** (hoặc **Re-deploy**).
+2. **Rollback qua GitHub Actions (`.github/workflows/rollback.yml`):**
+   - Vào tab **Actions** > Chọn **Rollback Deployment** > Bấm **Run workflow**.
+   - Chọn dịch vụ cần rollback (`all`, `api`, hoặc `web`), nhập lý do sự cố và mã commit cần phục hồi.
+3. **Khắc phục lỗi Database Schema:**
+   - Nếu lỗi do migration: Chạy lệnh khắc phục từ máy dev qua External Database URL:
+     ```bash
+     DATABASE_URL="<RENDER_EXTERNAL_DATABASE_URL>" npx prisma migrate resolve --rolled-back <tên_migration_lỗi>
+     ```

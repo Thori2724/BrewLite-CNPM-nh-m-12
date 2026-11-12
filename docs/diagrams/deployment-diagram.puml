@@ -1,0 +1,72 @@
+@startuml deployment-diagram
+skinparam monochrome false
+skinparam roundcorner 8
+skinparam shadowing false
+skinparam defaultFontName "Arial"
+
+title Sơ đồ Triển khai Hệ thống BrewLite trên Render PaaS (Task 3.2)
+
+actor "Khách hàng" as user
+
+node "Thiết bị người dùng (Trình duyệt Web)" as clientNode {
+    artifact "Trình duyệt Web\n(Next.js App Client)" as clientApp
+}
+
+cloud "Hệ sinh thái GitHub" as githubCloud {
+    node "GitHub Actions (CI/CD Pipeline)" as ghaNode {
+        artifact "Workflows: ci.yml, cd.yml, rollback.yml" as ghaWorkflows
+    }
+    node "GitHub Container Registry (GHCR)" as ghcrNode {
+        artifact "Docker Image: brewlite-api (sha-*)" as imgApi
+        artifact "Docker Image: brewlite-web (sha-*)" as imgWeb
+    }
+    database "GitHub Secrets" as ghSecrets {
+        [RENDER_EXTERNAL_DATABASE_URL]
+        [RENDER_API_DEPLOY_HOOK]
+        [RENDER_WEB_DEPLOY_HOOK]
+        [PRODUCTION_API_URL]
+        [PRODUCTION_WEB_URL]
+    }
+}
+
+cloud "Render PaaS (Nền tảng Cloud)" as renderPaaS {
+    node "Biến môi trường trên Render Dashboard" as renderEnv {
+        [DATABASE_URL (nội bộ)]
+        [JWT_SECRET]
+        [CORS_ORIGIN]
+        [NEXT_PUBLIC_API_URL]
+    }
+
+    node "brewlite-web (Web Service)" as webService {
+        artifact "Container: brewlite-web\nNext.js 16 (Cổng 10000)\nhttps://brewlite-web.onrender.com" as webContainer
+    }
+
+    node "brewlite-api (Web Service)" as apiService {
+        artifact "Container: brewlite-api\nNestJS 11 (Cổng 10000)\nhttps://brewlite-api.onrender.com" as apiContainer
+    }
+
+    node "brewlite-db (Managed PostgreSQL 16)" as dbNode {
+        database "PostgreSQL 16\n(Mạng nội bộ Render: 5432)" as postgresDb
+    }
+}
+
+' Các luồng kết nối
+user --> clientApp : Thao tác (Menu, Đặt đơn, Thanh toán)
+clientApp --> webContainer : HTTPS:443 (Tải trang giao diện)
+clientApp --> apiContainer : HTTPS:443 (Gọi REST API trực tiếp có CORS)
+webContainer --> apiContainer : SSR / Fetch dữ liệu
+
+apiContainer --> postgresDb : TCP 5432 (Prisma Connection qua DATABASE_URL)
+renderEnv ..> apiContainer : Nạp biến môi trường
+renderEnv ..> webContainer : Nạp biến môi trường
+
+' Luồng CI/CD
+ghaWorkflows --> ghcrNode : 1. Đẩy Docker Image (commit SHA)
+ghaWorkflows --> postgresDb : 2. Chạy Prisma Migrate Deploy an toàn
+ghaWorkflows --> renderPaaS : 3. Kích hoạt Render Deploy Hooks
+ghcrNode ..> webContainer : Kéo Image khi deploy
+ghcrNode ..> apiContainer : Kéo Image khi deploy
+ghSecrets ..> ghaWorkflows : Cung cấp secrets xác thực
+
+@enduml
+

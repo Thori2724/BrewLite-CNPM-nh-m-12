@@ -104,7 +104,7 @@ export default function CartPage() {
             <span className="mr-1">←</span> Tiếp tục chọn món
           </Link>
           <h1 className="font-display text-xl sm:text-2xl font-bold text-noir">
-            Giỏ hàng ({totalCount} ly)
+            Giỏ hàng ({totalCount} món)
           </h1>
         </div>
         <button
@@ -241,7 +241,7 @@ export default function CartPage() {
             <div className="space-y-2 text-sm">
               <div className="flex justify-between text-bone/80">
                 <span>Tổng số lượng:</span>
-                <span className="font-semibold text-bone">{totalCount} ly</span>
+                <span className="font-semibold text-bone">{totalCount} món</span>
               </div>
               <div className="flex justify-between items-baseline pt-2 border-t border-bone/20">
                 <span className="text-sm font-semibold text-bone/90">Tổng tạm tính:</span>
