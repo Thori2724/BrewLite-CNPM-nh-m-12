@@ -1,11 +1,32 @@
-# Kiểm thử End-to-End (E2E Test) - BrewLite
+# Kiểm thử Hệ thống (Testing Suite) - BrewLite
 
-Thư mục này chứa bộ kiểm thử End-to-End (E2E) tự động cho toàn bộ luồng nghiệp vụ cốt lõi của hệ thống BrewLite, đáp ứng yêu cầu nghiệm thu của **Task 5.2 (Assignment 2)**:
-> *"Ít nhất một end-to-end test cho luồng từ menu đến xác nhận đơn"*
+Thư mục này chứa bộ công cụ kiểm thử tự động cho hệ thống BrewLite, đáp ứng đầy đủ yêu cầu của **Task 5.2** (Kiểm thử End-to-End) và **Task 5.4** (Nghiệm thu Production & Smoke Test):
+
+1. **Smoke Test Production (`smoke-test.ps1`):** Kiểm tra nhanh tính sẵn sàng của Web, API, Database và cấu hình CORS trên Production.
+2. **End-to-End Test (`run-e2e.ps1`, `e2e-order-flow.test.mjs`):** Kiểm thử toàn diện 16 kịch bản nghiệp vụ từ menu đến thanh toán và xem lịch sử đơn.
 
 ---
 
-## 1. Công nghệ sử dụng
+## 1. Kiểm tra nhanh Production (Smoke Test - Task 5.4)
+
+Kịch bản kiểm tra tự động 4 chỉ số quan trọng trên môi trường Production (Render):
+- Health check API (`GET /health`) với cơ chế retry khi Render spin-up.
+- Kết nối Database & danh sách Menu (`GET /products` đủ 12 món).
+- Truy cập Web Frontend (`GET /` phản hồi 200 OK).
+- Xác thực cấu hình CORS liên thông giữa Web và API.
+
+### Cách chạy Smoke Test:
+```powershell
+# Chạy với địa chỉ Render mặc định
+.\tests\smoke-test.ps1
+
+# Hoặc tùy biến URL
+.\tests\smoke-test.ps1 -ApiUrl "https://brewlite-api.onrender.com" -WebUrl "https://brewlite-web.onrender.com"
+```
+
+---
+
+## 2. Kiểm thử toàn diện End-to-End (E2E Test - Task 5.2)
 - **Bộ thực thi test (Test Runner):** `node:test` tích hợp sẵn trong Node.js 26 (không cài thêm dependency nặng ngoài phạm vi dự án).
 - **Thư viện xác thực (Assertions):** `node:assert/strict`.
 - **Giao tiếp HTTP:** Native `fetch` của Node.js.
