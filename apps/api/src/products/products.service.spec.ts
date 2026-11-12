@@ -128,41 +128,50 @@ describe('ProductsService', () => {
       );
     });
 
-    it('tìm kiếm q có dấu và không phân biệt hoa/thường, bỏ qua q toàn khoảng trắng', async () => {
-      prisma.product.findMany.mockResolvedValue([mockCoffee]);
+    it('tìm kiếm q có dấu, không dấu (kể cả chữ đ/Đ -> d), không phân biệt hoa/thường và bỏ qua q toàn khoảng trắng', async () => {
+      prisma.product.findMany.mockResolvedValue([
+        mockCoffee,
+        mockOutOfStock,
+        mockCake,
+      ]);
 
-      await service.findAll({ q: '  CÀ PHÊ  ' });
-      expect(prisma.product.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: {
-            isVisible: true,
-            name: { contains: 'CÀ PHÊ', mode: 'insensitive' },
-          },
-        }),
-      );
+      // Có dấu + viết hoa
+      const withAccentsUpper = await service.findAll({ q: '  CÀ PHÊ  ' });
+      expect(withAccentsUpper).toEqual([mockCoffee]);
 
-      await service.findAll({ q: '   ' });
-      expect(prisma.product.findMany).toHaveBeenLastCalledWith(
-        expect.objectContaining({
-          where: { isVisible: true },
-        }),
-      );
+      // Không dấu + viết thường ("ca phe" -> "Cà phê sữa đá")
+      const withoutAccents = await service.findAll({ q: 'ca phe' });
+      expect(withoutAccents).toEqual([mockCoffee]);
+
+      // Chữ đ/Đ xem như d ("sua da" hoặc "SỮA ĐÁ" -> "Cà phê sữa đá")
+      const withD = await service.findAll({ q: 'sua da' });
+      expect(withD).toEqual([mockCoffee]);
+
+      const withUpperD = await service.findAll({ q: 'SỮA ĐÁ' });
+      expect(withUpperD).toEqual([mockCoffee]);
+
+      // Khoảng trắng toàn bộ -> trả toàn bộ danh sách
+      const whitespaceOnly = await service.findAll({ q: '   ' });
+      expect(whitespaceOnly).toHaveLength(3);
     });
 
-    it('kết hợp lọc category và tìm kiếm q', async () => {
-      prisma.product.findMany.mockResolvedValue([mockCoffee]);
+    it('kết hợp lọc category và tìm kiếm q không dấu', async () => {
+      prisma.product.findMany.mockResolvedValue([mockCoffee, mockOutOfStock]);
 
-      await service.findAll({ category: 'COFFEE', q: 'sữa đá' });
+      const result = await service.findAll({
+        category: 'COFFEE',
+        q: 'bac xiu',
+      });
 
       expect(prisma.product.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
           where: {
             isVisible: true,
             category: Category.COFFEE,
-            name: { contains: 'sữa đá', mode: 'insensitive' },
           },
         }),
       );
+      expect(result).toEqual([mockOutOfStock]);
     });
 
     it('ném 400 BadRequestException khi category sai giá trị', async () => {

@@ -19,6 +19,14 @@ import {
 export class ProductsService {
   constructor(private readonly prisma: PrismaService) {}
 
+  private normalizeSearchText(text: string): string {
+    return text
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[đĐ]/g, 'd')
+      .toLowerCase();
+  }
+
   async findAll(params?: { category?: string; q?: string }) {
     const where: Prisma.ProductWhereInput = {
       isVisible: true,
@@ -31,15 +39,7 @@ export class ProductsService {
       where.category = params.category as Category;
     }
 
-    const trimmedQuery = params?.q?.trim();
-    if (trimmedQuery) {
-      where.name = {
-        contains: trimmedQuery,
-        mode: 'insensitive',
-      };
-    }
-
-    return this.prisma.product.findMany({
+    const products = await this.prisma.product.findMany({
       where,
       orderBy: [{ category: 'asc' }, { name: 'asc' }],
       select: {
@@ -51,6 +51,16 @@ export class ProductsService {
         stock: true,
       },
     });
+
+    const trimmedQuery = params?.q?.trim();
+    if (!trimmedQuery) {
+      return products;
+    }
+
+    const normalizedQuery = this.normalizeSearchText(trimmedQuery);
+    return products.filter((product) =>
+      this.normalizeSearchText(product.name).includes(normalizedQuery),
+    );
   }
 
   async findOne(id: string) {
