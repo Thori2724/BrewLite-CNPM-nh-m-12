@@ -1,80 +1,88 @@
 @startuml sequence-checkout
-title Sequence Diagram - Đặt và thanh toán đơn hàng (UC-01)
+title Sequence Diagram - Đặt và thanh toán đơn hàng (UC-01) - Task 2.2 Assignment 2
 autonumber
 skinparam shadowing false
 skinparam roundcorner 8
 skinparam participantPadding 15
 skinparam boxPadding 10
 
-actor "Khách hàng\n(Customer)" as C #E3F2FD
-participant "Giao diện Web\n(Next.js UI)" as UI #E8F5E9
-participant "Máy chủ API\n(NestJS Backend)" as API #FFF9C4
-database "Cơ sở dữ liệu\n(PostgreSQL)" as DB #F3E5F5
-participant "Cổng thanh toán mô phỏng\n(Mock Gateway)" as GW #FFE0B2
+actor "Customer\n(Khách hàng)" as C #E3F2FD
+participant "Next.js UI\n(Giao diện Web)" as UI #E8F5E9
+participant "NestJS API\n(Máy chủ Backend)" as API #FFF9C4
+database "Database\n(PostgreSQL)" as DB #F3E5F5
+participant "Payment Service\n(Cổng mô phỏng)" as PAY #FFE0B2
 
-== Giai đoạn 1: Đặt đơn hàng (FR-03, FR-05, NFR-05) ==
+== Giai đoạn 1: Khởi tạo đơn hàng (FR-03, FR-05, NFR-05) ==
 
 C -> UI : Xem giỏ hàng, bấm "Tiến hành đặt đơn"
 activate UI
-UI --> C : Hiển thị trang checkout
+UI --> C : Hiển thị trang checkout (chọn hình thức nhận)
 deactivate UI
 
 C -> UI : Chọn hình thức nhận ("Tại quầy" / "Mang đi")\nvà bấm "Đặt đơn hàng"
 activate UI
-UI -> API : POST /orders\nHeader: Authorization: Bearer <accessToken>\nBody: { receiveType, items: [...] }
+UI -> API : POST /orders\nHeader: Authorization: Bearer <accessToken>\nBody: { receiveType: "AT_COUNTER" | "TAKE_AWAY", items: [...] }
 activate API
 
-API -> API : Xác thực JWT & kiểm tra vai trò CUSTOMER
+API -> API : 1. Xác thực JWT Token (thời hạn 24h, vai trò CUSTOMER)
 alt Token không hợp lệ / Hết hạn
   API --> UI : 401 Unauthorized { message: "Unauthorized" }
-  UI --> C : Chuyển hướng sang Đăng nhập (giữ nguyên giỏ hàng)
+  UI --> C : Chuyển hướng sang trang Đăng nhập (giữ nguyên giỏ hàng)
 else Token hợp lệ
-  API -> DB : BEGIN TRANSACTION
-  activate DB
-  API -> DB : Kiểm tra tồn kho cộng gộp theo từng món\n(SELECT stock FROM "Product" WHERE id IN (...))
-  DB --> API : Số lượng tồn kho hiện tại
+  API -> API : 2. Validate DTO (class-validator: giỏ không rỗng, receiveType hợp lệ)
+  alt Dữ liệu không hợp lệ (Validation Error)
+    API --> UI : 400 Bad Request { message: ["items must not be empty"] }
+    UI --> C : Hiển thị thông báo lỗi dữ liệu nhập
+  else Dữ liệu hợp lệ
+    API -> DB : BEGIN TRANSACTION
+    activate DB
+    API -> DB : Kiểm tra tồn kho cộng gộp theo từng món\n(SELECT stock FROM "Product" WHERE id IN (...))
+    DB --> API : Số lượng tồn kho hiện tại
 
-  alt Không đủ tồn kho (stock < tổng số lượng cần)
-    API -> DB : ROLLBACK
-    API --> UI : 409 Conflict { message: "Sản phẩm ... không đủ số lượng trong kho" }
-    UI --> C : Báo lỗi thiếu hàng / hết hàng (giữ nguyên giỏ hàng)
-  else Đủ tồn kho
-    API -> DB : INSERT "Order" (status = "PENDING", receiveType, totalAmount, orderNumber)
-    API -> DB : INSERT "OrderItem" (snapshot giá, quantity, size, sugar, ice, toppings)
-    API -> DB : UPDATE "Product" SET stock = stock - quantity (trừ kho trực tiếp)
-    API -> DB : COMMIT
-    DB --> API : orderId, orderNumber, totalAmount
-    deactivate DB
+    alt Không đủ tồn kho (stock < tổng số lượng cần mua)
+      API -> DB : ROLLBACK
+      API --> UI : 409 Conflict { message: "Sản phẩm ... không đủ số lượng trong kho" }
+      UI --> C : Báo lỗi thiếu hàng / hết hàng (giữ nguyên giỏ hàng)
+    else Đủ tồn kho
+      API -> DB : INSERT "Order" (status = "PENDING", receiveType, totalAmount, orderNumber autoincrement)
+      API -> DB : INSERT "OrderItem" & "OrderItemTopping" (snapshot giá, quantity, size, option)
+      API -> DB : UPDATE "Product" SET stock = stock - quantity (trừ kho trực tiếp)
+      API -> DB : COMMIT
+      DB --> API : orderId, orderNumber, totalAmount
+      deactivate DB
 
-    API --> UI : 201 Created { id: orderId, orderNumber, totalAmount, status: "PENDING" }
-    UI --> C : Hiển thị trang thanh toán\n(mã đơn, tổng tiền, phương thức Ví / Thẻ)
+      API --> UI : 201 Created { id: orderId, orderNumber, totalAmount, status: "PENDING" }
+      UI --> C : Hiển thị trang thanh toán cho đơn hàng\n(Mã đơn, tổng tiền, chọn phương thức Ví / Thẻ)
+    end
   end
 end
 deactivate API
 deactivate UI
 
-== Giai đoạn 2: Thanh toán & Thử lại nếu thất bại (FR-06, NFR-05, Exception E1) ==
+== Giai đoạn 2: Thanh toán & Xử lý Idempotency (FR-06, NFR-05, Exception E1) ==
 
 C -> UI : Chọn phương thức ("WALLET" / "CARD"), nhập số tài khoản\nvà bấm "Xác nhận thanh toán"
 activate UI
 
-loop Thực hiện thanh toán (Thử lại thanh toán nếu gặp lỗi)
-  UI -> API : POST /payments\nHeader: Authorization: Bearer <accessToken>\nHeader: Idempotency-Key: <key>\nBody: { orderId, method, accountNumber }
+loop Thực hiện thanh toán (Thử lại nếu thất bại)
+  UI -> API : POST /payments\nHeader: Authorization: Bearer <accessToken>\nHeader: Idempotency-Key: <uuid>\nBody: { orderId, method, accountNumber }
   activate API
 
-  API -> API : Xác thực JWT & kiểm tra quyền sở hữu đơn hàng (orderId)
-  API -> DB : SELECT payment FROM "Payment" WHERE idempotencyKey = <key>
+  API -> API : 1. Xác thực JWT & kiểm tra quyền sở hữu đơn hàng (orderId)
+  API -> API : 2. Validate DTO (method hợp lệ, accountNumber 8-19 chữ số)
+  
+  API -> DB : SELECT payment FROM "Payment" WHERE userId = <userId> AND idempotencyKey = <uuid>
   activate DB
   DB --> API : Kết quả tra cứu Idempotency-Key
   deactivate DB
 
   alt Trùng lặp Idempotency-Key (Duplicate Request)
-    API --> UI : 200 OK (Trả lại kết quả giao dịch trước, chống trừ tiền 2 lần)
+    API --> UI : 200 OK (Trả về kết quả giao dịch trước, chống trừ tiền 2 lần)
   else Yêu cầu thanh toán mới
-    API -> GW : Xử lý giao dịch mô phỏng (orderId, method, accountNumber, totalAmount)
-    activate GW
-    GW --> API : Kết quả thanh toán
-    deactivate GW
+    API -> PAY : Xử lý giao dịch qua cổng mô phỏng (orderId, method, accountNumber, totalAmount)
+    activate PAY
+    PAY --> API : Kết quả thanh toán (kiểm tra accountNumber)
+    deactivate PAY
 
     alt Số tài khoản kết thúc "0000" -> Thất bại (Ngoại lệ E1)
       API -> DB : BEGIN TRANSACTION
@@ -85,7 +93,7 @@ loop Thực hiện thanh toán (Thử lại thanh toán nếu gặp lỗi)
       deactivate DB
 
       API --> UI : 200 OK { id: paymentId, status: "FAILED", order: { status: "PAYMENT_FAILED" } }
-      UI --> C : Báo lỗi "Thanh toán thất bại"\n(giữ nguyên giỏ hàng & đơn hàng, hiển thị nút "Thử lại thanh toán")
+      UI --> C : Báo lỗi "Thanh toán thất bại"\n(Giữ nguyên giỏ hàng & đơn hàng, hiển thị nút "Thử lại thanh toán")
       
       C -> UI : Bấm "Thử lại thanh toán"\n(UI sinh Idempotency-Key MỚI trên cùng orderId đó)
     else Số tài khoản hợp lệ -> Thành công
