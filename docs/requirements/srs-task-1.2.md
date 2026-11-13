@@ -33,4 +33,4 @@
 | **NFR-06** | **Khả năng bảo trì** | Mã nguồn được tổ chức sạch sẽ, có tài liệu hướng dẫn và ma trận truy vết đầy đủ. | **Must** | - Cấu trúc repository chuẩn (apps/web, apps/api, docs/, tests/). <br/>- Mọi mã yêu cầu (FR/NFR) đều được liên kết trực tiếp với Use-case, API Endpoint và Test Case trong docs/traceability-matrix.md. |
 
 **Use-case chung của hệ thống:**
-<img width="2214" height="1582" alt="use-case-tổng-quát-task-1 2" src="https://github.com/user-attachments/assets/3782e1ad-693b-434b-83cb-6e1120a85417" />
+<img width="2214" height="1184" alt="use-case-tong-quat-ver2 drawio" src="https://github.com/user-attachments/assets/cc037ed2-6a2d-440f-8cfd-33c917c4117d" />
