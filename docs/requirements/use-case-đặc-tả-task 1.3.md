@@ -17,5 +17,4 @@ Task 1.3 – Đặc tả một use-case trọng tâm
 ---
 
 Liên kết yêu cầu:
-* Chức năng: FR-03 (Giỏ hàng), FR-04 (Xác thực), FR-05 (Khởi tạo đơn hàng), FR-06 (Thanh toán đơn hàng), FR-07 (Lịch sử & Theo dõi Đơn); mở rộng FR-10 (Khuyến mãi & Voucher), FR-11 (Tích điểm Thành viên).  
-* Phi chức năng: NFR-02 (Bảo mật), NFR-05 (Độ tin cậy & Idempotency).
+* Chức năng: FR-03 (Giỏ hàng), FR-05 (Đặt và thanh toán đơn hàng).
