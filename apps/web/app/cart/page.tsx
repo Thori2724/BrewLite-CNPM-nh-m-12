@@ -244,16 +244,12 @@ export default function CartPage() {
                 <span className="font-semibold text-bone">{totalCount} món</span>
               </div>
               <div className="flex justify-between items-baseline pt-2 border-t border-bone/20">
-                <span className="text-sm font-semibold text-bone/90">Tổng tạm tính:</span>
+                <span className="text-sm font-semibold text-bone/90">Tính tổng:</span>
                 <span className="text-xl sm:text-2xl font-bold text-bone">
                   {formatVnd(totalAmount)}
                 </span>
               </div>
             </div>
-
-            <p className="text-[11px] sm:text-xs text-bone/70">
-              * Giá trên là tạm tính; tiền thật do server tính toán chính thức khi tạo đơn hàng.
-            </p>
 
             {/* Nút Tiến hành đặt đơn chuyển sang trang /checkout */}
             <Link

@@ -978,10 +978,10 @@ function CheckoutContent() {
                 })}
               </div>
 
-              {/* Tạm tính & Tổng cộng */}
+              {/* Tính tổng & Tổng cộng */}
               <div className="border-t border-tan/60 pt-3 space-y-1 text-sm">
                 <div className="flex justify-between text-noir/70">
-                  <span>Tạm tính:</span>
+                  <span>Tính tổng:</span>
                   <span>{formatVnd(totalAmount)}</span>
                 </div>
                 <div className="flex justify-between items-baseline pt-2 border-t border-tan/40">
@@ -990,9 +990,6 @@ function CheckoutContent() {
                     {formatVnd(totalAmount)}
                   </span>
                 </div>
-                <p className="text-[11px] text-noir/50 italic pt-1">
-                  * Giá tạm tính. Tổng tiền chính thức do server xác nhận khi tạo đơn.
-                </p>
               </div>
 
               {/* Nút Đặt đơn */}
