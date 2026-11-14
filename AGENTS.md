@@ -14,7 +14,7 @@ Nói rõ vai đã xác định ngay trong câu trả lời đầu tiên, rồi c
 
 ## 1. Nguồn sự thật (không tự ý thay đổi)
 - Đề bài gốc: `docs/de-bai/Assignment2.md`
-- **Hợp đồng API: `docs/api-contract.md`**. FE và BE làm theo đúng từng chữ (tên endpoint, tên trường, kiểu dữ liệu, mã lỗi, thông báo lỗi tiếng Việt). Nếu code, tài liệu khác hoặc yêu cầu của tôi khác hợp đồng: DỪNG và hỏi tôi. Không tự đổi hợp đồng, không tự thêm endpoint hoặc trường ngoài hợp đồng.
+- **Hợp đồng API: `docs/api-contract.md` (bản 2, 18 endpoint)**. FE và BE làm theo đúng từng chữ (tên endpoint, tên trường, kiểu dữ liệu, mã lỗi, thông báo lỗi tiếng Việt). Nếu code, tài liệu khác hoặc yêu cầu của tôi khác hợp đồng: DỪNG và hỏi tôi. Không tự đổi hợp đồng, không tự thêm endpoint hoặc trường ngoài hợp đồng.
 - Yêu cầu `docs/requirements/`, sơ đồ `docs/diagrams/`, kiến trúc `docs/architecture/` đang được sửa cho khớp hợp đồng. Nếu mâu thuẫn với hợp đồng thì theo hợp đồng và báo tôi.
 - Nếu tài liệu mâu thuẫn, thiếu hoặc mơ hồ: DỪNG và hỏi tôi, không tự quyết.
 
@@ -23,14 +23,17 @@ Nói rõ vai đã xác định ngay trong câu trả lời đầu tiên, rồi c
 | Khu vực | Chủ sở hữu |
 |---|---|
 | `apps/api/**` (code, test, `prisma/`) | **BE** |
-| `apps/api/prisma/schema.prisma` và `apps/api/prisma/migrations/**` | Chỉ **BE được tôi chỉ định làm dòng 4a** (schema). BE khác cần đổi schema thì DỪNG, báo người đó |
+| `apps/api/prisma/schema.prisma` và `apps/api/prisma/migrations/**` | Chỉ **BE**, và chỉ thay đổi duy nhất là thêm cột `isActive` vào User (hợp đồng mục 8). Cần đổi gì khác trong schema thì DỪNG và hỏi tôi |
 | `apps/web/**` (code, test, giao diện) | **FE** |
+| Thư mục `staff` của khu giao diện `/staff` (ví dụ `apps/web/src/app/staff/**`, đường dẫn thật tùy cấu trúc Next.js) | **FE**. Nếu tôi nói "tôi làm khu staff" thì vai **BE** được sửa riêng thư mục này |
 | `apps/api/Dockerfile`, `apps/api/.dockerignore`, `apps/web/Dockerfile`, `apps/web/.dockerignore` | **Dev&Ops** (dù nằm trong thư mục của app khác) |
 | `docker-compose*.yml`, `.github/**`, `tests/**` (E2E), mọi file triển khai (Caddyfile, script deploy...) | **Dev&Ops** |
 | `docs/**` | **Dev&Ops / Docs** |
 | `README.md` ở thư mục gốc | **Dev&Ops / Docs** (BE và FE ghi cách chạy vào `apps/api/README.md` và `apps/web/README.md` của mình) |
 | `.gitignore`, `AGENTS.md` | **Dev&Ops** |
 | `.env.example` | **Dùng chung**: mỗi vai chỉ được THÊM hoặc sửa dòng trong khối của mình (`# --- API (BE) ---`, `# --- WEB (FE) ---`, `# --- DEPLOY (Dev&Ops) ---`), không đụng dòng của vai khác |
+
+Khi BE làm khu `/staff`: chỉ tạo/sửa file trong thư mục `staff`. Hàm gọi API và bảng nhãn dùng cho khu này đặt ngay trong thư mục `staff`, không sửa file dùng chung của FE (layout, điều hướng, nhãn, hàm gọi API chung). Cần thêm gì ở file chung thì viết tin nhắn cho FE. Việc chuyển hướng sau đăng nhập và chặn khách vào `/staff` thuộc FE.
 
 Quy tắc khi cần làm gì đó NGOÀI khu vực của vai mình:
 1. DỪNG, không tự sửa, dù chỉ một dòng.
@@ -48,6 +51,7 @@ Quy tắc giữ cho 3 người không đụng nhau:
 - Database: PostgreSQL 16 + Prisma. Chạy local: Docker Compose. Ngôn ngữ: TypeScript.
 - `apps/web` và `apps/api` là hai package độc lập, mỗi bên có `package.json` riêng. KHÔNG tạo `package.json` ở thư mục gốc, KHÔNG dùng workspaces, Nx hay Turborepo.
 - Giao diện: được dùng Tailwind CSS. Chưa thêm Zustand, React Query, PWA.
+- FE được thêm 2 thư viện đúng mục đích: một thư viện tạo mã QR (ví dụ `qrcode.react`) cho màn thanh toán, và `sonner` cho thông báo (chỉ khi popup hiện tại chưa cố định được khi cuộn trang).
 - Thư viện chuẩn được phép cho đúng việc của nó: Prisma, class-validator, class-transformer, bcrypt (hoặc bcryptjs nếu bcrypt lỗi trên Windows), @nestjs/jwt, @nestjs/config. Thư viện test và công cụ E2E: phải hỏi tôi trước khi thêm. Mọi thư viện khác cũng phải hỏi trước.
 - Không thêm hoặc thay framework, dịch vụ mới nếu chưa hỏi tôi.
 
@@ -71,14 +75,16 @@ Quy tắc giữ cho 3 người không đụng nhau:
 - Tiền là số nguyên VND. Server tự tính tiền, không bao giờ tin giá từ client.
 
 ### Riêng BE
-- Làm đúng hợp đồng: không thêm endpoint ngoài 9 endpoint. Route `GET /orders/me` phải khai báo TRƯỚC `GET /orders/:id`.
+- Làm đúng hợp đồng: không thêm endpoint ngoài 18 endpoint. Route `GET /orders/me` khai báo TRƯỚC `GET /orders/:id`, và `GET /products/manage` khai báo TRƯỚC `GET /products/:id`.
 - Validate đầu vào bằng class-validator. Lỗi theo chuẩn NestJS: kiểm tra dữ liệu thì `message` là mảng chuỗi tiếng Anh, lỗi nghiệp vụ thì `message` là chuỗi tiếng Việt đúng như hợp đồng.
 - Mật khẩu băm bcrypt, JWT hết hạn 24 giờ, không bao giờ trả hoặc ghi log mật khẩu.
 - Thanh toán: kiểm tra theo đúng thứ tự trong hợp đồng; số tài khoản kết thúc `0000` thì thất bại; chỉ lưu 4 số cuối, KHÔNG ghi log số tài khoản đầy đủ.
-- Tạo đơn và trừ kho trong một transaction, điều kiện `stock >= tổng số lượng cần` (cộng gộp theo món). Không dùng cột `version`.
-- Hàm `validateTransition` cho trạng thái đơn và unit test đầy đủ, dù một số trạng thái chưa có API kích hoạt.
-- Seed dùng upsert theo ID cố định trong hợp đồng, chạy lại nhiều lần không nhân đôi dữ liệu.
-- KHÔNG tạo bảng `Size`, `Promotion`, `LoyaltyTransaction`.
+- Tạo đơn trong một transaction (Order, OrderItem, OrderItemTopping). KHÔNG trừ kho; chỉ kiểm tra mọi món đang bán (`stock > 0`), có món tạm hết thì từ chối cả đơn bằng 409. Giữ cột `stock`, không xóa. Không dùng cột `version`.
+- Dùng lại hàm `validateTransition` cho `PATCH /orders/:id/status` và `POST /orders/:id/cancel`, không sửa quy tắc chuyển trạng thái (hủy chỉ từ PENDING, PAYMENT_FAILED, PAID). Khi đổi trạng thái, cập nhật có điều kiện `status` còn đúng như lúc đọc, sai thì trả 409.
+- Seed dùng upsert theo ID cố định trong hợp đồng, chạy lại nhiều lần không nhân đôi dữ liệu. Món đã tồn tại thì KHÔNG ghi đè (`update` rỗng). Tài khoản đã tồn tại chỉ cập nhật `displayName`, `role`, `passwordHash`, không đụng `isActive`. Seed 1 khách, 3 STAFF, 1 ADMIN theo mục 8.3 hợp đồng, mật khẩu lấy từ `DEMO_USER_PASSWORD`.
+- KHÔNG tạo bảng `Size`, `Promotion`, `LoyaltyTransaction`. Schema chỉ thêm đúng một cột `isActive` vào User.
+- Phân quyền: guard kiểm tra theo thứ tự JWT, vai trò, rồi đọc `isActive` từ database ở mỗi request (khóa có hiệu lực ngay). Sai vai trò hoặc bị khóa thì 403 đúng thông báo trong hợp đồng. Đăng nhập tài khoản bị khóa cũng 403. ADMIN chỉ khóa được STAFF.
+- Món: ID tự sinh; `imageUrl` trống thì dùng ảnh mặc định cố định; không có API xóa món.
 
 ### Riêng FE
 - Giá và nhãn hiển thị: dùng bảng nhãn tiếng Việt ở mục 7 của hợp đồng. Mã kỹ thuật giữ tiếng Anh.
@@ -87,33 +93,34 @@ Quy tắc giữ cho 3 người không đụng nhau:
 - Khi chưa có API thật: dùng dữ liệu giả đúng hình dạng hợp đồng, đặt trong một thư mục riêng, dễ tắt đi khi nối API thật.
 - Mọi trang đều có trạng thái loading, empty, error. Gặp lỗi 401 thì chuyển về đăng nhập.
 - Thanh toán thất bại: giữ `orderId`, bấm "Thử lại thanh toán" thì gọi lại `POST /payments` cho đơn đó với `Idempotency-Key` MỚI. Không tạo đơn mới.
+- Thanh toán chỉ bằng ví điện tử (ZaloPay/Momo): màn QR giả tạo từ mã đơn, đếm ngược 5 giây tự thành công, thoát khỏi QR là thất bại. Luôn gửi `method = WALLET` kèm số tài khoản cố định theo mục 6.2 hợp đồng, không có ô nhập số, không có thẻ. Nút "Thanh toán" có cho đơn PENDING và PAYMENT_FAILED.
+- Giỏ hàng chỉ xóa khi thanh toán thành công; thất bại giữ nguyên giỏ.
+- Không hiển thị số lượng tồn kho. `stock = 0` là tạm hết (hình xám, nhãn "Hết hàng", nút "Tạm hết").
+- Hủy đơn: khách có nút Hủy ở đơn PENDING, PAYMENT_FAILED, PAID, có hộp xác nhận, gọi `POST /orders/:id/cancel`. Đơn PAID đã hủy thì hiện dòng "Tiền sẽ được hoàn lại (mô phỏng)".
+- Khu `/staff` và chuyển hướng theo vai trò làm đúng mục 9 hợp đồng. Nhận 401 thì về đăng nhập; nhận 403 "Tài khoản đã bị khóa" thì thông báo và tự đăng xuất. Khu `/staff` chỉ cần tối ưu cho máy tính.
 - Giao diện ưu tiên máy tính (desktop-first) nhưng vẫn responsive.
 
 ### Riêng Dev&Ops
 - CI: Install → Lint → Test → Build cho cả API và web; PR không merge được nếu CI đỏ.
 - Docker: `NEXT_PUBLIC_API_URL` phải truyền lúc build image web; `CORS_ORIGIN` đặt đúng địa chỉ web thật. Production KHÔNG mở cổng 5432 của PostgreSQL ra ngoài.
 - Không để secret xuất hiện trong repository hoặc log CI.
+- Seed chạy tự động mỗi lần deploy cùng migration. `DEMO_USER_PASSWORD` đặt trong Render và có dòng mẫu trong `.env.example` (không ghi mật khẩu thật vào repo).
 - Khi sửa tài liệu: mỗi thay đổi qua pull request và ghi rõ lý do.
 
 ## 7. Quyết định đã chốt (theo hợp đồng API, thay cho mọi chỗ cũ khác)
 - Ưu tiên giao diện WEB trên máy tính (thầy yêu cầu), vẫn responsive. Không làm PWA.
 - Giỏ hàng lưu trên trình duyệt (localStorage), chỉ gửi lên server khi đặt đơn.
-- KHÔNG làm: giao diện nhân viên/quản lý, API đổi trạng thái đơn, API thêm/sửa/xóa món, hủy đơn và tự hủy sau 15 phút, voucher, tích điểm, `GET /auth/me`, phân trang, polling tự động mỗi 5 giây. Trang theo dõi đơn chỉ tải khi mở trang hoặc khi bấm tải lại.
+- KHÔNG làm: tự hủy sau 15 phút, voucher, tích điểm, hoàn tiền thật, lùi trạng thái đơn, timer tự chuyển trạng thái, xóa hẳn món, tạo danh mục mới, tải ảnh lên, tạo/sửa/xóa nhân viên, xếp ca, `GET /auth/me`, phân trang, polling tự động. Danh sách đầy đủ ở mục 10 hợp đồng. Trang theo dõi đơn chỉ tải khi mở trang hoặc khi bấm tải lại. (Giao diện nhân viên/quản lý, đổi trạng thái, hủy đơn, quản lý món, khóa nhân viên: ĐANG LÀM.)
 - Vai trò người dùng: CUSTOMER, STAFF, ADMIN. Đăng ký luôn tạo CUSTOMER.
 - Một đơn có thể có nhiều lần thanh toán. Mỗi đơn chỉ có tối đa một thanh toán SUCCESS.
-- Tồn kho tính theo món, không theo size. Menu xem được không cần đăng nhập.
+- Không còn tồn kho đếm ly: `stock > 0` là đang bán, `stock = 0` là tạm hết (nút gạt đặt 999 hoặc 0). Menu xem được không cần đăng nhập.
 - Trạng thái đơn: PENDING → PAID → PREPARING → READY → COMPLETED, cộng PAYMENT_FAILED và CANCELLED. Chỉ PENDING, PAYMENT_FAILED mới thanh toán được.
+- Hủy đơn: khách hủy đơn của mình, nhân viên hủy đơn bất kỳ, đều chỉ khi đơn ở PENDING, PAYMENT_FAILED, PAID. Không lùi trạng thái.
+- Phân quyền: STAFF gạt đang bán/tạm hết, đổi trạng thái và hủy đơn. ADMIN làm thêm việc thêm/sửa/ẩn món và khóa/mở khóa STAFF.
+- Một trang đăng nhập chung; sau đăng nhập CUSTOMER về menu, STAFF/ADMIN về `/staff`.
 
 ## 8. Triển khai lên mạng (ĐÃ CHỐT)
-Chi tiết xem tại ADR-009 (`docs/architecture/adr/009-render-deployment.md`). 8 quyết định đã chốt:
-1. Nền tảng: Render (quản lý qua Blueprint `render.yaml`).
-2. Ba dịch vụ độc lập: `brewlite-web` (Docker, `apps/web`), `brewlite-api` (Docker, `apps/api`), `brewlite-db` (Render PostgreSQL 16).
-3. Web và API có HAI domain riêng do Render cấp (dạng `*.onrender.com`). Bỏ quy tắc định tuyến không tiền tố qua Nginx. Web gọi API trực tiếp qua domain của API và bật CORS (`CORS_ORIGIN`).
-4. KHÔNG dùng Nginx, CloudFront, EC2, ECR, SSM, Caddy.
-5. Migration chạy bằng `preDeployCommand: npx prisma migrate deploy` (hoặc chạy từ máy local qua External Database URL nếu dùng gói Free). Service API khởi động bằng `dockerCommand: node dist/main` (ghi đè lệnh CMD trong Dockerfile). Trên Render không tự động migrate hay seed lúc khởi động.
-6. Production KHÔNG seed tài khoản demo. Chỉ seed dữ liệu menu (12 món) qua External Database URL.
-7. Dockerfile của API và Web GIỮ NGUYÊN cho môi trường local (#24). Dockerfile API vẫn giữ CMD migrate và seed cho local.
-8. Secret không vào repo. `JWT_SECRET` do Render sinh tự động hoặc nhập trên Dashboard; `DATABASE_URL` lấy từ kết nối nội bộ của `brewlite-db`.
+Triển khai trên Render (web, API, PostgreSQL); image đẩy lên GHCR; deploy bằng Deploy Hook (chi tiết trong `docs/deployment.md`). Chỉ Dev&Ops làm hạ tầng. Tiết kiệm hạn mức miễn phí: chỉ deploy khi tôi bảo (một lần giữa chừng để kiểm tra, một lần bản cuối).
 
 ## 9. Git (3 người làm song song)
 - Không có nhánh `dev`. Nhánh ghép chung là `some-diagram-and-SRS` (gọi tắt: nhánh some).
@@ -121,6 +128,7 @@ Chi tiết xem tại ADR-009 (`docs/architecture/adr/009-render-deployment.md`).
 - KHÔNG đẩy thẳng lên `main` hay nhánh some. Làm xong một việc thì push nhánh của vai mình, rồi mở pull request vào nhánh some (nhớ đổi ô "base" khỏi `main`); CI xanh mới merge. Nhánh some chỉ được đưa vào `main` một lần ở cuối, do Dev&Ops làm.
 - KHÔNG dùng `git add .` hoặc `git add -A`. Chỉ `git add` từng đường dẫn nằm trong khu vực của vai mình. Trước mỗi commit chạy `git status` và kiểm tra tất cả file đều thuộc khu vực của mình; file nào ngoài khu vực thì bỏ ra, không commit.
 - Một pull request chỉ chứa file trong khu vực của một vai.
+- Nếu BE làm khu `/staff`: dùng nhánh riêng (ví dụ `BE-staff`) tách từ nhánh some, và mở pull request riêng chỉ chứa thư mục `staff` (ngoại lệ của quy tắc "một pull request chỉ chứa file của một vai").
 - Commit nhỏ, thông điệp rõ có phạm vi: `feat(api):`, `feat(web):`, `fix(api):`, `ci:`, `docs:`, `chore:`.
 - Không tự đẩy code nếu tôi chưa bảo. Hướng dẫn tôi từng lệnh `git add`, `git commit`, `git push`.
 - Không bao giờ add `.env`, `.role.local`, file khóa (`*.pem`) hoặc `node_modules`.
