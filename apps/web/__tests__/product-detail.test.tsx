@@ -1,10 +1,11 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import ProductDetailPage from '../app/menu/[id]/page';
 import * as api from '../services/api';
 import { ProductDetail } from '../services/api';
 import * as navigation from 'next/navigation';
+import { CartProvider } from '../context/CartContext';
 
 vi.mock('next/navigation', () => ({
   useParams: vi.fn(() => ({ id: '11111111-0000-0000-0000-000000000001' })),
@@ -63,6 +64,10 @@ describe('Trang chi tiết món (ProductDetailPage)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(navigation.useParams).mockReturnValue({ id: '11111111-0000-0000-0000-000000000001' });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   // 1. Loading state
@@ -288,5 +293,54 @@ describe('Trang chi tiết món (ProductDetailPage)', () => {
 
     // 4. Giá tạm tính vẫn là 29.000đ (giá gốc 29.000 + Size S phụ thu 0đ)
     expect(screen.getAllByText(/29\.000/).length).toBeGreaterThan(0);
+  });
+
+  // 11. Bấm thêm vào giỏ: hiện popup toast nổi có role="status", tự biến mất sau 6 giây và đếm lại khi bấm liên tiếp
+  it('11. Bấm thêm vào giỏ: hiện popup toast nổi có role="status", tự biến mất sau 6 giây và đếm lại khi bấm liên tiếp', async () => {
+    vi.mocked(api.getProductById).mockResolvedValue(mockItem);
+
+    render(
+      <CartProvider>
+        <ProductDetailPage />
+      </CartProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { level: 1, name: 'Cà phê sữa đá' })).toBeInTheDocument();
+    });
+
+    vi.useFakeTimers();
+
+    const addButton = screen.getByRole('button', { name: /\+ Thêm vào giỏ/ });
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+
+    // Bấm thêm vào giỏ lần 1
+    fireEvent.click(addButton);
+
+    // Popup toast xuất hiện với role="status" và đúng nội dung Lựa chọn A
+    const toast = screen.getByRole('status');
+    expect(toast).toBeInTheDocument();
+    expect(toast).toHaveTextContent('✓ Đã thêm vào giỏ hàng!');
+
+    // Sau 3 giây: popup vẫn còn hiển thị
+    act(() => {
+      vi.advanceTimersByTime(3000);
+    });
+    expect(screen.getByRole('status')).toBeInTheDocument();
+
+    // Bấm thêm lần nữa ở giây thứ 3: đặt lại bộ đếm 6s
+    fireEvent.click(addButton);
+
+    // Trôi qua thêm 4 giây (tổng 7s kể từ lần 1, nhưng mới 4s kể từ lần 2): popup VẪN CÒN
+    act(() => {
+      vi.advanceTimersByTime(4000);
+    });
+    expect(screen.getByRole('status')).toBeInTheDocument();
+
+    // Trôi tiếp 2.1 giây (vượt qua 6s kể từ lần 2): popup tự biến mất hoàn toàn
+    act(() => {
+      vi.advanceTimersByTime(2100);
+    });
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
   });
 });

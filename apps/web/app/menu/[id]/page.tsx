@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, Suspense } from 'react';
+import { useEffect, useState, useRef, Suspense } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import {
@@ -43,9 +43,21 @@ function ProductDetailContent() {
   const [note, setNote] = useState<string>('');
   const [quantity, setQuantity] = useState<number>(1);
   const [addedSuccess, setAddedSuccess] = useState<boolean>(false);
+  const [isToastFading, setIsToastFading] = useState<boolean>(false);
   const [cartError, setCartError] = useState<string | null>(null);
   const [toppingWarning, setToppingWarning] = useState<string | null>(null);
   const [quantityWarning, setQuantityWarning] = useState<string | null>(null);
+
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const fadeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Dọn bộ đếm giờ khi component unmount / người dùng rời trang
+  useEffect(() => {
+    return () => {
+      if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+      if (fadeTimerRef.current) clearTimeout(fadeTimerRef.current);
+    };
+  }, []);
 
   useEffect(() => {
     if (!id) return;
@@ -205,10 +217,21 @@ function ProductDetailContent() {
       return;
     }
 
+    // Đặt lại bộ đếm thời gian nếu người dùng bấm thêm nhiều lần liên tiếp
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    if (fadeTimerRef.current) clearTimeout(fadeTimerRef.current);
+
+    setIsToastFading(false);
     setAddedSuccess(true);
-    setTimeout(() => {
+
+    fadeTimerRef.current = setTimeout(() => {
+      setIsToastFading(true);
+    }, 5600);
+
+    toastTimerRef.current = setTimeout(() => {
       setAddedSuccess(false);
-    }, 2500);
+      setIsToastFading(false);
+    }, 6000);
   };
 
   // 1. Trạng thái Loading
@@ -275,10 +298,20 @@ function ProductDetailContent() {
         </Link>
       </div>
 
-      {/* Thông báo thêm vào giỏ thành công */}
+      {/* Popup thông báo thêm vào giỏ thành công (nổi góc phải, thẳng hàng dưới biểu tượng giỏ) */}
       {addedSuccess && (
-        <div className="bg-cream border border-moss text-kombu px-4 py-3 rounded-control text-sm font-semibold text-center shadow-soft">
-          ✓ Đã thêm vào giỏ hàng! Xem tại biểu tượng 🛒
+        <div className="fixed top-[92px] inset-x-0 z-50 pointer-events-none">
+          <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 flex justify-end">
+            <div
+              role="status"
+              aria-live="polite"
+              className={`pointer-events-auto max-w-[calc(100vw-2rem)] sm:max-w-sm bg-cream border border-moss text-kombu px-4 py-3 rounded-control text-sm font-semibold shadow-raised flex items-center gap-2 transition-all duration-400 ease-out ${
+                isToastFading ? 'opacity-0 -translate-y-1' : 'opacity-100 translate-y-0'
+              }`}
+            >
+              ✓ Đã thêm vào giỏ hàng!
+            </div>
+          </div>
         </div>
       )}
 

@@ -136,9 +136,10 @@ describe('Trang Giỏ hàng (CartPage)', () => {
     expect(screen.getByRole('heading', { level: 2, name: 'Bánh croissant phô mai' })).toBeInTheDocument();
     expect(screen.queryByText(/undefined/i)).not.toBeInTheDocument();
 
-    // Tổng tạm tính = 103.000 đ
+    // Tính tổng = 103.000 đ
     expect(screen.getAllByText(/103\.000/).length).toBeGreaterThan(0);
-    expect(screen.getByText(/Giá trên là tạm tính; tiền thật do server tính toán/i)).toBeInTheDocument();
+    expect(screen.getByText('Tính tổng:')).toBeInTheDocument();
+    expect(screen.queryByText(/Giá trên là tạm tính; tiền thật do server tính toán/i)).not.toBeInTheDocument();
   });
 
   it('3. Tăng/giảm số lượng cập nhật thành tiền dòng và tổng tiền', async () => {
