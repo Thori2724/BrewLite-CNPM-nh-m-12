@@ -34,7 +34,7 @@ Mở trình duyệt truy cập: [http://localhost:3000](http://localhost:3000)
 - **Trang Chi tiết món ([/menu/:id](http://localhost:3000/menu/11111111-0000-0000-0000-000000000001)):** Render động các tùy chọn từ server (`sizes`, `sugarLevels`, `iceLevels`, `toppings`). Tự động ẩn các phần tùy chọn có mảng rỗng (ví dụ món bánh `CAKE`). Lựa chọn mặc định: Size S, Đường P100, Đá NORMAL. Giới hạn tối đa 3 loại topping không trùng, số lượng 1..10. Món hết hàng (`stock = 0`) khóa nút thêm vào giỏ.
 - **Trang Giỏ hàng ([/cart](http://localhost:3000/cart)):** Quản lý các món đã chọn, tăng/giảm số lượng (tối đa 10 ly/món), xóa từng món hoặc xóa tất cả, tính tổng tiền tạm tính. Giới hạn tối đa 20 dòng món khác nhau.
 - **Trang Đăng nhập / Đăng ký ([/login](http://localhost:3000/login), [/register](http://localhost:3000/register)):** Đăng ký tài khoản khách hàng mới, đăng nhập nhận JWT Token lưu an toàn vào `localStorage`. Trên Header: hiển thị liên kết **"Đơn của tôi"** (`/orders`), tên người dùng và nút "Đăng xuất" khi đã đăng nhập.
-- **Trang Đặt đơn & Thanh toán ([/checkout](http://localhost:3000/checkout)):** Bắt buộc đăng nhập (bảo vệ bởi `useRequireAuth`), chọn hình thức nhận (`AT_COUNTER` / `TAKE_AWAY`), đặt đơn khởi tạo trạng thái `PENDING` và thanh toán qua cổng mô phỏng (`POST /payments`). Khôi phục đơn khi F5, kiểm soát Idempotency chặt chẽ.
+- **Trang Đặt đơn & Thanh toán ([/checkout](http://localhost:3000/checkout)):** Bắt buộc đăng nhập (bảo vệ bởi `useRequireAuth`), chọn hình thức nhận (`AT_COUNTER` / `TAKE_AWAY`), chọn ví hiển thị (`ZaloPay` / `MoMo`), đặt đơn khởi tạo trạng thái `PENDING` rồi mở màn thanh toán QR giả đếm ngược 5 giây (tự động thanh toán `SUCCESS` khi hết 5 giây hoặc `FAILED` / `PAYMENT_FAILED` khi khách bấm thoát/đóng QR). Hỗ trợ mở trực tiếp qua `/checkout?orderId=<id>`, khôi phục đơn khi F5 và kiểm soát Idempotency chặt chẽ.
 - **Trang Lịch sử đơn hàng ([/orders](http://localhost:3000/orders)):** Bắt buộc đăng nhập (`GET /orders/me`), hiển thị toàn bộ danh sách đơn của người dùng theo đúng thứ tự mới nhất từ server (không phân trang), kèm nút "Tải lại", trạng thái loading / empty / error.
 - **Trang Xác nhận & Theo dõi chi tiết đơn hàng ([/orders/:id](http://localhost:3000/orders/33333333-0000-0000-0000-000000000001)):** Bắt buộc đăng nhập (`GET /orders/:id`), tải dữ liệu **1 lần khi mở trang** và khi bấm nút **"Tải lại"** (không dùng polling tự động). Hiển thị banner theo trạng thái đơn, mã `#orderNumber` nổi bật (không lộ UUID trên giao diện), thanh tiến trình (stepper) cho luồng chính (`PENDING → PAID → PREPARING → READY → COMPLETED`), danh sách món (ẩn hoàn toàn Size/Đường/Đá nếu giá trị là `null` đối với món bánh), tổng tiền từ server, lịch sử giao dịch thanh toán và nút **"Thanh toán" / "Thử lại thanh toán"** (với `Idempotency-Key` mới trên đúng `orderId` hiện tại) khi đơn ở `PENDING` hoặc `PAYMENT_FAILED`.
 
@@ -44,7 +44,7 @@ Mở trình duyệt truy cập: [http://localhost:3000](http://localhost:3000)
 - **Các trang chia bố cục 2 cột trên Desktop:**
   - **Chi tiết món (`/menu/:id`):** Chia 2 cột từ breakpoint `md` (`md:grid-cols-12`): cột trái (`md:col-span-5`, dính `md:sticky`) hiển thị ảnh, tên và giá gốc; cột phải (`md:col-span-7`) hiển thị các tùy chọn, số lượng, giá tạm tính và nút Thêm vào giỏ.
   - **Giỏ hàng (`/cart`):** Chia 2 cột từ breakpoint `lg` (`lg:grid-cols-12`): cột trái (`lg:col-span-8`) là danh sách dòng món; cột phải (`lg:col-span-4`, dính `lg:sticky`) là khung tóm tắt tổng tiền và nút Tiến hành đặt đơn.
-  - **Đặt đơn & Thanh toán (`/checkout`):** Chia 2 cột từ breakpoint `lg` (`lg:grid-cols-12`) ở cả bước Đặt đơn và bước Thanh toán: cột trái (`lg:col-span-7`) là form chọn hình thức/thanh toán; cột phải (`lg:col-span-5`, dính `lg:sticky`) là tóm tắt đơn hàng và nút xác nhận.
+  - **Đặt đơn & Thanh toán (`/checkout`):** Bước 1 chia 2 cột từ breakpoint `lg` (`lg:grid-cols-12`): cột trái (`lg:col-span-7`) là form chọn hình thức nhận, ví QR hiển thị (`ZaloPay` / `MoMo`) và ghi chú; cột phải (`lg:col-span-5`, dính `lg:sticky`) là tóm tắt đơn hàng và nút xác nhận. Bước 2 hiển thị màn thanh toán QR giả (`max-w-2xl`) với mã QR theo mã đơn, đếm ngược 5 giây và nút thoát.
   - **Chi tiết đơn hàng (`/orders/:id`):** Chia 2 cột từ breakpoint `lg` (`lg:grid-cols-12`): cột trái (`lg:col-span-7`) là danh sách món và lịch sử thanh toán; cột phải (`lg:col-span-5`, dính `lg:sticky`) là thông tin đơn, tổng tiền và nút hành động.
 - **Các trang và trạng thái căn giữa gọn (`max-w-md` / `max-w-lg`):** Trang Đăng nhập (`/login`), Đăng ký (`/register`), màn hình Thanh toán thành công, giỏ hàng trống và các trạng thái đang tải / báo lỗi / không tìm thấy món đều đặt trong thẻ căn giữa vừa phải, không bị kéo dãn toàn màn hình.
 - **Chuẩn kiểm tra dữ liệu (Validation) & Định dạng tiền tệ (`utils/validation.ts`):**
@@ -92,11 +92,9 @@ NEXT_PUBLIC_USE_MOCK=false
   - Tự động nạp sẵn 7 đơn hàng mẫu đúng hình dạng hợp đồng (`MOCK_SEED_ORDERS`) vào `brewlite_mock_orders_db_v2`, phủ đủ cả 7 trạng thái (`PENDING`, `PAID`, `PREPARING`, `READY`, `COMPLETED`, `PAYMENT_FAILED`, `CANCELLED`).
   - Giả lập trạng thái danh sách rỗng (`/orders` empty): đặt `localStorage.setItem('brewlite_mock_orders_empty', 'true')` và tải lại trang; xóa khóa này để quay lại danh sách có dữ liệu.
   - Giả lập trạng thái 404 (`/orders/:id` not found): truy cập `/orders/404` hoặc một UUID bất kỳ không tồn tại.
-  - Tài khoản thử nghiệm thanh toán:
-    * 8..19 chữ số thông thường (ví dụ: `12345678`, `9704123456789012`): Thanh toán THÀNH CÔNG (`status: 'SUCCESS'`).
-    * Số kết thúc `0000` (ví dụ: `12340000`, `9704000000000000`): Thanh toán THẤT BẠI (`status: 'FAILED'`, lý do `"Giao dịch bị từ chối (mô phỏng)"`).
-    * `9999999991`: Giả lập timeout.
-    * `9999999992`: Giả lập lỗi mất mạng.
+  - Cơ chế giả lập thanh toán QR (màn thanh toán QR luôn gửi `method = "WALLET"`):
+    * Đếm ngược hết 5 giây mà khách không bấm thoát: FE gửi `accountNumber = "0900000001"` → Mock trả về THÀNH CÔNG (`status: 'SUCCESS'`, đơn chuyển `PAID`).
+    * Bấm **"Hủy thanh toán"** hoặc nút đóng trên màn QR: FE gửi `accountNumber = "0900000000"` (kết thúc `0000`) → Mock trả về THẤT BẠI (`status: 'FAILED'`, lý do `"Giao dịch bị từ chối (mô phỏng)"`, đơn thành `PAYMENT_FAILED`).
     * Ghi chú đơn chứa `hethang`: Giả lập lỗi hết hàng `409 Conflict` (trả về mảng `details` gồm `{ productId, name }`).
 - Khi tắt mock (`NEXT_PUBLIC_USE_MOCK=false`):
   - Gọi fetch thật tới `NEXT_PUBLIC_API_URL` (kèm `Authorization: Bearer <accessToken>`):
@@ -168,14 +166,13 @@ NEXT_PUBLIC_USE_MOCK=false
 - **Quy tắc Idempotency-Key (UUID v4):**
   - Mỗi giao dịch thanh toán sinh một khóa định danh duy nhất (8..100 ký tự) gửi qua header `Idempotency-Key`.
   - **Kết quả chưa rõ ràng** (mất mạng, timeout, lỗi 5xx): BẮT BUỘC **GIỮ NGUYÊN** key cũ và đơn chờ để khách bấm thử lại an toàn, tránh trừ tiền 2 lần.
-  - **Thông tin thanh toán thay đổi** (đổi phương thức Ví/Thẻ, đổi số tài khoản) hoặc **thất bại rõ ràng** (`status: 'FAILED'`): BẮT BUỘC **ĐỔI SANG KEY MỚI** cho lượt thử lại.
+  - **Mỗi lần gọi thanh toán QR mới** (bao gồm cả khi bấm **"Thử lại thanh toán"** sau `FAILED`): BẮT BUỘC **ĐỔI SANG KEY MỚI** cho lượt thử lại; chỉ giữ nguyên key khi gửi lại ĐÚNG request gặp lỗi mạng/timeout/5xx.
   - Phía server/mock:
     * Cùng key + cùng `orderId`: luôn trả lại kết quả giao dịch cũ với mã HTTP 200, bất kể body.
     * Cùng key + khác `orderId`: server từ chối bằng lỗi `409 Conflict`.
-- **Bảo mật thông tin thẻ / ví:**
-  - Ô nhập số thẻ / ví có thuộc tính `autoComplete="off"`.
-  - Số thẻ / ví chỉ tồn tại tạm thời trong state của form khi người dùng đang nhập; xóa sạch khỏi state ngay khi gửi API hoặc khi unmount component.
-  - **Tuyệt đối không bao giờ lưu toàn bộ số thẻ, số ví hay CVV vào `localStorage`, URL hay `console.log`**.
+- **Bảo mật thanh toán QR:**
+  - Giao diện thanh toán QR không có ô nhập thẻ hay số tài khoản; luôn gửi `method = "WALLET"` kèm hằng số nội bộ (`0900000001` / `0900000000`) đặt tại `apps/web/constants/payment.ts`.
+  - **Tuyệt đối không hiển thị hai hằng số nội bộ ra giao diện và không lưu vào `localStorage`, URL hay `console.log`**.
 
 ---
 
@@ -222,5 +219,6 @@ npm.cmd run lint
 
 ### Đóng gói kiểm tra (Build):
 ```powershell
-npm.cmd run build
+npx.cmd next build --webpack
 ```
+*(Nếu chạy `npm.cmd run build` mặc định bị lỗi Turbopack trên Windows, dùng `npx.cmd tsc --noEmit` và `npx.cmd next build --webpack`.)*

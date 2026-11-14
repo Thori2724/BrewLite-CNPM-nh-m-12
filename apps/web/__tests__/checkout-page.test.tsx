@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, waitFor, cleanup } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent, act, cleanup } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import CheckoutPage from '../app/checkout/page';
@@ -68,6 +68,9 @@ const mockLoggedInUser = {
 describe('Giao diện và luồng xử lý trang Checkout (/checkout)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(ordersService.createOrderApi).mockReset();
+    vi.mocked(ordersService.payOrderApi).mockReset();
+    vi.mocked(ordersService.getOrderByIdApi).mockReset();
     localStorage.clear();
     mockSearchParams = new URLSearchParams();
 
@@ -90,6 +93,7 @@ describe('Giao diện và luồng xử lý trang Checkout (/checkout)', () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     cleanup();
   });
 
@@ -146,7 +150,8 @@ describe('Giao diện và luồng xử lý trang Checkout (/checkout)', () => {
   });
 
   // 4. Tạo đơn thành công -> Lưu đơn chờ và chuyển sang bước thanh toán
-  it('4. Đặt đơn thành công: Gọi API tạo đơn, lưu đơn chờ và chuyển sang bước Thanh toán', async () => {
+  // 4. Đặt đơn thành công: Gọi API tạo đơn, lưu đơn chờ và chuyển sang màn QR
+  it('4. Đặt đơn thành công: Gọi API tạo đơn, lưu đơn chờ và chuyển sang bước Thanh toán QR', async () => {
     const user = userEvent.setup();
     localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(mockLoggedInUser));
     localStorage.setItem(CART_STORAGE_KEY, JSON.stringify([mockCartItem]));
@@ -170,12 +175,12 @@ describe('Giao diện và luồng xử lý trang Checkout (/checkout)', () => {
     const submitBtn = screen.getByRole('button', { name: /đặt đơn hàng/i });
     await user.click(submitBtn);
 
-    // Chờ chuyển sang bước 2 (Thanh toán)
+    // Chờ chuyển sang bước 2 (Thanh toán QR) — không còn thẻ ngân hàng hay ô nhập số tài khoản
     await waitFor(() => {
       expect(screen.getByText('#1001')).toBeInTheDocument();
-      expect(screen.getByText(/chọn phương thức thanh toán/i)).toBeInTheDocument();
-      expect(screen.getAllByText(/ví điện tử/i).length).toBeGreaterThan(0);
-      expect(screen.getByText(/thẻ ngân hàng/i)).toBeInTheDocument();
+      expect(screen.getByRole('img', { name: /mã qr ZaloPay cho đơn hàng #1001/i })).toBeInTheDocument();
+      expect(screen.getByTestId('qr-countdown')).toBeInTheDocument();
+      expect(screen.queryByText(/thẻ ngân hàng/i)).not.toBeInTheDocument();
     });
 
     // Kiểm tra đơn chờ đã được lưu vào localStorage
@@ -223,9 +228,9 @@ describe('Giao diện và luồng xử lý trang Checkout (/checkout)', () => {
     expect(localStorage.getItem(PENDING_ORDER_STORAGE_KEY)).toBeNull();
   });
 
-  // 6. Thanh toán thành công: Xóa ô số ví, dọn sạch giỏ hàng và đơn chờ, hiện màn hình thành công
-  it('6. Thanh toán thành công: Xóa ô số ví/thẻ ngay khi gửi, dọn sạch giỏ hàng và đơn chờ, hiện màn hình thành công', async () => {
-    const user = userEvent.setup();
+  // 6. Thanh toán QR thành công: Dọn sạch đơn chờ, giữ nguyên giỏ khi không có cờ createdFromCart và hiện màn hình thành công
+  it('6. Thanh toán QR thành công: Dọn sạch đơn chờ, hiện màn hình thành công và ẩn 4 số cuối tài khoản', async () => {
+    vi.useFakeTimers();
     localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(mockLoggedInUser));
     localStorage.setItem(CART_STORAGE_KEY, JSON.stringify([mockCartItem]));
 
@@ -237,15 +242,26 @@ describe('Giao diện và luồng xử lý trang Checkout (/checkout)', () => {
       idempotencyKey: 'idemp-key-test-6',
       createdAt: new Date().toISOString(),
       itemCount: 1,
+      createdFromCart: true,
     };
     savePendingOrder(pendingOrder);
+
+    vi.mocked(ordersService.getOrderByIdApi).mockResolvedValue({
+      id: 'order-pending-1',
+      orderNumber: 1005,
+      status: 'PENDING',
+      receiveType: 'AT_COUNTER',
+      totalAmount: 90000,
+      createdAt: new Date().toISOString(),
+      items: [],
+    });
 
     vi.mocked(ordersService.payOrderApi).mockResolvedValueOnce({
       id: 'pay-success-1',
       orderId: 'order-pending-1',
       amount: 90000,
       method: 'WALLET',
-      accountLast4: '5678',
+      accountLast4: '0001',
       status: 'SUCCESS',
       createdAt: new Date().toISOString(),
       order: {
@@ -256,40 +272,47 @@ describe('Giao diện và luồng xử lý trang Checkout (/checkout)', () => {
     });
 
     renderCheckout();
-
-    // Thấy banner đơn chờ và bấm Tiếp tục thanh toán
-    await waitFor(() => {
-      expect(screen.getByText(/bạn có đơn hàng đang chờ thanh toán: #1005/i)).toBeInTheDocument();
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
     });
 
-    const resumeBtn = screen.getByRole('button', { name: /tiếp tục thanh toán/i });
-    await user.click(resumeBtn);
+    // Thấy banner đơn chờ và bấm Tiếp tục thanh toán (Cách A)
+    expect(screen.getByText(/bạn có đơn hàng đang chờ thanh toán: #1005/i)).toBeInTheDocument();
 
-    // Vào bước thanh toán
-    await waitFor(() => {
-      expect(screen.getByText(/số ví điện tử/i)).toBeInTheDocument();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /tiếp tục thanh toán/i }));
+    });
+    await act(async () => {
+      await Promise.resolve();
     });
 
-    const accInput = screen.getByPlaceholderText(/nhập số ví điện tử/i);
-    await user.type(accInput, '12345678');
-
-    const payBtn = screen.getByRole('button', { name: /xác nhận thanh toán/i });
-    await user.click(payBtn);
-
-    // Hiện màn hình chúc mừng thành công
-    await waitFor(() => {
-      expect(screen.getByText(/thanh toán thành công!/i)).toBeInTheDocument();
-      expect(screen.getByText('#1005')).toBeInTheDocument();
-      expect(screen.getByText(/•••• 5678/i)).toBeInTheDocument();
+    // Ở bước chọn ví (Cách A), bấm "Thanh toán bằng QR" rồi chờ đủ 5 giây
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /thanh toán bằng qr/i }));
     });
+    expect(screen.getByTestId('qr-countdown').textContent).toBe('5');
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5000);
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    // Hiện màn hình chúc mừng thành công (không hiện 4 số cuối tài khoản)
+    expect(screen.getByText(/thanh toán thành công!/i)).toBeInTheDocument();
+    expect(screen.getAllByText('#1005').length).toBeGreaterThanOrEqual(1);
+    expect(screen.queryByText(/•••• 0001/i)).not.toBeInTheDocument();
 
     // Đơn chờ và giỏ hàng đã bị xóa sạch
     expect(localStorage.getItem(PENDING_ORDER_STORAGE_KEY)).toBeNull();
+    expect(localStorage.getItem(CART_STORAGE_KEY)).toBe('[]');
   });
 
-  // 7. Thanh toán thất bại (status FAILED) -> Thử lại với số khác thì BẮT BUỘC DÙNG KEY MỚI
-  it('7. Thanh toán bị từ chối (status FAILED): Giữ orderId, nhập số khác thử lại thì sinh Idempotency-Key MỚI và thành công', async () => {
-    const user = userEvent.setup();
+  // 7. Hủy màn QR (status FAILED) -> Bấm Thử lại thanh toán vào thẳng QR với Idempotency-Key MỚI và thành công
+  it('7. Thanh toán bị từ chối khi hủy QR (status FAILED): Giữ orderId, bấm Thử lại thanh toán vào thẳng QR với Idempotency-Key MỚI và thành công', async () => {
+    vi.useFakeTimers();
     localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(mockLoggedInUser));
     localStorage.setItem(CART_STORAGE_KEY, JSON.stringify([mockCartItem]));
 
@@ -304,7 +327,17 @@ describe('Giao diện và luồng xử lý trang Checkout (/checkout)', () => {
     };
     savePendingOrder(pendingOrder);
 
-    // Lần 1: Giả lập server trả status FAILED
+    vi.mocked(ordersService.getOrderByIdApi).mockResolvedValue({
+      id: 'order-pending-2',
+      orderNumber: 1007,
+      status: 'PENDING',
+      receiveType: 'AT_COUNTER',
+      totalAmount: 90000,
+      createdAt: new Date().toISOString(),
+      items: [],
+    });
+
+    // Lần 1: Hủy QR -> server trả status FAILED
     vi.mocked(ordersService.payOrderApi).mockResolvedValueOnce({
       id: 'pay-fail-1',
       orderId: 'order-pending-2',
@@ -327,7 +360,7 @@ describe('Giao diện và luồng xử lý trang Checkout (/checkout)', () => {
       orderId: 'order-pending-2',
       amount: 90000,
       method: 'WALLET',
-      accountLast4: '5678',
+      accountLast4: '0001',
       status: 'SUCCESS',
       createdAt: new Date().toISOString(),
       order: {
@@ -338,52 +371,65 @@ describe('Giao diện và luồng xử lý trang Checkout (/checkout)', () => {
     });
 
     renderCheckout();
-
-    await waitFor(() => {
-      expect(screen.getByText(/bạn có đơn hàng đang chờ thanh toán: #1007/i)).toBeInTheDocument();
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
     });
 
-    const resumeBtn = screen.getByRole('button', { name: /tiếp tục thanh toán/i });
-    await user.click(resumeBtn);
-
-    // LẦN 1: Nhập số kết thúc bằng 0000
-    const accInput = await screen.findByPlaceholderText(/nhập số ví điện tử/i);
-    await user.type(accInput, '12340000');
-
-    const payBtn = screen.getByRole('button', { name: /xác nhận thanh toán/i });
-    await user.click(payBtn);
-
-    // Hiện thông báo lỗi lần 1 và nút đổi thành "Thử lại thanh toán"
-    await waitFor(() => {
-      expect(screen.getByText(/lỗi thanh toán:/i)).toBeInTheDocument();
-      expect(screen.getByText(/giao dịch bị từ chối/i)).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: /thử lại thanh toán/i })).toBeInTheDocument();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /tiếp tục thanh toán/i }));
     });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    // Mở QR lần 1 rồi bấm Hủy thanh toán (gửi 0900000000)
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /thanh toán bằng qr/i }));
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /hủy thanh toán/i }));
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    // Hiện thông báo thất bại lần 1 và nút "Thử lại thanh toán"
+    expect(screen.getByText(/bạn đã hủy thanh toán qr/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /thử lại thanh toán/i })).toBeInTheDocument();
 
     expect(ordersService.payOrderApi).toHaveBeenCalledTimes(1);
     const firstCallKey = vi.mocked(ordersService.payOrderApi).mock.calls[0][1];
 
-    // LẦN 2: Nhập số khác và bấm Xác nhận thanh toán
-    await user.type(accInput, '12345678');
-    await user.click(payBtn);
+    // LẦN 2: Bấm "Thử lại thanh toán" -> mở thẳng màn QR của ĐÚNG orderId, đếm đủ 5 giây -> thành công
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /thử lại thanh toán/i }));
+    });
+    expect(screen.getByTestId('qr-countdown').textContent).toBe('5');
 
-    // Chờ thành công
-    await waitFor(() => {
-      expect(screen.getByText(/thanh toán thành công!/i)).toBeInTheDocument();
-      expect(screen.getByText('#1007')).toBeInTheDocument();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5000);
+    });
+    await act(async () => {
+      await Promise.resolve();
     });
 
+    // Chờ thành công
+    expect(screen.getByText(/thanh toán thành công!/i)).toBeInTheDocument();
+    expect(screen.getAllByText('#1007').length).toBeGreaterThanOrEqual(1);
+
     expect(ordersService.payOrderApi).toHaveBeenCalledTimes(2);
-    const secondCallKey = vi.mocked(ordersService.payOrderApi).mock.calls[1][1];
+    const [secondDto, secondCallKey] = vi.mocked(ordersService.payOrderApi).mock.calls[1];
+    expect((secondDto as { orderId: string }).orderId).toBe('order-pending-2');
 
     // KIỂM TRA QUY TẮC IDEMPOTENCY: Request thứ hai BẮT BUỘC có key KHÁC request đầu
     expect(secondCallKey).not.toBe(firstCallKey);
     expect(secondCallKey).toBeDefined();
   });
 
-  // 8. Lỗi mạng / timeout -> Thử lại với cùng số thì BẮT BUỘC DÙNG CÙNG KEY
-  it('8. Lỗi mạng / timeout: Thử lại với cùng số tài khoản thì BẮT BUỘC DÙNG CÙNG KEY', async () => {
-    const user = userEvent.setup();
+  // 8. Lỗi mạng / timeout -> Thử lại giao dịch bị gián đoạn thì BẮT BUỘC DÙNG CÙNG KEY
+  it('8. Lỗi mạng / timeout: Thử lại giao dịch bị gián đoạn thì BẮT BUỘC DÙNG CÙNG KEY', async () => {
+    vi.useFakeTimers();
     localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(mockLoggedInUser));
     localStorage.setItem(CART_STORAGE_KEY, JSON.stringify([mockCartItem]));
 
@@ -398,6 +444,16 @@ describe('Giao diện và luồng xử lý trang Checkout (/checkout)', () => {
     };
     savePendingOrder(pendingOrder);
 
+    vi.mocked(ordersService.getOrderByIdApi).mockResolvedValue({
+      id: 'order-pending-9',
+      orderNumber: 1009,
+      status: 'PENDING',
+      receiveType: 'AT_COUNTER',
+      totalAmount: 90000,
+      createdAt: new Date().toISOString(),
+      items: [],
+    });
+
     // Lần 1: Ném lỗi mạng (status 0)
     vi.mocked(ordersService.payOrderApi).mockRejectedValueOnce(
       new ordersService.OrderApiError(0, 'Không thể kết nối đến máy chủ. Vui lòng thử lại.')
@@ -409,7 +465,7 @@ describe('Giao diện và luồng xử lý trang Checkout (/checkout)', () => {
       orderId: 'order-pending-9',
       amount: 90000,
       method: 'WALLET',
-      accountLast4: '5678',
+      accountLast4: '0001',
       status: 'SUCCESS',
       createdAt: new Date().toISOString(),
       order: {
@@ -420,43 +476,51 @@ describe('Giao diện và luồng xử lý trang Checkout (/checkout)', () => {
     });
 
     renderCheckout();
-
-    await waitFor(() => {
-      expect(screen.getByText(/bạn có đơn hàng đang chờ thanh toán: #1009/i)).toBeInTheDocument();
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
     });
 
-    const resumeBtn = screen.getByRole('button', { name: /tiếp tục thanh toán/i });
-    await user.click(resumeBtn);
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /tiếp tục thanh toán/i }));
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
 
-    // LẦN 1: Nhập số hợp lệ
-    const accInput = await screen.findByPlaceholderText(/nhập số ví điện tử/i);
-    await user.type(accInput, '12345678');
-
-    const payBtn = screen.getByRole('button', { name: /xác nhận thanh toán/i });
-    await user.click(payBtn);
+    // Mở QR và chờ 5 giây -> gặp lỗi mạng
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /thanh toán bằng qr/i }));
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5000);
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
 
     // Báo lỗi mạng
-    await waitFor(() => {
-      expect(screen.getByText(/không thể kết nối đến máy chủ/i)).toBeInTheDocument();
-    });
+    expect(screen.getByText(/không thể kết nối đến máy chủ/i)).toBeInTheDocument();
 
     expect(ordersService.payOrderApi).toHaveBeenCalledTimes(1);
     const call1Key = vi.mocked(ordersService.payOrderApi).mock.calls[0][1];
 
-    // LẦN 2: Nhập lại CÙNG số đó và bấm Thử lại
-    await user.type(accInput, '12345678');
-    await user.click(payBtn);
+    // LẦN 2: Bấm Thử lại giao dịch bị gián đoạn -> dùng CÙNG KEY
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /^thử lại$/i }));
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
 
     // Thành công
-    await waitFor(() => {
-      expect(screen.getByText(/thanh toán thành công!/i)).toBeInTheDocument();
-      expect(screen.getByText('#1009')).toBeInTheDocument();
-    });
+    expect(screen.getByText(/thanh toán thành công!/i)).toBeInTheDocument();
+    expect(screen.getAllByText('#1009').length).toBeGreaterThanOrEqual(1);
 
     expect(ordersService.payOrderApi).toHaveBeenCalledTimes(2);
     const call2Key = vi.mocked(ordersService.payOrderApi).mock.calls[1][1];
 
-    // Sau lỗi mạng thử lại cùng số -> BẮT BUỘC DÙNG CÙNG KEY
+    // Sau lỗi mạng thử lại đúng giao dịch vừa gửi -> BẮT BUỘC DÙNG CÙNG KEY
     expect(call2Key).toBe(call1Key);
   });
 
@@ -596,9 +660,9 @@ describe('Giao diện và luồng xử lý trang Checkout (/checkout)', () => {
     });
   });
 
-  // 12. Thanh toán gặp lỗi 404 (Không tìm thấy đơn): Xóa đơn chờ, quay về bước đặt đơn, hiện thông báo rõ ràng và giữ nguyên giỏ hàng
-  it('12. Thanh toán gặp 404: Xóa bản ghi đơn chờ, quay về bước đặt đơn, báo lỗi rõ ràng và giữ nguyên giỏ hàng', async () => {
-    const user = userEvent.setup();
+  // 12. Thanh toán gặp lỗi 404 (Không tìm thấy đơn): Xóa đơn chờ, hiện thông báo rõ ràng và giữ nguyên giỏ hàng
+  it('12. Thanh toán gặp 404: Xóa bản ghi đơn chờ, báo lỗi rõ ràng kèm link lịch sử đơn và giữ nguyên giỏ hàng', async () => {
+    vi.useFakeTimers();
     localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(mockLoggedInUser));
     localStorage.setItem(CART_STORAGE_KEY, JSON.stringify([mockCartItem]));
 
@@ -613,42 +677,55 @@ describe('Giao diện và luồng xử lý trang Checkout (/checkout)', () => {
     };
     savePendingOrder(pendingOrder);
 
+    vi.mocked(ordersService.getOrderByIdApi).mockResolvedValue({
+      id: 'order-not-found-404',
+      orderNumber: 1044,
+      status: 'PENDING',
+      receiveType: 'AT_COUNTER',
+      totalAmount: 90000,
+      createdAt: new Date().toISOString(),
+      items: [],
+    });
+
     // Mock API thanh toán trả về lỗi 404
     vi.mocked(ordersService.payOrderApi).mockRejectedValueOnce(
       new ordersService.OrderApiError(404, 'Không tìm thấy đơn hàng')
     );
 
     renderCheckout();
-
-    await waitFor(() => {
-      expect(screen.getByText(/bạn có đơn hàng đang chờ thanh toán: #1044/i)).toBeInTheDocument();
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
     });
 
-    const resumeBtn = screen.getByRole('button', { name: /tiếp tục thanh toán/i });
-    await user.click(resumeBtn);
+    expect(screen.getByText(/bạn có đơn hàng đang chờ thanh toán: #1044/i)).toBeInTheDocument();
 
-    const accInput = await screen.findByPlaceholderText(/nhập số ví điện tử/i);
-    await user.type(accInput, '12345678');
-
-    const payBtn = screen.getByRole('button', { name: /xác nhận thanh toán/i });
-    await user.click(payBtn);
-
-    // Quay về bước 1 (đặt đơn hàng), hiện nút "Đặt đơn hàng" kèm message tiếng Việt của server và link Xem lịch sử đơn
-    await waitFor(() => {
-      expect(screen.getByRole('button', { name: /đặt đơn hàng/i })).toBeInTheDocument();
-      expect(screen.getByText(/không tìm thấy đơn hàng/i)).toBeInTheDocument();
-      expect(
-        screen.getByText(/đơn hàng trước đó không còn tồn tại trên hệ thống. vui lòng tiến hành đặt lại/i)
-      ).toBeInTheDocument();
-      expect(screen.getByRole('link', { name: /xem lịch sử đơn/i })).toBeInTheDocument();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /tiếp tục thanh toán/i }));
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /thanh toán bằng qr/i }));
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5000);
+    });
+    await act(async () => {
+      await Promise.resolve();
     });
 
-    // Bản ghi đơn chờ đã bị xóa sạch khỏi localStorage
+    // Hiện message tiếng Việt rõ ràng và link Xem lịch sử đơn
+    expect(screen.getByText(/không tìm thấy đơn hàng/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/đơn hàng trước đó không còn tồn tại trên hệ thống/i)
+    ).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /xem lịch sử đơn/i })).toBeInTheDocument();
+
+    // Bản ghi đơn chờ đã bị xóa sạch khỏi localStorage, giỏ hàng vẫn còn nguyên
     expect(localStorage.getItem(PENDING_ORDER_STORAGE_KEY)).toBeNull();
-
-    // Giỏ hàng VẪN NGUYÊN VẸN, không bị xóa
     expect(localStorage.getItem(CART_STORAGE_KEY)).not.toBeNull();
-    expect(screen.getByText('Cà phê muối')).toBeInTheDocument();
   });
 
   // 13. Mở lại trang và đơn chờ bị 404 qua tra cứu: Tự động xóa đơn chờ, báo lỗi và giữ nguyên giỏ hàng
@@ -687,7 +764,7 @@ describe('Giao diện và luồng xử lý trang Checkout (/checkout)', () => {
 
   // 14. Gặp lỗi 500 khi thanh toán: BẮT BUỘC GIỮ NGUYÊN đơn chờ và Idempotency-Key
   it('14. Lỗi máy chủ 500: BẮT BUỘC GIỮ NGUYÊN đơn chờ và Idempotency-Key để khách thử lại', async () => {
-    const user = userEvent.setup();
+    vi.useFakeTimers();
     localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(mockLoggedInUser));
     localStorage.setItem(CART_STORAGE_KEY, JSON.stringify([mockCartItem]));
 
@@ -702,36 +779,58 @@ describe('Giao diện và luồng xử lý trang Checkout (/checkout)', () => {
     };
     savePendingOrder(pendingOrder);
 
+    vi.mocked(ordersService.getOrderByIdApi).mockResolvedValue({
+      id: 'order-server-500',
+      orderNumber: 1500,
+      status: 'PENDING',
+      receiveType: 'AT_COUNTER',
+      totalAmount: 90000,
+      createdAt: new Date().toISOString(),
+      items: [],
+    });
+
     vi.mocked(ordersService.payOrderApi).mockRejectedValueOnce(
       new ordersService.OrderApiError(500, 'Internal Server Error')
     );
 
     renderCheckout();
-
-    const resumeBtn = await screen.findByRole('button', { name: /tiếp tục thanh toán/i });
-    await user.click(resumeBtn);
-
-    const accInput = await screen.findByPlaceholderText(/nhập số ví điện tử/i);
-    await user.type(accInput, '12345678');
-
-    const payBtn = screen.getByRole('button', { name: /xác nhận thanh toán/i });
-    await user.click(payBtn);
-
-    await waitFor(() => {
-      expect(screen.getByText(/máy chủ đang gặp sự cố tạm thời/i)).toBeInTheDocument();
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
     });
 
-    // Đơn chờ VẪN CÒN NGUYÊN trong storage với đúng key cũ
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /tiếp tục thanh toán/i }));
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /thanh toán bằng qr/i }));
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5000);
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(screen.getByText(/máy chủ đang gặp sự cố tạm thời/i)).toBeInTheDocument();
+    expect(screen.queryByText(/Internal Server Error/i)).not.toBeInTheDocument();
+
+    const sentKey = vi.mocked(ordersService.payOrderApi).mock.calls[0][1];
+
+    // Đơn chờ VẪN CÒN NGUYÊN trong storage với đúng key đã gửi
     const stored = localStorage.getItem(PENDING_ORDER_STORAGE_KEY);
     expect(stored).not.toBeNull();
     const parsed = JSON.parse(stored!);
     expect(parsed.orderId).toBe('order-server-500');
-    expect(parsed.idempotencyKey).toBe('idemp-server-500-key');
+    expect(parsed.idempotencyKey).toBe(sentKey);
   });
 
   // 15. Kịch bản F5 rồi thanh toán tiếp thành công với CÙNG id đơn
-  it('15. Kịch bản F5: Mở lại trang và thanh toán tiếp thành công với CÙNG id đơn', async () => {
-    const user = userEvent.setup();
+  it('15. Kịch bản F5: Mở lại trang (?orderId=...) hiện bước chọn ví và thanh toán tiếp thành công với CÙNG id đơn', async () => {
+    vi.useFakeTimers();
     localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(mockLoggedInUser));
     localStorage.setItem(CART_STORAGE_KEY, JSON.stringify([mockCartItem]));
 
@@ -746,6 +845,7 @@ describe('Giao diện và luồng xử lý trang Checkout (/checkout)', () => {
       idempotencyKey: 'idemp-f5-success-key',
       createdAt: new Date().toISOString(),
       itemCount: 1,
+      createdFromCart: true,
     };
     savePendingOrder(pendingOrder);
     mockSearchParams = new URLSearchParams(`orderId=${targetOrderId}`);
@@ -767,7 +867,7 @@ describe('Giao diện và luồng xử lý trang Checkout (/checkout)', () => {
       orderId: targetOrderId,
       amount: 90000,
       method: 'WALLET',
-      accountLast4: '5678',
+      accountLast4: '0001',
       status: 'SUCCESS',
       createdAt: new Date().toISOString(),
       order: {
@@ -778,36 +878,42 @@ describe('Giao diện và luồng xử lý trang Checkout (/checkout)', () => {
     });
 
     renderCheckout();
-
-    // F5 tự động đồng bộ và vào thẳng bước thanh toán
-    await waitFor(() => {
-      expect(screen.getByText('#1888')).toBeInTheDocument();
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
     });
 
-    const accInput = await screen.findByPlaceholderText(/nhập số ví điện tử/i);
-    await user.type(accInput, '12345678');
+    // F5 vào Cách A (chọn ví + nút Thanh toán bằng QR)
+    expect(screen.getByText('#1888')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /thanh toán bằng qr/i })).toBeInTheDocument();
 
-    const payBtn = screen.getByRole('button', { name: /xác nhận thanh toán/i });
-    await user.click(payBtn);
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /thanh toán bằng qr/i }));
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5000);
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
 
     // Chờ màn hình thành công
-    await waitFor(() => {
-      expect(screen.getByText(/thanh toán thành công!/i)).toBeInTheDocument();
-      expect(screen.getByText('#1888')).toBeInTheDocument();
-    });
+    expect(screen.getByText(/thanh toán thành công!/i)).toBeInTheDocument();
+    expect(screen.getAllByText('#1888').length).toBeGreaterThanOrEqual(1);
 
     expect(ordersService.payOrderApi).toHaveBeenCalledWith(
-      expect.objectContaining({ orderId: targetOrderId, method: 'WALLET' }),
-      'idemp-f5-success-key'
+      { orderId: targetOrderId, method: 'WALLET', accountNumber: '0900000001' },
+      expect.any(String)
     );
 
     // Đơn chờ và giỏ hàng được dọn sạch
     expect(localStorage.getItem(PENDING_ORDER_STORAGE_KEY)).toBeNull();
+    expect(localStorage.getItem(CART_STORAGE_KEY)).toBe('[]');
   });
 
   // 16. Xử lý lỗi 409 khi thanh toán: kiểm tra lại đơn qua getOrderByIdApi
   it('16. Thanh toán gặp 409: Nếu đơn đã PAID qua tra cứu thì tự động chuyển sang màn hình thành công', async () => {
-    const user = userEvent.setup();
+    vi.useFakeTimers();
     localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(mockLoggedInUser));
     localStorage.setItem(CART_STORAGE_KEY, JSON.stringify([mockCartItem]));
 
@@ -851,28 +957,32 @@ describe('Giao diện và luồng xử lý trang Checkout (/checkout)', () => {
     });
 
     renderCheckout();
-
-    await waitFor(() => {
-      expect(screen.getByText('#1409')).toBeInTheDocument();
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
     });
 
-    const accInput = await screen.findByPlaceholderText(/nhập số ví điện tử/i);
-    await user.type(accInput, '12345678');
+    expect(screen.getByText('#1409')).toBeInTheDocument();
 
-    const payBtn = screen.getByRole('button', { name: /xác nhận thanh toán/i });
-    await user.click(payBtn);
-
-    await waitFor(() => {
-      expect(screen.getByText(/thanh toán thành công!/i)).toBeInTheDocument();
-      expect(screen.getByText('#1409')).toBeInTheDocument();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /thanh toán bằng qr/i }));
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5000);
+    });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
     });
 
+    expect(screen.getByText(/thanh toán thành công!/i)).toBeInTheDocument();
+    expect(screen.getAllByText('#1409').length).toBeGreaterThanOrEqual(1);
     expect(localStorage.getItem(PENDING_ORDER_STORAGE_KEY)).toBeNull();
   });
 
   // 17. POST /payments trả 400: Giao diện hiển thị câu tiếng Việt, KHÔNG hiển thị chuỗi tiếng Anh của server
   it('17. POST /payments trả 400: Giao diện hiển thị thông báo tiếng Việt, KHÔNG hiển thị chuỗi tiếng Anh của server', async () => {
-    const user = userEvent.setup();
+    vi.useFakeTimers();
     localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(mockLoggedInUser));
     localStorage.setItem(CART_STORAGE_KEY, JSON.stringify([mockCartItem]));
 
@@ -888,7 +998,7 @@ describe('Giao diện và luồng xử lý trang Checkout (/checkout)', () => {
     savePendingOrder(pendingOrder);
     mockSearchParams = new URLSearchParams('orderId=order-400-test');
 
-    // Mock getOrderByIdApi lần 1 trên mount: trả về PENDING -> vào bước thanh toán
+    // Mock getOrderByIdApi lần 1 trên mount: trả về PENDING
     vi.mocked(ordersService.getOrderByIdApi).mockResolvedValueOnce({
       id: 'order-400-test',
       orderNumber: 1400,
@@ -913,25 +1023,26 @@ describe('Giao diện và luồng xử lý trang Checkout (/checkout)', () => {
     );
 
     renderCheckout();
-
-    await waitFor(() => {
-      expect(screen.getByText('#1400')).toBeInTheDocument();
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
     });
 
-    const accInput = await screen.findByPlaceholderText(/nhập số ví điện tử/i);
-    await user.type(accInput, '12345678');
+    expect(screen.getByText('#1400')).toBeInTheDocument();
 
-    const payBtn = screen.getByRole('button', { name: /xác nhận thanh toán/i });
-    await user.click(payBtn);
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /thanh toán bằng qr/i }));
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5000);
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
 
     // KẾT QUẢ KỲ VỌNG:
     // 1. Giao diện hiển thị câu thông báo tiếng Việt
-    await waitFor(() => {
-      expect(screen.getByText(/lỗi thanh toán:/i)).toBeInTheDocument();
-      expect(
-        screen.getByText(/số tài khoản không hợp lệ \(chỉ gồm 8 đến 19 chữ số\)/i)
-      ).toBeInTheDocument();
-    });
+    expect(screen.getByText(/yêu cầu thanh toán không hợp lệ\. vui lòng thử lại\./i)).toBeInTheDocument();
 
     // 2. KHÔNG hiển thị chuỗi tiếng Anh của server trên màn hình
     expect(screen.queryByText(new RegExp(serverEnglishMessage, 'i'))).not.toBeInTheDocument();
@@ -1071,8 +1182,9 @@ describe('Giao diện và luồng xử lý trang Checkout (/checkout)', () => {
   });
 
   // 20. F5 ở Bước 2 (URL có ?orderId=) hoặc đổi trình duyệt (không có pendingOrder trong localStorage) vẫn giữ nguyên Bước 2 và tự sinh Idempotency-Key mới nếu thiếu
+  // 20. Mở /checkout?orderId=... khi không có pendingOrder vẫn vào Bước 2 (Cách A: chọn ví + Thanh toán bằng QR) và sinh Idempotency-Key mới
   it('20. Mở /checkout?orderId=... khi không có pendingOrder trong localStorage vẫn vào thẳng Bước 2 và tự sinh Idempotency-Key mới', async () => {
-    const user = userEvent.setup();
+    vi.useFakeTimers();
     localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(mockLoggedInUser));
     // Giỏ có món nhưng URL có ?orderId=order-url-2020 và localStorage KHÔNG có pendingOrder
     localStorage.setItem(CART_STORAGE_KEY, JSON.stringify([mockCartItem]));
@@ -1093,7 +1205,7 @@ describe('Giao diện và luồng xử lý trang Checkout (/checkout)', () => {
       orderId: 'order-url-2020',
       amount: 55000,
       method: 'WALLET',
-      accountLast4: '9999',
+      accountLast4: '0001',
       status: 'SUCCESS',
       createdAt: new Date().toISOString(),
       order: {
@@ -1104,22 +1216,26 @@ describe('Giao diện và luồng xử lý trang Checkout (/checkout)', () => {
     });
 
     renderCheckout();
-
-    // Nhảy thẳng vào Bước 2 của đơn #2020 (55.000 đ)
-    await waitFor(() => {
-      expect(screen.getByText('Bước 2/2: Thanh toán')).toBeInTheDocument();
-      expect(screen.getByText('#2020')).toBeInTheDocument();
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
     });
 
-    const accInput = await screen.findByPlaceholderText(/nhập số ví điện tử/i);
-    await user.type(accInput, '12349999');
+    // Nhảy thẳng vào Bước 2 của đơn #2020 (Cách A)
+    expect(screen.getByText('Bước 2/2: Thanh toán')).toBeInTheDocument();
+    expect(screen.getByText('#2020')).toBeInTheDocument();
 
-    const payBtn = screen.getByRole('button', { name: /xác nhận thanh toán/i });
-    await user.click(payBtn);
-
-    await waitFor(() => {
-      expect(screen.getByText(/thanh toán thành công!/i)).toBeInTheDocument();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /thanh toán bằng qr/i }));
     });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5000);
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(screen.getByText(/thanh toán thành công!/i)).toBeInTheDocument();
 
     expect(ordersService.payOrderApi).toHaveBeenCalledTimes(1);
     const generatedKey = vi.mocked(ordersService.payOrderApi).mock.calls[0][1];
@@ -1129,7 +1245,7 @@ describe('Giao diện và luồng xử lý trang Checkout (/checkout)', () => {
 
   // 21. Thanh toán thành công đơn cũ (vào bằng /checkout?orderId=... từ /orders/[id]) khi giỏ đang có món khác -> GIỮ NGUYÊN giỏ hàng, không xóa giỏ
   it('21. Thanh toán thành công đơn cũ qua /checkout?orderId=...: Giữ nguyên các món đang có trong giỏ hàng, chỉ xóa pendingOrder', async () => {
-    const user = userEvent.setup();
+    vi.useFakeTimers();
     localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(mockLoggedInUser));
     const currentCartJson = JSON.stringify([mockCartItem]);
     localStorage.setItem(CART_STORAGE_KEY, currentCartJson);
@@ -1162,7 +1278,7 @@ describe('Giao diện và luồng xử lý trang Checkout (/checkout)', () => {
       orderId: 'old-order-from-history-1002',
       amount: 29000,
       method: 'WALLET',
-      accountLast4: '4321',
+      accountLast4: '0001',
       status: 'SUCCESS',
       createdAt: new Date().toISOString(),
       order: {
@@ -1173,31 +1289,35 @@ describe('Giao diện và luồng xử lý trang Checkout (/checkout)', () => {
     });
 
     renderCheckout();
-
-    await waitFor(() => {
-      expect(screen.getByText('Bước 2/2: Thanh toán')).toBeInTheDocument();
-      expect(screen.getByText('#1002')).toBeInTheDocument();
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
     });
 
-    const accInput = await screen.findByPlaceholderText(/nhập số ví điện tử/i);
-    await user.type(accInput, '09874321');
+    expect(screen.getByText('Bước 2/2: Thanh toán')).toBeInTheDocument();
+    expect(screen.getByText('#1002')).toBeInTheDocument();
 
-    const payBtn = screen.getByRole('button', { name: /xác nhận thanh toán/i });
-    await user.click(payBtn);
-
-    await waitFor(() => {
-      expect(screen.getByText(/thanh toán thành công!/i)).toBeInTheDocument();
-      expect(screen.getByText('#1002')).toBeInTheDocument();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /thanh toán bằng qr/i }));
     });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5000);
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(screen.getByText(/thanh toán thành công!/i)).toBeInTheDocument();
+    expect(screen.getAllByText('#1002').length).toBeGreaterThanOrEqual(1);
 
     // pendingOrder đã được dọn sạch nhưng GIỎ HÀNG HIỆN TẠI VẪN CÒN NGUYÊN
     expect(localStorage.getItem(PENDING_ORDER_STORAGE_KEY)).toBeNull();
     expect(localStorage.getItem(CART_STORAGE_KEY)).toBe(currentCartJson);
   });
 
-  // 22. Mô phỏng chuỗi lỗi: thanh toán đơn cũ #1015 qua ?orderId, sau đó điều hướng lại /checkout (không ?orderId) với giỏ 2 món (68.000đ) -> phải ở Bước 1 đủ 2 món, giỏ không bị xóa
+  // 22. Thanh toán đơn cũ #1015 qua ?orderId, sau đó điều hướng lại /checkout (không ?orderId) với giỏ 2 món -> Reset về Bước 1 đủ 2 món, giỏ không bị xóa
   it('22. Thanh toán đơn cũ qua ?orderId rồi vào lại /checkout (không ?orderId) khi giỏ có 2 món: Reset về Bước 1 với đủ 2 món và KHÔNG xóa giỏ hàng', async () => {
-    const user = userEvent.setup();
+    vi.useFakeTimers();
     localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(mockLoggedInUser));
 
     const twoCartItems: CartItem[] = [
@@ -1258,7 +1378,7 @@ describe('Giao diện và luồng xử lý trang Checkout (/checkout)', () => {
       orderId: 'order-1015',
       amount: 30000,
       method: 'WALLET',
-      accountLast4: '6789',
+      accountLast4: '0001',
       status: 'SUCCESS',
       createdAt: new Date().toISOString(),
       order: {
@@ -1269,23 +1389,27 @@ describe('Giao diện và luồng xử lý trang Checkout (/checkout)', () => {
     });
 
     const { rerender } = renderCheckout();
-
-    await waitFor(() => {
-      expect(screen.getByText('Bước 2/2: Thanh toán')).toBeInTheDocument();
-      expect(screen.getByText('#1015')).toBeInTheDocument();
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
     });
 
-    const accInput = await screen.findByPlaceholderText(/nhập số ví điện tử/i);
-    await user.type(accInput, '12346789');
+    expect(screen.getByText('Bước 2/2: Thanh toán')).toBeInTheDocument();
+    expect(screen.getByText('#1015')).toBeInTheDocument();
 
-    const payBtn = screen.getByRole('button', { name: /xác nhận thanh toán/i });
-    await user.click(payBtn);
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /thanh toán bằng qr/i }));
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5000);
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
 
     // Đã hiện màn thành công của đơn #1015, pendingOrder bị xóa, giỏ 2 món vẫn còn
-    await waitFor(() => {
-      expect(screen.getByText(/thanh toán thành công!/i)).toBeInTheDocument();
-      expect(screen.getByText('#1015')).toBeInTheDocument();
-    });
+    expect(screen.getByText(/thanh toán thành công!/i)).toBeInTheDocument();
+    expect(screen.getAllByText('#1015').length).toBeGreaterThanOrEqual(1);
     expect(localStorage.getItem(PENDING_ORDER_STORAGE_KEY)).toBeNull();
     expect(localStorage.getItem(CART_STORAGE_KEY)).toBe(twoItemsJson);
 
@@ -1298,12 +1422,14 @@ describe('Giao diện và luồng xử lý trang Checkout (/checkout)', () => {
         </CartProvider>
       </AuthProvider>
     );
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
 
     // Phải tự động reset về Bước 1/2: Đặt đơn với đủ 2 món (68.000đ), KHÔNG hiện màn thành công cũ và KHÔNG xóa giỏ
-    await waitFor(() => {
-      expect(screen.getByText('Bước 1/2: Đặt đơn')).toBeInTheDocument();
-      expect(screen.queryByText(/thanh toán thành công!/i)).not.toBeInTheDocument();
-    });
+    expect(screen.getByText('Bước 1/2: Đặt đơn')).toBeInTheDocument();
+    expect(screen.queryByText(/thanh toán thành công!/i)).not.toBeInTheDocument();
 
     expect(screen.getByText('Trà đào cam sả')).toBeInTheDocument();
     expect(screen.getByText('Cà phê đen đá')).toBeInTheDocument();
@@ -1313,7 +1439,7 @@ describe('Giao diện và luồng xử lý trang Checkout (/checkout)', () => {
 
   // 23. Tạo đơn từ giỏ ở Bước 1, F5 ở Bước 2 (mất state sessionCreatedOrderId nhưng còn cờ createdFromCart: true trong localStorage), thanh toán xong thì giỏ được xóa
   it('23. Tạo đơn từ giỏ, F5 ở Bước 2 (?orderId=...), thanh toán xong thì giỏ hàng được xóa nhờ cờ createdFromCart: true', async () => {
-    const user = userEvent.setup();
+    vi.useFakeTimers();
     localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(mockLoggedInUser));
     localStorage.setItem(CART_STORAGE_KEY, JSON.stringify([mockCartItem]));
 
@@ -1327,28 +1453,33 @@ describe('Giao diện và luồng xử lý trang Checkout (/checkout)', () => {
       items: [],
     });
 
-    // Phiên 1: Tạo đơn ở Bước 1
+    // Phiên 1: Tạo đơn ở Bước 1 -> mở màn QR
     const { unmount } = renderCheckout();
-
-    await waitFor(() => {
-      expect(screen.getByText('Cà phê muối')).toBeInTheDocument();
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
     });
 
-    const createBtn = screen.getByRole('button', { name: /đặt đơn hàng/i });
-    await user.click(createBtn);
+    expect(screen.getByText('Cà phê muối')).toBeInTheDocument();
 
-    await waitFor(() => {
-      expect(screen.getByText('Bước 2/2: Thanh toán')).toBeInTheDocument();
-      expect(screen.getByText('#1025')).toBeInTheDocument();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /đặt đơn hàng/i }));
     });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(screen.getByText('Bước 2/2: Thanh toán')).toBeInTheDocument();
+    expect(screen.getAllByText('#1025').length).toBeGreaterThanOrEqual(1);
 
     // Kiểm tra localStorage đã lưu cờ createdFromCart: true
     const storedAfterCreate = JSON.parse(localStorage.getItem(PENDING_ORDER_STORAGE_KEY)!);
     expect(storedAfterCreate.orderId).toBe('order-from-cart-f5');
     expect(storedAfterCreate.createdFromCart).toBe(true);
 
-    // Giả lập F5 tại Bước 2: unmount hoàn toàn để xóa sạch state trong bộ nhớ (sessionCreatedOrderId bị mất)
+    // Giả lập F5 tại Bước 2: unmount hoàn toàn để xóa sạch state và dọn timer (không tự thanh toán)
     unmount();
+    expect(ordersService.payOrderApi).not.toHaveBeenCalled();
 
     mockSearchParams = new URLSearchParams('orderId=order-from-cart-f5');
     vi.mocked(ordersService.getOrderByIdApi).mockResolvedValueOnce({
@@ -1366,7 +1497,7 @@ describe('Giao diện và luồng xử lý trang Checkout (/checkout)', () => {
       orderId: 'order-from-cart-f5',
       amount: 90000,
       method: 'WALLET',
-      accountLast4: '8888',
+      accountLast4: '0001',
       status: 'SUCCESS',
       createdAt: new Date().toISOString(),
       order: {
@@ -1376,24 +1507,28 @@ describe('Giao diện và luồng xử lý trang Checkout (/checkout)', () => {
       },
     });
 
-    // Phiên 2 (sau khi F5 tại /checkout?orderId=order-from-cart-f5)
+    // Phiên 2 (sau khi F5 tại /checkout?orderId=order-from-cart-f5) -> vào Cách A
     renderCheckout();
-
-    await waitFor(() => {
-      expect(screen.getByText('Bước 2/2: Thanh toán')).toBeInTheDocument();
-      expect(screen.getByText('#1025')).toBeInTheDocument();
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
     });
 
-    const accInput = await screen.findByPlaceholderText(/nhập số ví điện tử/i);
-    await user.type(accInput, '12348888');
+    expect(screen.getByText('Bước 2/2: Thanh toán')).toBeInTheDocument();
+    expect(screen.getByText('#1025')).toBeInTheDocument();
 
-    const payBtn = screen.getByRole('button', { name: /xác nhận thanh toán/i });
-    await user.click(payBtn);
-
-    await waitFor(() => {
-      expect(screen.getByText(/thanh toán thành công!/i)).toBeInTheDocument();
-      expect(screen.getByText('#1025')).toBeInTheDocument();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /thanh toán bằng qr/i }));
     });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5000);
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(screen.getByText(/thanh toán thành công!/i)).toBeInTheDocument();
+    expect(screen.getAllByText('#1025').length).toBeGreaterThanOrEqual(1);
 
     // Cả pendingOrder và giỏ hàng đều được xóa sạch nhờ cờ createdFromCart: true được bảo toàn qua F5
     expect(localStorage.getItem(PENDING_ORDER_STORAGE_KEY)).toBeNull();
@@ -1429,7 +1564,7 @@ describe('Giao diện và luồng xử lý trang Checkout (/checkout)', () => {
 
   // 25. Thanh toán gặp 409 khi đơn không còn thanh toán được (ví dụ đã CANCELLED): Xóa pendingOrder và hiện message tiếng Việt của server kèm nút Xem lịch sử đơn
   it('25. Thanh toán gặp 409 khi đơn không phải PAID: Xóa pendingOrder, hiện message tiếng Việt của server kèm liên kết Xem lịch sử đơn', async () => {
-    const user = userEvent.setup();
+    vi.useFakeTimers();
     localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(mockLoggedInUser));
     localStorage.setItem(CART_STORAGE_KEY, JSON.stringify([mockCartItem]));
 
@@ -1473,21 +1608,29 @@ describe('Giao diện và luồng xử lý trang Checkout (/checkout)', () => {
     });
 
     renderCheckout();
-
-    await waitFor(() => {
-      expect(screen.getByText('#1410')).toBeInTheDocument();
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
     });
 
-    const accInput = await screen.findByPlaceholderText(/nhập số ví điện tử/i);
-    await user.type(accInput, '12345678');
-    await user.click(screen.getByRole('button', { name: /xác nhận thanh toán/i }));
+    expect(screen.getByText('#1410')).toBeInTheDocument();
 
-    await waitFor(() => {
-      expect(
-        screen.getByText(/đơn hàng không ở trạng thái cho phép thanh toán/i)
-      ).toBeInTheDocument();
-      expect(screen.getByRole('link', { name: /xem lịch sử đơn/i })).toBeInTheDocument();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /thanh toán bằng qr/i }));
     });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5000);
+    });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(
+      screen.getByText(/đơn hàng không ở trạng thái cho phép thanh toán/i)
+    ).toBeInTheDocument();
+    expect(screen.getByText('Đã hủy')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /xem lịch sử đơn/i })).toBeInTheDocument();
 
     // pendingOrder đã được xóa để khách không bị kẹt ở đơn cũ
     expect(localStorage.getItem(PENDING_ORDER_STORAGE_KEY)).toBeNull();

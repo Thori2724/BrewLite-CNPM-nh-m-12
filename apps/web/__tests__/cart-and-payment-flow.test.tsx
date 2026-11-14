@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, waitFor, cleanup, fireEvent } from '@testing-library/react';
+import { render, screen, waitFor, cleanup, fireEvent, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import CheckoutPage from '../app/checkout/page';
@@ -194,6 +194,7 @@ describe('Dòng 20 — Kiểm thử Giỏ hàng và Luồng Thanh toán (A1–A1
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     cleanup();
     globalThis.fetch = originalFetch;
     process.env = originalEnv;
@@ -691,22 +692,10 @@ describe('Dòng 20 — Kiểm thử Giỏ hàng và Luồng Thanh toán (A1–A1
       (window as unknown as Record<string, unknown>).location = originalLocation;
     });
 
-    it('B2. Form hiển thị hình thức nhận mặc định AT_COUNTER ("Tại quầy"/"Mang đi") và phương thức WALLET/CARD ("Ví điện tử"/"Thẻ ngân hàng") đúng mục 7 hợp đồng', async () => {
+    it('B2. Form hiển thị hình thức nhận mặc định AT_COUNTER ("Tại quầy"/"Mang đi") và lựa chọn ví QR ZaloPay/MoMo (bỏ thẻ ngân hàng và ô nhập số)', async () => {
       const user = userEvent.setup();
       localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(MOCK_AUTH_SESSION));
       localStorage.setItem(CART_STORAGE_KEY, JSON.stringify([CONTRACT_CART_DRINK]));
-
-      globalThis.fetch = vi.fn().mockResolvedValueOnce(
-        createJsonResponse(201, {
-          id: '33333333-0000-0000-0000-000000000001',
-          orderNumber: 1001,
-          status: 'PENDING',
-          receiveType: 'AT_COUNTER',
-          totalAmount: 106000,
-          createdAt: '2026-11-05T03:00:00.000Z',
-          items: [],
-        })
-      );
 
       renderCheckoutWithProviders();
 
@@ -718,23 +707,25 @@ describe('Dòng 20 — Kiểm thử Giỏ hàng và Luồng Thanh toán (A1–A1
       expect(takeAwayRadio.value).toBe('TAKE_AWAY');
       expect(takeAwayRadio.checked).toBe(false);
 
-      // Chuyển sang Bước 2 để kiểm tra nhãn phương thức thanh toán WALLET / CARD
-      await user.click(screen.getByRole('button', { name: /đặt đơn hàng/i }));
+      // Kiểm tra lựa chọn ví QR (ZaloPay mặc định, MoMo tùy chọn) và đã gỡ thẻ/ô nhập số
+      const zalopayBtn = screen.getByRole('button', { name: /zalopay/i });
+      const momoBtn = screen.getByRole('button', { name: /momo/i });
+      expect(zalopayBtn).toHaveAttribute('aria-pressed', 'true');
+      expect(momoBtn).toHaveAttribute('aria-pressed', 'false');
+      expect(screen.queryByRole('radio', { name: /thẻ ngân hàng/i })).not.toBeInTheDocument();
+      expect(document.querySelector('#accountNumber')).toBeNull();
 
-      const walletRadio = (await screen.findByRole('radio', { name: /ví điện tử/i })) as HTMLInputElement;
-      const cardRadio = screen.getByRole('radio', { name: /thẻ ngân hàng/i }) as HTMLInputElement;
-      expect(walletRadio.value).toBe('WALLET');
-      expect(walletRadio.checked).toBe(true);
-      expect(cardRadio.value).toBe('CARD');
-      expect(cardRadio.checked).toBe(false);
+      await user.click(momoBtn);
+      expect(momoBtn).toHaveAttribute('aria-pressed', 'true');
+      expect(zalopayBtn).toHaveAttribute('aria-pressed', 'false');
     });
 
-    it('B3. Validate accountNumber (7/8/19/20 số, chữ/ký tự đặc biệt, khoảng trắng, để trống) và ghi chú đơn > 200 ký tự: khi lỗi không gọi fetch và hiện thông báo tiếng Việt cạnh ô nhập', async () => {
-      const user = userEvent.setup();
+    it('B3. Giữ nguyên hàm validateAccountNumber ở mức unit test, kiểm tra ghi chú đơn > 200 ký tự không gọi fetch, và bước QR không hiển thị ô nhập số tài khoản/thẻ', async () => {
+      vi.useFakeTimers();
       localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(MOCK_AUTH_SESSION));
       localStorage.setItem(CART_STORAGE_KEY, JSON.stringify([CONTRACT_CART_DRINK]));
 
-      // 1. Kiểm tra hàm validateAccountNumber trực tiếp với đủ các biên
+      // 1. Kiểm tra hàm validateAccountNumber trực tiếp với đủ các biên (code cũ giữ lại nhưng gỡ khỏi UI)
       expect(validateAccountNumber('1234567').isValid).toBe(false); // 7 số -> lỗi
       expect(validateAccountNumber('12345678').isValid).toBe(true); // 8 số -> ok
       expect(validateAccountNumber('1234567890123456789').isValid).toBe(true); // 19 số -> ok
@@ -750,18 +741,19 @@ describe('Dòng 20 — Kiểm thử Giỏ hàng và Luồng Thanh toán (A1–A1
       globalThis.fetch = mockFetch;
 
       renderCheckoutWithProviders();
+      await act(async () => {
+        await Promise.resolve();
+      });
 
       // 2. Ghi chú đơn > 200 ký tự trên UI -> báo lỗi tiếng Việt cạnh ô nhập và KHÔNG gọi fetch
-      const noteTextarea = await screen.findByLabelText(/ghi chú đơn hàng/i);
+      const noteTextarea = screen.getByLabelText(/ghi chú đơn hàng/i);
       fireEvent.change(noteTextarea, { target: { value: 'a'.repeat(201) } });
-      await user.click(screen.getByRole('button', { name: /đặt đơn hàng/i }));
+      fireEvent.click(screen.getByRole('button', { name: /xác nhận đặt đơn hàng/i }));
 
-      expect(
-        await screen.findByText(/ghi chú không được vượt quá 200 ký tự/i)
-      ).toBeInTheDocument();
+      expect(screen.getByText(/ghi chú không được vượt quá 200 ký tự/i)).toBeInTheDocument();
       expect(mockFetch).not.toHaveBeenCalled();
 
-      // Sửa lại ghi chú hợp lệ để sang Bước 2
+      // 3. Sửa lại ghi chú hợp lệ để sang Bước 2 (màn QR): không có ô nhập #accountNumber hay chọn thẻ
       fireEvent.change(noteTextarea, { target: { value: 'Ghi chú hợp lệ' } });
       mockFetch.mockResolvedValueOnce(
         createJsonResponse(201, {
@@ -774,65 +766,20 @@ describe('Dòng 20 — Kiểm thử Giỏ hàng và Luồng Thanh toán (A1–A1
           items: [],
         })
       );
-      await user.click(screen.getByRole('button', { name: /đặt đơn hàng/i }));
 
-      const accInput = await screen.findByPlaceholderText(/nhập số ví điện tử/i);
-      const payBtn = screen.getByRole('button', { name: /xác nhận thanh toán/i });
-      mockFetch.mockClear();
-
-      // 3. Kiểm tra các trường hợp accountNumber lỗi trên form -> KHÔNG gọi fetch và hiện lỗi cạnh ô nhập (#acc-error)
-      const invalidCases = [
-        '', // Để trống
-        '        ', // Chuỗi toàn khoảng trắng
-        '1234567', // 7 số
-        '123 4567', // 7 số kèm khoảng trắng
-        '12345678901234567890', // 20 số
-        '12345678abc', // Có chữ cái
-        '1234@5678!', // Có ký tự đặc biệt
-      ];
-
-      for (const badInput of invalidCases) {
-        await user.clear(accInput);
-        if (badInput) {
-          await user.type(accInput, badInput);
-        }
-        await user.click(payBtn);
-        expect(mockFetch).not.toHaveBeenCalled();
-        expect(document.getElementById('acc-error')).toBeInTheDocument();
-      }
-
-      // 4. Kiểm tra nhập '9704 1234 5678 0000' -> hợp lệ, gửi POST /payments với accountNumber = '9704123456780000' (đã bỏ khoảng trắng)
-      mockFetch.mockResolvedValueOnce(
-        createJsonResponse(201, {
-          id: '44444444-0000-0000-0000-000000000002',
-          orderId: '33333333-0000-0000-0000-000000000001',
-          method: 'WALLET',
-          accountLast4: '0000',
-          amount: 106000,
-          status: 'FAILED',
-          failureReason: 'Giao dịch bị từ chối (mô phỏng)',
-          createdAt: '2026-11-05T03:02:00.000Z',
-          order: {
-            id: '33333333-0000-0000-0000-000000000001',
-            orderNumber: 1001,
-            status: 'PAYMENT_FAILED',
-          },
-        })
-      );
-
-      await user.clear(accInput);
-      await user.type(accInput, '9704 1234 5678 0000');
-      await user.click(payBtn);
-
-      await waitFor(() => {
-        expect(mockFetch).toHaveBeenCalledTimes(1);
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: /xác nhận đặt đơn hàng/i }));
+        await Promise.resolve();
+        await Promise.resolve();
       });
-      const paymentBody = JSON.parse(mockFetch.mock.calls[0][1].body);
-      expect(paymentBody.accountNumber).toBe('9704123456780000');
+
+      expect(screen.getByRole('img', { name: /mã qr zalopay cho đơn hàng #1001/i })).toBeInTheDocument();
+      expect(document.querySelector('#accountNumber')).toBeNull();
+      expect(screen.queryByRole('radio', { name: /thẻ ngân hàng/i })).not.toBeInTheDocument();
     });
 
-    it('B4. Luồng thành công: POST /orders (201) rồi POST /payments (201) với đúng headers, đúng 3 trường body, xóa giỏ và hiện màn xác nhận kèm orderNumber', async () => {
-      const user = userEvent.setup();
+    it('B4. Luồng thành công QR: POST /orders (201), đếm ngược 5 giây tự gọi POST /payments (201) với method WALLET và accountNumber 0900000001, xóa giỏ và hiện màn xác nhận kèm orderNumber', async () => {
+      vi.useFakeTimers();
       localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(MOCK_AUTH_SESSION));
       localStorage.setItem(
         CART_STORAGE_KEY,
@@ -860,7 +807,7 @@ describe('Dòng 20 — Kiểm thử Giỏ hàng và Luồng Thanh toán (A1–A1
             id: '44444444-0000-0000-0000-000000000001',
             orderId: '33333333-0000-0000-0000-000000000001',
             method: 'WALLET',
-            accountLast4: '4321',
+            accountLast4: '0001',
             amount: 136000,
             status: 'SUCCESS',
             createdAt: '2026-11-05T03:02:00.000Z',
@@ -874,29 +821,46 @@ describe('Dòng 20 — Kiểm thử Giỏ hàng và Luồng Thanh toán (A1–A1
       globalThis.fetch = mockFetch;
 
       renderCheckoutWithProviders();
-
-      // Bước 1: Chọn Mang đi, nhập ghi chú và bấm Đặt đơn hàng
-      await user.click(await screen.findByLabelText(/mang đi/i));
-      await user.type(
-        screen.getByLabelText(/ghi chú đơn hàng/i),
-        'Cho xin thêm quai xách giấy'
-      );
-      await user.click(screen.getByRole('button', { name: /đặt đơn hàng/i }));
-
-      // Bước 2: Nhập số tài khoản 0987654321 và bấm Xác nhận thanh toán
-      const accInput = await screen.findByPlaceholderText(/nhập số ví điện tử/i);
-      await user.type(accInput, '0987654321');
-      await user.click(screen.getByRole('button', { name: /xác nhận thanh toán/i }));
-
-      // Chờ màn hình xác nhận thành công
-      await waitFor(() => {
-        expect(screen.getByText(/thanh toán thành công!/i)).toBeInTheDocument();
-        expect(screen.getByText('#1001')).toBeInTheDocument();
-        expect(screen.getByText('Đã thanh toán')).toBeInTheDocument();
+      await act(async () => {
+        await Promise.resolve();
       });
 
-      // Kiểm tra request POST /payments
+      // Bước 1: Chọn Mang đi, chọn ví MoMo (chỉ hiển thị), nhập ghi chú và bấm Xác nhận đặt đơn hàng
+      fireEvent.click(screen.getByLabelText(/mang đi/i));
+      fireEvent.click(screen.getByRole('button', { name: /momo/i }));
+      fireEvent.change(screen.getByLabelText(/ghi chú đơn hàng/i), {
+        target: { value: 'Cho xin thêm quai xách giấy' },
+      });
+
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: /xác nhận đặt đơn hàng/i }));
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      // Bước 2: Màn QR mở và hiển thị đếm ngược 5 giây
+      expect(screen.getByRole('img', { name: /mã qr momo cho đơn hàng #1001/i })).toBeInTheDocument();
+      expect(screen.getByRole('status')).toHaveTextContent(/5 giây/i);
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+
+      // Hết 5 giây -> tự gọi POST /payments với accountNumber = 0900000001
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5000);
+      });
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      expect(screen.getByText(/thanh toán thành công!/i)).toBeInTheDocument();
+      expect(screen.getAllByText('#1001').length).toBeGreaterThan(0);
+      expect(screen.getByText('Đã thanh toán')).toBeInTheDocument();
+
+      // Kiểm tra request POST /orders và POST /payments không mang thông tin ví hiển thị
       expect(mockFetch).toHaveBeenCalledTimes(2);
+      const orderBody = JSON.parse(mockFetch.mock.calls[0][1].body);
+      expect(Object.keys(orderBody).sort()).toEqual(['items', 'note', 'receiveType']);
+
       const [payUrl, payInit] = mockFetch.mock.calls[1];
       expect(payUrl).toBe('http://localhost:3001/payments');
       expect(payInit.method).toBe('POST');
@@ -912,7 +876,7 @@ describe('Dòng 20 — Kiểm thử Giỏ hàng và Luồng Thanh toán (A1–A1
       expect(payBody).toEqual({
         orderId: '33333333-0000-0000-0000-000000000001',
         method: 'WALLET',
-        accountNumber: '0987654321',
+        accountNumber: '0900000001',
       });
 
       // Giỏ hàng và đơn chờ đã được xóa sạch
@@ -920,8 +884,8 @@ describe('Dòng 20 — Kiểm thử Giỏ hàng và Luồng Thanh toán (A1–A1
       expect(localStorage.getItem(PENDING_ORDER_STORAGE_KEY)).toBeNull();
     });
 
-    it('B5. Thanh toán thất bại với số tài khoản kết thúc "0000": nhận 201 status FAILED, hiển thị failureReason, giữ nguyên orderId và hiện nút "Thử lại thanh toán"', async () => {
-      const user = userEvent.setup();
+    it('B5. Thoát khỏi màn QR (Hủy thanh toán): gọi POST /payments với 0900000000 -> nhận 201 FAILED, giữ nguyên giỏ và orderId, hiện nút "Thử lại thanh toán"', async () => {
+      vi.useFakeTimers();
       localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(MOCK_AUTH_SESSION));
       localStorage.setItem(CART_STORAGE_KEY, JSON.stringify([CONTRACT_CART_DRINK]));
 
@@ -957,26 +921,42 @@ describe('Dòng 20 — Kiểm thử Giỏ hàng và Luồng Thanh toán (A1–A1
         );
 
       renderCheckoutWithProviders();
-
-      await user.click(await screen.findByRole('button', { name: /đặt đơn hàng/i }));
-
-      const accInput = await screen.findByPlaceholderText(/nhập số ví điện tử/i);
-      await user.type(accInput, '1234560000');
-      await user.click(screen.getByRole('button', { name: /xác nhận thanh toán/i }));
-
-      // Hiển thị lỗi thanh toán từ failureReason, giữ nguyên orderId và có nút "Thử lại thanh toán"
-      await waitFor(() => {
-        expect(screen.getByText(/Giao dịch bị từ chối \(mô phỏng\)/i)).toBeInTheDocument();
-        expect(screen.getByRole('button', { name: /Thử lại thanh toán/i })).toBeInTheDocument();
+      await act(async () => {
+        await Promise.resolve();
       });
 
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: /xác nhận đặt đơn hàng/i }));
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      // Bấm "Hủy thanh toán" trên màn QR
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: /hủy thanh toán/i }));
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      expect(screen.getByText(/Bạn đã hủy thanh toán QR/i)).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Thử lại thanh toán/i })).toBeInTheDocument();
+
+      const payCall = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[1];
+      expect(JSON.parse(payCall[1].body)).toEqual({
+        orderId: '33333333-0000-0000-0000-000000000001',
+        method: 'WALLET',
+        accountNumber: '0900000000',
+      });
+
+      // Giữ nguyên giỏ hàng và orderId trong pendingOrder
+      expect(loadCartFromStorage()).toHaveLength(1);
       const pendingRaw = localStorage.getItem(PENDING_ORDER_STORAGE_KEY);
       expect(pendingRaw).not.toBeNull();
       expect(JSON.parse(pendingRaw!).orderId).toBe('33333333-0000-0000-0000-000000000001');
     });
 
-    it('B6. Thử lại thanh toán nhiều lần (fail -> fail -> success): luôn gọi POST /payments với CÙNG orderId, Idempotency-Key MỚI mỗi lần, số lần gọi POST /orders vẫn bằng 1', async () => {
-      const user = userEvent.setup();
+    it('B6. Thử lại thanh toán nhiều lần (thoát QR -> thoát QR -> hết 5 giây thành công): vào thẳng màn QR của CÙNG orderId, Idempotency-Key MỚI mỗi lần, không gọi POST /orders lại và chỉ xóa giỏ khi thành công', async () => {
+      vi.useFakeTimers();
       localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(MOCK_AUTH_SESSION));
       localStorage.setItem(CART_STORAGE_KEY, JSON.stringify([CONTRACT_CART_DRINK]));
 
@@ -995,7 +975,7 @@ describe('Dòng 20 — Kiểm thử Giỏ hàng và Luồng Thanh toán (A1–A1
             items: [],
           })
         )
-        // 2. Thanh toán lần 1 -> FAILED
+        // 2. Thanh toán lần 1 -> FAILED (thoát QR)
         .mockResolvedValueOnce(
           createJsonResponse(201, {
             id: 'pay-attempt-1',
@@ -1009,7 +989,7 @@ describe('Dòng 20 — Kiểm thử Giỏ hàng và Luồng Thanh toán (A1–A1
             order: { id: targetOrderId, orderNumber: 1001, status: 'PAYMENT_FAILED' },
           })
         )
-        // 3. Thanh toán lần 2 -> FAILED tiếp
+        // 3. Thanh toán lần 2 -> FAILED tiếp (thoát QR)
         .mockResolvedValueOnce(
           createJsonResponse(201, {
             id: 'pay-attempt-2',
@@ -1023,13 +1003,13 @@ describe('Dòng 20 — Kiểm thử Giỏ hàng và Luồng Thanh toán (A1–A1
             order: { id: targetOrderId, orderNumber: 1001, status: 'PAYMENT_FAILED' },
           })
         )
-        // 4. Thanh toán lần 3 -> SUCCESS (PAID)
+        // 4. Thanh toán lần 3 -> SUCCESS (PAID sau 5 giây)
         .mockResolvedValueOnce(
           createJsonResponse(201, {
             id: 'pay-attempt-3',
             orderId: targetOrderId,
             method: 'WALLET',
-            accountLast4: '4321',
+            accountLast4: '0001',
             amount: 106000,
             status: 'SUCCESS',
             createdAt: '2026-11-05T03:04:00.000Z',
@@ -1039,33 +1019,51 @@ describe('Dòng 20 — Kiểm thử Giỏ hàng và Luồng Thanh toán (A1–A1
       globalThis.fetch = mockFetch;
 
       renderCheckoutWithProviders();
+      await act(async () => {
+        await Promise.resolve();
+      });
 
       // Đặt đơn
-      await user.click(await screen.findByRole('button', { name: /đặt đơn hàng/i }));
-
-      const accInput = await screen.findByPlaceholderText(/nhập số ví điện tử/i);
-
-      // Lần thử 1 (FAILED)
-      await user.type(accInput, '1234560000');
-      await user.click(screen.getByRole('button', { name: /xác nhận thanh toán/i }));
-      await waitFor(() => {
-        expect(screen.getByRole('button', { name: /Thử lại thanh toán/i })).toBeInTheDocument();
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: /xác nhận đặt đơn hàng/i }));
+        await Promise.resolve();
+        await Promise.resolve();
       });
 
-      // Lần thử 2 (FAILED)
-      await user.type(accInput, '9999990000');
-      await user.click(screen.getByRole('button', { name: /Thử lại thanh toán/i }));
-      await waitFor(() => {
-        expect(mockFetch).toHaveBeenCalledTimes(3); // 1 orders + 2 payments
+      // Lần thử 1: thoát QR (FAILED) -> giỏ vẫn còn
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: /hủy thanh toán/i }));
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      expect(screen.getByRole('button', { name: /Thử lại thanh toán/i })).toBeInTheDocument();
+      expect(loadCartFromStorage()).toHaveLength(1);
+
+      // Bấm Thử lại thanh toán -> vào thẳng màn QR -> Lần thử 2: thoát QR (FAILED)
+      fireEvent.click(screen.getByRole('button', { name: /Thử lại thanh toán/i }));
+      expect(screen.getByRole('img', { name: /mã qr zalopay cho đơn hàng #1001/i })).toBeInTheDocument();
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: /hủy thanh toán/i }));
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      expect(mockFetch).toHaveBeenCalledTimes(3); // 1 orders + 2 payments
+      expect(loadCartFromStorage()).toHaveLength(1);
+
+      // Bấm Thử lại thanh toán -> vào thẳng màn QR -> Lần thử 3: hết 5 giây (SUCCESS)
+      fireEvent.click(screen.getByRole('button', { name: /Thử lại thanh toán/i }));
+      expect(screen.getByRole('img', { name: /mã qr zalopay cho đơn hàng #1001/i })).toBeInTheDocument();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5000);
+      });
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
       });
 
-      // Lần thử 3 (SUCCESS)
-      await user.type(accInput, '0987654321');
-      await user.click(screen.getByRole('button', { name: /Thử lại thanh toán/i }));
-      await waitFor(() => {
-        expect(screen.getByText(/thanh toán thành công!/i)).toBeInTheDocument();
-        expect(screen.getByText('#1001')).toBeInTheDocument();
-      });
+      expect(screen.getByText(/thanh toán thành công!/i)).toBeInTheDocument();
+      expect(screen.getAllByText('#1001').length).toBeGreaterThan(0);
+      expect(loadCartFromStorage()).toEqual([]);
 
       // Kiểm tra số lần gọi POST /orders chỉ đúng 1 lần, POST /payments 3 lần
       const orderCalls = mockFetch.mock.calls.filter(([url]) => String(url).endsWith('/orders'));
@@ -1088,8 +1086,8 @@ describe('Dòng 20 — Kiểm thử Giỏ hàng và Luồng Thanh toán (A1–A1
       expect(new Set(usedKeys).size).toBe(3);
     });
 
-    it('B7. Chống bấm đúp khi đang gửi và xử lý response thanh toán 200 OK (idempotency replay) giống như 201', async () => {
-      const user = userEvent.setup();
+    it('B7. Chống gọi trùng khi đang gửi POST /payments (khóa nút thoát/đóng, hiện "Đang xử lý...") và xử lý response 200 OK (idempotency replay) giống 201', async () => {
+      vi.useFakeTimers();
       localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(MOCK_AUTH_SESSION));
       localStorage.setItem(CART_STORAGE_KEY, JSON.stringify([CONTRACT_CART_DRINK]));
 
@@ -1115,46 +1113,61 @@ describe('Dòng 20 — Kiểm thử Giỏ hàng và Luồng Thanh toán (A1–A1
       globalThis.fetch = mockFetch;
 
       renderCheckoutWithProviders();
+      await act(async () => {
+        await Promise.resolve();
+      });
 
-      await user.click(await screen.findByRole('button', { name: /đặt đơn hàng/i }));
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: /xác nhận đặt đơn hàng/i }));
+        await Promise.resolve();
+        await Promise.resolve();
+      });
 
-      const accInput = await screen.findByPlaceholderText(/nhập số ví điện tử/i);
-      await user.type(accInput, '0987654321');
+      // Hết 5 giây -> bắt đầu gọi POST /payments đang pending
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5000);
+      });
 
-      const payBtn = screen.getByRole('button', { name: /xác nhận thanh toán/i });
-      // Bấm liên tiếp 3 lần khi request đang xử lý
-      await user.click(payBtn);
-      await user.click(payBtn);
-      await user.click(payBtn);
+      expect(screen.getByRole('status')).toHaveTextContent(/đang xử lý\.\.\./i);
+      const processingCancelBtn = screen.getByRole('button', { name: /đang xử lý\.\.\./i });
+      const closeBtn = screen.getByRole('button', { name: /đóng màn thanh toán qr/i });
+      expect(processingCancelBtn).toBeDisabled();
+      expect(closeBtn).toBeDisabled();
 
-      expect(screen.getByRole('button', { name: /đang xử lý giao dịch/i })).toBeDisabled();
+      // Thử bấm thoát/đóng trong lúc đang xử lý cũng không gọi thêm /payments
+      fireEvent.click(processingCancelBtn);
+      fireEvent.click(closeBtn);
+
       const paymentCalls = mockFetch.mock.calls.filter(([url]) =>
         String(url).endsWith('/payments')
       );
       expect(paymentCalls).toHaveLength(1);
 
       // Trả về HTTP 200 OK (kết quả cũ do idempotency) -> vẫn xử lý thành công như 201
-      resolvePayment(
-        createJsonResponse(200, {
-          id: '44444444-0000-0000-0000-000000000001',
-          orderId: '33333333-0000-0000-0000-000000000001',
-          method: 'WALLET',
-          accountLast4: '4321',
-          amount: 106000,
-          status: 'SUCCESS',
-          createdAt: '2026-11-05T03:02:00.000Z',
-          order: {
-            id: '33333333-0000-0000-0000-000000000001',
-            orderNumber: 1001,
-            status: 'PAID',
-          },
-        })
-      );
-
-      await waitFor(() => {
-        expect(screen.getByText(/thanh toán thành công!/i)).toBeInTheDocument();
-        expect(screen.getByText('#1001')).toBeInTheDocument();
+      await act(async () => {
+        resolvePayment(
+          createJsonResponse(200, {
+            id: '44444444-0000-0000-0000-000000000001',
+            orderId: '33333333-0000-0000-0000-000000000001',
+            method: 'WALLET',
+            accountLast4: '0001',
+            amount: 106000,
+            status: 'SUCCESS',
+            createdAt: '2026-11-05T03:02:00.000Z',
+            order: {
+              id: '33333333-0000-0000-0000-000000000001',
+              orderNumber: 1001,
+              status: 'PAID',
+            },
+          })
+        );
+        await Promise.resolve();
+        await Promise.resolve();
       });
+
+      expect(screen.getByText(/thanh toán thành công!/i)).toBeInTheDocument();
+      expect(screen.getAllByText('#1001').length).toBeGreaterThan(0);
+      expect(loadCartFromStorage()).toEqual([]);
     });
 
     it('B8. Lỗi POST /orders: 409 hết hàng (kèm details), 404, 400 (message mảng tiếng Anh), lỗi mạng và 500 đều hiện thông báo tiếng Việt thân thiện, giữ giỏ và không gọi /payments', async () => {
@@ -1252,8 +1265,8 @@ describe('Dòng 20 — Kiểm thử Giỏ hàng và Luồng Thanh toán (A1–A1
       expect(paymentCalls).toHaveLength(0);
     });
 
-    it('B9. Lỗi POST /payments: 400 (mảng/chuỗi), 404, 409, lỗi mạng, 500 đều hiện thông báo tiếng Việt và UI không bị kẹt ở trạng thái loading', async () => {
-      const user = userEvent.setup();
+    it('B9. Lỗi POST /payments trên luồng QR: 400 (mảng/chuỗi), lỗi mạng, 500, 409 và 404 đều hiện thông báo tiếng Việt và không kẹt loading', async () => {
+      vi.useFakeTimers();
       localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(MOCK_AUTH_SESSION));
       localStorage.setItem(CART_STORAGE_KEY, JSON.stringify([CONTRACT_CART_DRINK]));
 
@@ -1283,10 +1296,14 @@ describe('Dòng 20 — Kiểm thử Giỏ hàng và Luồng Thanh toán (A1–A1
       );
       globalThis.fetch = mockFetch;
 
-      renderCheckoutWithProviders();
+      const { unmount } = renderCheckoutWithProviders();
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+      });
 
-      const accInput = await screen.findByPlaceholderText(/nhập số ví điện tử/i);
-      const payBtn = screen.getByRole('button', { name: /xác nhận thanh toán/i });
+      // Bấm "Thanh toán bằng QR" ở màn chọn ví (?orderId= Cách A)
+      fireEvent.click(screen.getByRole('button', { name: /thanh toán bằng qr/i }));
 
       // 1. Lỗi 400 với message là mảng chuỗi tiếng Anh
       mockFetch.mockResolvedValueOnce(
@@ -1296,39 +1313,47 @@ describe('Dòng 20 — Kiểm thử Giỏ hàng và Luồng Thanh toán (A1–A1
           error: 'Bad Request',
         })
       );
-      await user.type(accInput, '12345678');
-      await user.click(payBtn);
-      await waitFor(() => {
-        expect(
-          screen.getByText(/Số tài khoản không hợp lệ \(chỉ gồm 8 đến 19 chữ số\)/i)
-        ).toBeInTheDocument();
-        expect(payBtn).not.toBeDisabled();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5000);
       });
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      expect(screen.getByText(/Yêu cầu thanh toán không hợp lệ/i)).toBeInTheDocument();
+      const retryQrBtn = screen.getByRole('button', { name: /thử lại thanh toán/i });
+      expect(retryQrBtn).not.toBeDisabled();
 
-      // 2. Lỗi mạng (fetch reject)
+      // 2. Bấm "Thử lại thanh toán" -> mở QR -> Lỗi mạng (fetch reject)
+      fireEvent.click(retryQrBtn);
       mockFetch.mockRejectedValueOnce(new TypeError('Failed to fetch'));
-      await user.type(accInput, '12345678');
-      await user.click(payBtn);
-      await waitFor(() => {
-        expect(screen.getByText(/Không thể kết nối đến máy chủ/i)).toBeInTheDocument();
-        expect(payBtn).not.toBeDisabled();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5000);
       });
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      expect(screen.getByText(/Không thể kết nối đến máy chủ/i)).toBeInTheDocument();
+      const retryNetBtn = screen.getByRole('button', { name: /^thử lại$/i });
+      expect(retryNetBtn).not.toBeDisabled();
 
-      // 3. Lỗi 500 Internal Server Error
+      // 3. Lỗi 500 Internal Server Error khi bấm Thử lại (giữ nguyên key)
       mockFetch.mockResolvedValueOnce(
         createJsonResponse(500, {
           statusCode: 500,
           message: 'Internal Server Error',
         })
       );
-      await user.type(accInput, '12345678');
-      await user.click(payBtn);
-      await waitFor(() => {
-        expect(screen.getByText(/Máy chủ đang gặp sự cố tạm thời/i)).toBeInTheDocument();
-        expect(payBtn).not.toBeDisabled();
+      await act(async () => {
+        fireEvent.click(retryNetBtn);
+        await Promise.resolve();
+        await Promise.resolve();
       });
+      expect(screen.getByText(/Máy chủ đang gặp sự cố tạm thời/i)).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /^thử lại$/i })).not.toBeDisabled();
 
-      // 4. Lỗi 409 Conflict (dùng lại key cho orderId khác / đơn không ở trạng thái cho phép thanh toán)
+      // 4. Lỗi 409 Conflict -> GET /orders/:id xác nhận CANCELLED -> báo rõ và không kẹt loading
       mockFetch
         .mockResolvedValueOnce(
           createJsonResponse(409, {
@@ -1338,7 +1363,6 @@ describe('Dòng 20 — Kiểm thử Giỏ hàng và Luồng Thanh toán (A1–A1
           })
         )
         .mockResolvedValueOnce(
-          // GET /orders/:id kiểm tra lại trạng thái đơn
           createJsonResponse(200, {
             id: targetOrderId,
             orderNumber: 1001,
@@ -1349,33 +1373,62 @@ describe('Dòng 20 — Kiểm thử Giỏ hàng và Luồng Thanh toán (A1–A1
             items: [],
           })
         );
-      await user.type(accInput, '12345678');
-      await user.click(payBtn);
-      await waitFor(() => {
-        expect(
-          screen.getByText(/Đơn không ở trạng thái cho phép thanh toán/i)
-        ).toBeInTheDocument();
-        expect(payBtn).not.toBeDisabled();
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: /^thử lại$/i }));
+        await Promise.resolve();
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      expect(screen.getByText(/Đơn không ở trạng thái cho phép thanh toán/i)).toBeInTheDocument();
+      expect(screen.getByText('Đã hủy')).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: /xem lịch sử đơn/i })).toBeInTheDocument();
+
+      unmount();
+
+      // 5. Lỗi 404 Not Found khi POST /payments -> xóa pendingOrder và báo rõ tiếng Việt
+      mockFetch.mockReset();
+      mockFetch
+        .mockResolvedValueOnce(
+          createJsonResponse(200, {
+            id: targetOrderId,
+            orderNumber: 1001,
+            status: 'PENDING',
+            receiveType: 'AT_COUNTER',
+            totalAmount: 106000,
+            createdAt: '2026-11-05T03:00:00.000Z',
+            items: [],
+          })
+        )
+        .mockResolvedValueOnce(
+          createJsonResponse(404, {
+            statusCode: 404,
+            message: 'Đơn hàng không tồn tại',
+            error: 'Not Found',
+          })
+        );
+
+      renderCheckoutWithProviders();
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
       });
 
-      // 5. Lỗi 404 Not Found -> quay về bước đặt đơn và hiện thông báo tiếng Việt
-      mockFetch.mockResolvedValueOnce(
-        createJsonResponse(404, {
-          statusCode: 404,
-          message: 'Đơn hàng không tồn tại',
-          error: 'Not Found',
-        })
-      );
-      await user.type(accInput, '12345678');
-      await user.click(payBtn);
-      await waitFor(() => {
-        expect(screen.getByText(/Đơn hàng không tồn tại/i)).toBeInTheDocument();
-        expect(screen.getByRole('button', { name: /đặt đơn hàng/i })).not.toBeDisabled();
+      fireEvent.click(screen.getByRole('button', { name: /thanh toán bằng qr/i }));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5000);
       });
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      expect(screen.getByText(/Đơn hàng không tồn tại/i)).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: /xem lịch sử đơn/i })).toBeInTheDocument();
+      expect(localStorage.getItem(PENDING_ORDER_STORAGE_KEY)).toBeNull();
     });
 
-    it('B10. Bảo mật số tài khoản và token: không xuất hiện số tài khoản đầy đủ hay token trong console, localStorage, sessionStorage, URL; sau khi gửi chỉ hiện 4 số cuối', async () => {
-      const user = userEvent.setup();
+    it('B10. Bảo mật hằng số tài khoản mô phỏng và token: không lộ 0900000001 / 0900000000 / •••• ra giao diện, console, storage, URL và không lộ token ra console/URL', async () => {
+      vi.useFakeTimers();
       const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
       const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
       const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
@@ -1383,7 +1436,6 @@ describe('Dòng 20 — Kiểm thử Giỏ hàng và Luồng Thanh toán (A1–A1
       localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(MOCK_AUTH_SESSION));
       localStorage.setItem(CART_STORAGE_KEY, JSON.stringify([CONTRACT_CART_DRINK]));
 
-      const sensitiveAccount = '9704123456784321';
       globalThis.fetch = vi
         .fn()
         .mockResolvedValueOnce(
@@ -1401,8 +1453,8 @@ describe('Dòng 20 — Kiểm thử Giỏ hàng và Luồng Thanh toán (A1–A1
           createJsonResponse(201, {
             id: '44444444-0000-0000-0000-000000000001',
             orderId: '33333333-0000-0000-0000-000000000001',
-            method: 'CARD',
-            accountLast4: '4321',
+            method: 'WALLET',
+            accountLast4: '0001',
             amount: 106000,
             status: 'SUCCESS',
             createdAt: '2026-11-05T03:02:00.000Z',
@@ -1415,23 +1467,34 @@ describe('Dòng 20 — Kiểm thử Giỏ hàng và Luồng Thanh toán (A1–A1
         );
 
       renderCheckoutWithProviders();
-
-      await user.click(await screen.findByRole('button', { name: /đặt đơn hàng/i }));
-      await user.click(await screen.findByLabelText(/thẻ ngân hàng/i));
-
-      const accInput = screen.getByPlaceholderText(/nhập số thẻ ngân hàng/i);
-      await user.type(accInput, sensitiveAccount);
-      await user.click(screen.getByRole('button', { name: /xác nhận thanh toán/i }));
-
-      await waitFor(() => {
-        expect(screen.getByText(/thanh toán thành công!/i)).toBeInTheDocument();
+      await act(async () => {
+        await Promise.resolve();
       });
 
-      // 1. Màn hình xác nhận chỉ hiện 4 số cuối (•••• 4321), KHÔNG hiện số đầy đủ
-      expect(screen.getByText('•••• 4321')).toBeInTheDocument();
-      expect(screen.queryByText(new RegExp(sensitiveAccount))).not.toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: /momo/i }));
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: /xác nhận đặt đơn hàng/i }));
+        await Promise.resolve();
+        await Promise.resolve();
+      });
 
-      // 2. Kiểm tra console.log / warn / error tuyệt đối không chứa số tài khoản đầy đủ hay JWT token
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5000);
+      });
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      expect(screen.getByText(/thanh toán thành công!/i)).toBeInTheDocument();
+      expect(screen.getAllByText('#1001').length).toBeGreaterThan(0);
+
+      // 1. Màn hình xác nhận KHÔNG hiện dòng số tài khoản hay 2 hằng số nội bộ
+      expect(screen.queryByText(/••••/)).not.toBeInTheDocument();
+      expect(screen.queryByText(/0900000001/)).not.toBeInTheDocument();
+      expect(screen.queryByText(/0900000000/)).not.toBeInTheDocument();
+
+      // 2. Kiểm tra console.log / warn / error tuyệt đối không chứa hằng số tài khoản hay JWT token
       const allConsoleArgs = [
         ...logSpy.mock.calls,
         ...warnSpy.mock.calls,
@@ -1441,19 +1504,24 @@ describe('Dòng 20 — Kiểm thử Giỏ hàng và Luồng Thanh toán (A1–A1
         .map((arg) => (typeof arg === 'string' ? arg : JSON.stringify(arg)))
         .join(' ');
 
-      expect(allConsoleArgs).not.toContain(sensitiveAccount);
+      expect(allConsoleArgs).not.toContain('0900000001');
+      expect(allConsoleArgs).not.toContain('0900000000');
       expect(allConsoleArgs).not.toContain(MOCK_AUTH_SESSION.token);
 
-      // 3. Kiểm tra localStorage, sessionStorage và URL không chứa số tài khoản đầy đủ
+      // 3. Kiểm tra localStorage, sessionStorage và URL không chứa hằng số tài khoản
       for (let i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i)!;
-        expect(localStorage.getItem(key)).not.toContain(sensitiveAccount);
+        expect(localStorage.getItem(key)).not.toContain('0900000001');
+        expect(localStorage.getItem(key)).not.toContain('0900000000');
       }
       for (let i = 0; i < sessionStorage.length; i++) {
         const key = sessionStorage.key(i)!;
-        expect(sessionStorage.getItem(key)).not.toContain(sensitiveAccount);
+        expect(sessionStorage.getItem(key)).not.toContain('0900000001');
+        expect(sessionStorage.getItem(key)).not.toContain('0900000000');
       }
-      expect(window.location.href).not.toContain(sensitiveAccount);
+      expect(window.location.href).not.toContain('0900000001');
+      expect(window.location.href).not.toContain('0900000000');
+      expect(window.location.href).not.toContain(MOCK_AUTH_SESSION.token);
 
       logSpy.mockRestore();
       warnSpy.mockRestore();
@@ -1474,7 +1542,9 @@ describe('Dòng 20 — Kiểm thử Giỏ hàng và Luồng Thanh toán (A1–A1
       mockSearchParams = new URLSearchParams('orderId=33333333-0000-0000-0000-000000000099');
       globalThis.fetch = vi.fn().mockImplementation(() => new Promise(() => {}));
       const { unmount: unmountLoading } = renderCheckoutWithProviders();
-      expect(screen.getByText(/đang chuẩn bị trang thanh toán/i)).toBeInTheDocument();
+      await waitFor(() => {
+        expect(screen.getByText(/đang tải thông tin đơn hàng\.\.\./i)).toBeInTheDocument();
+      });
       unmountLoading();
 
       // 3. Trạng thái error khi tra cứu đơn hàng trả về 404
@@ -1490,9 +1560,7 @@ describe('Dòng 20 — Kiểm thử Giỏ hàng và Luồng Thanh toán (A1–A1
       renderCheckoutWithProviders();
       await waitFor(() => {
         expect(
-          screen.getByText(
-            /đơn hàng trước đó không còn tồn tại trên hệ thống. vui lòng tiến hành đặt lại/i
-          )
+          screen.getByText(/không tìm thấy đơn hàng hoặc bạn không có quyền truy cập\./i)
         ).toBeInTheDocument();
       });
     });
