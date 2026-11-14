@@ -1,4 +1,6 @@
 import {
+  ApiErrorDetail,
+  ApiHttpError,
   AUTH_ENDPOINTS,
   AUTH_ERROR_MESSAGES,
   LoginDto,
@@ -7,7 +9,10 @@ import {
   RegisterResponse,
 } from './auth-contract';
 import { clearAuthSession, getSafeRedirectUrl, loadAuthSession } from '../utils/auth';
-import { isMockAuthActive, mockLogin, mockRegister } from '../mocks/mock-auth';
+import { isMockAuthActive } from '../mocks/mock-config';
+import { mockLogin, mockRegister } from '../mocks/mock-auth';
+
+export { ApiHttpError };
 
 export class AuthApiError extends Error {
   statusCode: number;
@@ -141,6 +146,10 @@ export async function apiFetch<T>(
       message = response.statusText || message;
     }
 
+    if (response.status === 403 && !hasServerStringMessage) {
+      message = AUTH_ERROR_MESSAGES.FORBIDDEN;
+    }
+
     if (response.status === 409) {
       if (endpoint.includes(AUTH_ENDPOINTS.REGISTER)) {
         if (!hasServerStringMessage || message === 'Email đã tồn tại') {
@@ -155,6 +164,97 @@ export async function apiFetch<T>(
   }
 
   // Phản hồi thành công
+  try {
+    return (await response.json()) as T;
+  } catch {
+    return {} as T;
+  }
+}
+
+/**
+ * Hàm fetch riêng cho các API mới (quản lý đơn, hủy đơn, quản lý món, nhân viên):
+ * - Đọc base URL từ NEXT_PUBLIC_API_URL (mặc định http://localhost:3001).
+ * - Tự động gắn `Authorization: Bearer <accessToken>` khi có phiên đăng nhập (trừ `skipAuth: true`).
+ * - Khi lỗi: ném `ApiHttpError` giữ nguyên `statusCode`, `message` (string | string[]), `details` nếu có.
+ * - KHÔNG tự xóa token, KHÔNG tự chuyển hướng khi gặp 401/403 (để màn hình/task sau tự xử lý).
+ */
+export async function apiRequest<T>(
+  endpoint: string,
+  options: RequestInit & { skipAuth?: boolean } = {}
+): Promise<T> {
+  const { skipAuth, headers: customHeaders, ...fetchOptions } = options;
+  const headers = new Headers(customHeaders || {});
+
+  if (!headers.has('Content-Type') && !(fetchOptions.body instanceof FormData)) {
+    headers.set('Content-Type', 'application/json');
+  }
+
+  if (!skipAuth) {
+    const session = loadAuthSession();
+    if (session?.token) {
+      headers.set('Authorization', `Bearer ${session.token}`);
+    }
+  }
+
+  const baseUrl = getApiBaseUrl();
+  const url = endpoint.startsWith('http')
+    ? endpoint
+    : `${baseUrl}${endpoint.startsWith('/') ? '' : '/'}${endpoint}`;
+
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      ...fetchOptions,
+      headers,
+    });
+  } catch (err) {
+    throw new ApiHttpError({
+      statusCode: 0,
+      message: AUTH_ERROR_MESSAGES.NETWORK_ERROR,
+      errorData: err,
+    });
+  }
+
+  if (!response.ok) {
+    let errorData: unknown;
+    let message: string | string[] =
+      response.status === 401
+        ? AUTH_ERROR_MESSAGES.SESSION_EXPIRED
+        : response.status === 403
+          ? AUTH_ERROR_MESSAGES.FORBIDDEN
+          : response.statusText || AUTH_ERROR_MESSAGES.UNKNOWN_ERROR;
+    let errorText: string | undefined;
+    let details: ApiErrorDetail[] | undefined;
+
+    try {
+      errorData = await response.json();
+      if (errorData && typeof errorData === 'object') {
+        const errorObj = errorData as Record<string, unknown>;
+        if (Array.isArray(errorObj.message)) {
+          message = errorObj.message.map((item) => String(item));
+        } else if (typeof errorObj.message === 'string' && errorObj.message.trim()) {
+          message = errorObj.message;
+        }
+        if (typeof errorObj.error === 'string') {
+          errorText = errorObj.error;
+        }
+        if (Array.isArray(errorObj.details)) {
+          details = errorObj.details as ApiErrorDetail[];
+        }
+      }
+    } catch {
+      // Giữ thông báo mặc định nếu response không phải JSON
+    }
+
+    throw new ApiHttpError({
+      statusCode: response.status,
+      message,
+      error: errorText,
+      details,
+      errorData,
+    });
+  }
+
   try {
     return (await response.json()) as T;
   } catch {

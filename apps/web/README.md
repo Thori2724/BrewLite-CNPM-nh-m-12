@@ -61,38 +61,35 @@ File cấu hình môi trường đặt tại `apps/web/.env.local` (file này kh
 # Địa chỉ máy chủ Backend NestJS (mặc định cổng 3001)
 NEXT_PUBLIC_API_URL=http://localhost:3001
 
-# Công tắc Mock Sản phẩm (true: dùng dữ liệu mẫu trong mocks/; false: gọi GET /products và GET /products/:id)
-NEXT_PUBLIC_USE_MOCK_PRODUCTS=true
-
-# Công tắc Mock Xác thực (true: dùng tài khoản mẫu; false: gọi POST /auth/login, POST /auth/register)
-NEXT_PUBLIC_USE_MOCK_AUTH=true
-
-# Công tắc Mock Đơn hàng & Thanh toán (true: dùng mock orders/payments; false: gọi API thật)
-NEXT_PUBLIC_USE_MOCK_ORDERS=true
+# Công tắc Mock dùng chung (mặc định tắt / false)
+# - true: dùng dữ liệu giả trong mocks/ cho Auth, Products, Orders, Staff
+# - false (hoặc không đặt): gọi API thật tới NEXT_PUBLIC_API_URL
+NEXT_PUBLIC_USE_MOCK=false
 ```
 
-> **Lưu ý:** Khi chuyển công tắc sang `false` (hoặc xóa biến), ứng dụng sẽ tự động chuyển sang gọi trực tiếp API thật tới máy chủ NestJS tại `NEXT_PUBLIC_API_URL`.
+> **Lưu ý:**
+> - `NEXT_PUBLIC_USE_MOCK` là công tắc chính duy nhất (mặc định **tắt**). Khi đặt `NEXT_PUBLIC_USE_MOCK=true`, tất cả nhóm API (Xác thực, Sản phẩm, Đơn hàng/Thanh toán, Nhân viên) đều dùng dữ liệu giả.
+> - Nếu `NEXT_PUBLIC_USE_MOCK` chưa được đặt (hoặc rỗng), ứng dụng giữ tương thích ngược bằng cách đọc các biến cũ (`NEXT_PUBLIC_USE_MOCK_AUTH`, `NEXT_PUBLIC_USE_MOCK_PRODUCTS`, `NEXT_PUBLIC_USE_MOCK_ORDERS`).
+> - Để tắt hoàn toàn mock và gọi API thật, đặt `NEXT_PUBLIC_USE_MOCK=false` (và xóa hoặc đặt `false` các biến cũ nếu có). Khi sửa `.env.local`, nhớ khởi động lại `npm run dev` để Next.js nạp lại biến môi trường.
 
-### Cơ chế kết nối API Xác thực (POST /auth/register & POST /auth/login):
-- Khi `NEXT_PUBLIC_USE_MOCK_AUTH=true`:
-  - Dùng tài khoản mẫu kiểm thử cố định: `khachhang@brewlite.vn` / `password123`.
+### Cơ chế kết nối API Xác thực (`POST /auth/register`, `POST /auth/login`) & Nhân viên (`GET /staff`, `PATCH /staff/:id/status`):
+- Khi bật mock (`NEXT_PUBLIC_USE_MOCK=true`):
+  - Có sẵn tài khoản mẫu `khachhang@brewlite.vn` và 5 tài khoản demo theo Mục 8.3 hợp đồng API (mật khẩu chung `password123`): `khach@example.com` (`CUSTOMER`), `nhanvien1@example.com`, `nhanvien2@example.com`, `nhanvien3@example.com` (`STAFF`, bị khóa `isActive: false` — đăng nhập trả 403), `quanly@example.com` (`ADMIN`).
+  - Mock quản lý nhân viên (`GET /staff`, `PATCH /staff/:id/status`) trả về 3 tài khoản nhân viên (`STAFF`) với 1 người đang bị khóa.
   - Tài khoản đăng ký mới trong mock chỉ sống trong bộ nhớ RAM (sẽ mất khi F5 hoặc mở tab mới).
-- Khi `NEXT_PUBLIC_USE_MOCK_AUTH=false`: gọi API thật qua `apiFetch` tới `NEXT_PUBLIC_API_URL` (`POST /auth/register`, `POST /auth/login`).
+- Khi tắt mock (`NEXT_PUBLIC_USE_MOCK=false`): gọi API thật tới `NEXT_PUBLIC_API_URL` (`POST /auth/register`, `POST /auth/login`, `GET /staff`, `PATCH /staff/:id/status`).
 
-### Cơ chế kết nối API Sản phẩm (GET /products & GET /products/:id):
-- Khi `NEXT_PUBLIC_USE_MOCK_PRODUCTS=false`: gọi API thật qua `fetch` công khai (không qua redirect 401).
+### Cơ chế kết nối API Sản phẩm (`GET /products`, `GET /products/:id`, `GET /products/manage`, `POST /products`, `PATCH /products/:id`, `PATCH /products/:id/availability`):
+- Khi bật mock (`NEXT_PUBLIC_USE_MOCK=true`): danh sách công khai có 5 món (gồm món tạm hết `stock = 0`); danh sách quản lý (`GET /products/manage`) có thêm món ẩn (`isVisible = false`) và hỗ trợ thêm/sửa/gạt trạng thái bán.
+- Khi tắt mock (`NEXT_PUBLIC_USE_MOCK=false`): gọi API thật tới `NEXT_PUBLIC_API_URL`.
 - Tham số truy vấn `GET /products`:
   - `category`: `TEA`, `COFFEE`, `MILK_TEA`, `CAKE`. Khi chọn "Tất cả", ứng dụng không truyền tham số `category`.
   - `q`: chuỗi từ khóa tìm kiếm được debounce 300ms bằng `setTimeout` và mã hóa qua `encodeURIComponent`.
 - Xử lý lỗi: lỗi 400 và 404 hiển thị thông báo lỗi bằng chuỗi tiếng Việt nhận từ server.
 
-### Cơ chế kết nối API Đơn hàng & Thanh toán (`POST /orders`, `POST /payments`, `GET /orders/me`, `GET /orders/:id`):
-- Khi `NEXT_PUBLIC_USE_MOCK_ORDERS=true`:
-  - Tự động nạp sẵn 4 đơn hàng mẫu đúng hình dạng hợp đồng (`MOCK_SEED_ORDERS`) vào `brewlite_mock_orders_db_v2`:
-    1. Đơn `#1001` (`33333333-0000-0000-0000-000000000001`): Trạng thái `PAID`, gồm 2 món (1 món nước có topping + 1 món bánh `Bánh Croissant` có `size/sugarLevel/iceLevel = null`), tổng tiền `136.000đ`.
-    2. Đơn `#1002` (`33333333-0000-0000-0000-000000000002`): Trạng thái `PENDING` (chờ thanh toán, mảng `payments` rỗng).
-    3. Đơn `#1003` (`33333333-0000-0000-0000-000000000003`): Trạng thái `PAYMENT_FAILED` (có giao dịch `FAILED` kèm `failureReason: "Giao dịch bị từ chối (mô phỏng)"`).
-    4. Đơn `#1004` (`33333333-0000-0000-0000-000000000004`): Trạng thái `READY` (kiểm tra giao diện trạng thái chưa có API kích hoạt).
+### Cơ chế kết nối API Đơn hàng & Thanh toán (`POST /orders`, `POST /payments`, `GET /orders/me`, `GET /orders/:id`, `GET /orders`, `PATCH /orders/:id/status`, `POST /orders/:id/cancel`):
+- Khi bật mock (`NEXT_PUBLIC_USE_MOCK=true`):
+  - Tự động nạp sẵn 7 đơn hàng mẫu đúng hình dạng hợp đồng (`MOCK_SEED_ORDERS`) vào `brewlite_mock_orders_db_v2`, phủ đủ cả 7 trạng thái (`PENDING`, `PAID`, `PREPARING`, `READY`, `COMPLETED`, `PAYMENT_FAILED`, `CANCELLED`).
   - Giả lập trạng thái danh sách rỗng (`/orders` empty): đặt `localStorage.setItem('brewlite_mock_orders_empty', 'true')` và tải lại trang; xóa khóa này để quay lại danh sách có dữ liệu.
   - Giả lập trạng thái 404 (`/orders/:id` not found): truy cập `/orders/404` hoặc một UUID bất kỳ không tồn tại.
   - Tài khoản thử nghiệm thanh toán:
@@ -100,17 +97,18 @@ NEXT_PUBLIC_USE_MOCK_ORDERS=true
     * Số kết thúc `0000` (ví dụ: `12340000`, `9704000000000000`): Thanh toán THẤT BẠI (`status: 'FAILED'`, lý do `"Giao dịch bị từ chối (mô phỏng)"`).
     * `9999999991`: Giả lập timeout.
     * `9999999992`: Giả lập lỗi mất mạng.
-    * Ghi chú đơn chứa `hethang`: Giả lập lỗi hết hàng `409 Conflict` (trả về mảng `details`).
-- Khi `NEXT_PUBLIC_USE_MOCK_ORDERS=false`:
+    * Ghi chú đơn chứa `hethang`: Giả lập lỗi hết hàng `409 Conflict` (trả về mảng `details` gồm `{ productId, name }`).
+- Khi tắt mock (`NEXT_PUBLIC_USE_MOCK=false`):
   - Gọi fetch thật tới `NEXT_PUBLIC_API_URL` (kèm `Authorization: Bearer <accessToken>`):
     * `POST /orders` với body `{ receiveType, note, items }` (tuyệt đối không gửi giá, không gửi thông tin người nhận).
     * `POST /payments` kèm header `Idempotency-Key` (8..100 ký tự) và body `{ orderId, method, accountNumber }`.
     * `GET /orders/me` lấy danh sách lịch sử đơn hàng của người dùng đang đăng nhập.
     * `GET /orders/:id` tra cứu chi tiết đơn hàng và lịch sử thanh toán.
+    * `GET /orders`, `PATCH /orders/:id/status`, `POST /orders/:id/cancel` cho luồng quản lý và hủy đơn.
 
 ---
 
-## 4. Bảng nhãn hiển thị tiếng Việt (Theo Mục 7 Hợp đồng API)
+## 4. Bảng nhãn hiển thị tiếng Việt (Theo Mục 9.3 Hợp đồng API)
 
 | Nhóm | Mã kỹ thuật (Code) | Nhãn hiển thị trên Web (Vietnamese Label) |
 |---|---|---|
@@ -139,11 +137,16 @@ NEXT_PUBLIC_USE_MOCK_ORDERS=true
 | | `COMPLETED` | Hoàn thành |
 | | `PAYMENT_FAILED` | Thanh toán lỗi |
 | | `CANCELLED` | Đã hủy |
-| **PaymentMethod (Thanh toán)** | `WALLET` | Ví điện tử |
+| **PaymentMethod (Thanh toán)** | `WALLET` | Ví điện tử (ZaloPay/Momo) |
 | | `CARD` | Thẻ ngân hàng |
 | **PaymentStatus (Trạng thái TT)** *(nhãn FE tự đặt)* | `SUCCESS` | Thành công |
 | | `FAILED` | Thất bại |
 | | `PENDING` | Đang xử lý |
+| **Role (Vai trò)** | `CUSTOMER` | Khách hàng |
+| | `STAFF` | Nhân viên |
+| | `ADMIN` | Quản lý |
+| **Trạng thái nhân viên (`isActive`)** | `true` | Hoạt động |
+| | `false` | Đã khóa |
 
 ---
 

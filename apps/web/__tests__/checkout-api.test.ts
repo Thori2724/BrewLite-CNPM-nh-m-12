@@ -85,8 +85,7 @@ describe('Lớp gọi API Đơn hàng và Thanh toán (services/orders.ts)', () 
         expect(orderErr.statusCode).toBe(409);
         expect(orderErr.message).toBe(ORDER_ERROR_MESSAGES.OUT_OF_STOCK);
         expect(orderErr.details).toBeDefined();
-        expect(orderErr.details?.[0].name).toBe('Trà đào cam sả');
-        expect(orderErr.details?.[0].available).toBe(0);
+        expect(orderErr.details?.[0]).toEqual({ productId: '3', name: 'Trà đào cam sả' });
       }
     });
 

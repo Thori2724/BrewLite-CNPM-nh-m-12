@@ -1,21 +1,29 @@
+import { ApiHttpError } from '../services/auth-contract';
 import {
   CreateOrderDto,
+  GetOrdersParams,
   ORDER_ERROR_MESSAGES,
+  ORDER_STATUS_LABELS,
+  OrderCustomer,
   OrderItemResponse,
   OrderResponse,
+  OrderStatus,
   OutOfStockDetail,
   PaymentDto,
   PaymentResponse,
+  StaffUpdatableOrderStatus,
 } from '../services/order-contract';
 import { OrderApiError } from '../services/orders';
+import { isMockOrdersActive } from './mock-config';
 import { MOCK_PRODUCTS, MOCK_TOPPINGS } from './mock-products';
 
-/**
- * Kiểm tra xem có đang bật chế độ Mock Đơn hàng/Thanh toán hay không
- */
-export function isMockOrdersActive(): boolean {
-  return process.env.NEXT_PUBLIC_USE_MOCK_ORDERS === 'true';
-}
+export { isMockOrdersActive };
+
+export const MOCK_DEFAULT_CUSTOMER: OrderCustomer = {
+  id: '44444444-0000-0000-0000-000000000001',
+  displayName: 'Khách demo',
+  email: 'khach@example.com',
+};
 
 export interface MockOrderRecord extends OrderResponse {
   userId?: string;
@@ -187,6 +195,111 @@ export const MOCK_SEED_ORDERS: MockOrderRecord[] = [
         status: 'SUCCESS',
         failureReason: null,
         createdAt: '2026-11-05T06:46:00.000Z',
+      },
+    ],
+  },
+  // 5. Đơn PREPARING (đang pha chế)
+  {
+    id: '33333333-0000-0000-0000-000000000005',
+    orderNumber: 1005,
+    status: 'PREPARING',
+    receiveType: 'AT_COUNTER',
+    note: 'Ít đá giúp mình',
+    totalAmount: 39000,
+    createdAt: '2026-11-05T07:10:00.000Z',
+    items: [
+      {
+        id: '88888888-0000-0000-0000-000000000007',
+        productId: '11111111-0000-0000-0000-000000000004',
+        productName: 'Trà đào cam sả',
+        size: 'S',
+        sugarLevel: 'P70',
+        iceLevel: 'LOW',
+        quantity: 1,
+        unitPrice: 39000,
+        lineTotal: 39000,
+        note: null,
+        toppings: [],
+      },
+    ],
+    payments: [
+      {
+        id: '44444444-0000-0000-0000-000000000004',
+        method: 'WALLET',
+        accountLast4: '0001',
+        status: 'SUCCESS',
+        failureReason: null,
+        createdAt: '2026-11-05T07:11:00.000Z',
+      },
+    ],
+  },
+  // 6. Đơn COMPLETED (hoàn thành)
+  {
+    id: '33333333-0000-0000-0000-000000000006',
+    orderNumber: 1006,
+    status: 'COMPLETED',
+    receiveType: 'TAKE_AWAY',
+    note: null,
+    totalAmount: 35000,
+    createdAt: '2026-11-05T08:00:00.000Z',
+    items: [
+      {
+        id: '88888888-0000-0000-0000-000000000008',
+        productId: '11111111-0000-0000-0000-000000000001',
+        productName: 'Cà phê sữa đá',
+        size: 'M',
+        sugarLevel: 'P100',
+        iceLevel: 'NORMAL',
+        quantity: 1,
+        unitPrice: 35000,
+        lineTotal: 35000,
+        note: null,
+        toppings: [],
+      },
+    ],
+    payments: [
+      {
+        id: '44444444-0000-0000-0000-000000000005',
+        method: 'WALLET',
+        accountLast4: '0001',
+        status: 'SUCCESS',
+        failureReason: null,
+        createdAt: '2026-11-05T08:01:00.000Z',
+      },
+    ],
+  },
+  // 7. Đơn CANCELLED (đã hủy sau khi thanh toán)
+  {
+    id: '33333333-0000-0000-0000-000000000007',
+    orderNumber: 1007,
+    status: 'CANCELLED',
+    receiveType: 'AT_COUNTER',
+    note: 'Đổi ý không đặt nữa',
+    totalAmount: 30000,
+    createdAt: '2026-11-05T08:30:00.000Z',
+    items: [
+      {
+        id: '88888888-0000-0000-0000-000000000009',
+        productId: '11111111-0000-0000-0000-000000000010',
+        productName: 'Bánh Croissant',
+        size: null,
+        sugarLevel: null,
+        iceLevel: null,
+        quantity: 1,
+        unitPrice: 30000,
+        lineTotal: 30000,
+        note: null,
+        toppings: [],
+      },
+    ],
+    payments: [
+      {
+        id: '44444444-0000-0000-0000-000000000006',
+        method: 'WALLET',
+        accountLast4: '0001',
+        status: 'SUCCESS',
+        failureReason: null,
+        createdAt: '2026-11-05T08:31:00.000Z',
       },
     ],
   },
@@ -367,7 +480,6 @@ export async function mockCreateOrder(dto: CreateOrderDto): Promise<OrderRespons
       {
         productId: 'mock-p-out',
         name: 'Trà đào cam sả',
-        available: 0,
       },
     ];
     throw new OrderApiError(409, ORDER_ERROR_MESSAGES.OUT_OF_STOCK, {
@@ -383,14 +495,13 @@ export async function mockCreateOrder(dto: CreateOrderDto): Promise<OrderRespons
     throw new OrderApiError(0, ORDER_ERROR_MESSAGES.NETWORK_ERROR);
   }
 
-  // 1. Kiểm tra tồn kho (stock <= 0 là hết hàng)
+  // 1. Kiểm tra món đang bán (stock <= 0 là tạm hết) - bản 2 chỉ trả productId và name
   const outOfStockDetails: OutOfStockDetail[] = [];
   for (const item of dto.items) {
     if (item.productId === '3') {
       outOfStockDetails.push({
         productId: '3',
         name: 'Trà đào cam sả',
-        available: 0,
       });
       continue;
     }
@@ -399,7 +510,6 @@ export async function mockCreateOrder(dto: CreateOrderDto): Promise<OrderRespons
       outOfStockDetails.push({
         productId: product.id,
         name: product.name,
-        available: product.stock,
       });
     }
   }
@@ -687,4 +797,199 @@ export async function mockGetMyOrders(): Promise<OrderResponse[]> {
     createdAt: order.createdAt,
     items: order.items,
   }));
+}
+
+const ALL_ORDER_STATUSES: OrderStatus[] = [
+  'PENDING',
+  'PAID',
+  'PREPARING',
+  'READY',
+  'COMPLETED',
+  'PAYMENT_FAILED',
+  'CANCELLED',
+];
+
+const STAFF_UPDATABLE_STATUSES: StaffUpdatableOrderStatus[] = [
+  'PREPARING',
+  'READY',
+  'COMPLETED',
+  'CANCELLED',
+];
+
+/**
+ * Quy tắc chuyển trạng thái đơn hàng theo mục 5.7 & 5.8 hợp đồng API bản 2.
+ */
+export function validateOrderTransition(
+  fromStatus: OrderStatus,
+  toStatus: OrderStatus
+): boolean {
+  if (toStatus === 'CANCELLED') {
+    return (
+      fromStatus === 'PENDING' ||
+      fromStatus === 'PAYMENT_FAILED' ||
+      fromStatus === 'PAID'
+    );
+  }
+  if (fromStatus === 'PAID' && toStatus === 'PREPARING') return true;
+  if (fromStatus === 'PREPARING' && toStatus === 'READY') return true;
+  if (fromStatus === 'READY' && toStatus === 'COMPLETED') return true;
+  return false;
+}
+
+/**
+ * Giả lập GET /orders (STAFF, ADMIN): lấy toàn bộ đơn kèm customer, hỗ trợ lọc ?status=...
+ */
+export async function mockGetAllOrders(
+  params?: GetOrdersParams
+): Promise<OrderResponse[]> {
+  loadMockDatabaseFromStorage();
+  ensureSeedMockOrders();
+
+  await new Promise((resolve) => setTimeout(resolve, 50));
+
+  if (mockNetworkSimulation === 'timeout') {
+    throw new ApiHttpError({ statusCode: 0, message: ORDER_ERROR_MESSAGES.NETWORK_TIMEOUT });
+  }
+  if (mockNetworkSimulation === 'offline') {
+    throw new ApiHttpError({ statusCode: 0, message: ORDER_ERROR_MESSAGES.NETWORK_ERROR });
+  }
+
+  if (params?.status && !ALL_ORDER_STATUSES.includes(params.status)) {
+    throw new ApiHttpError({
+      statusCode: 400,
+      message: ORDER_ERROR_MESSAGES.INVALID_ORDER_STATUS,
+      error: 'Bad Request',
+    });
+  }
+
+  let allOrders = Array.from(mockOrdersDatabase.values());
+  if (params?.status) {
+    allOrders = allOrders.filter((order) => order.status === params.status);
+  }
+
+  allOrders.sort((a, b) => {
+    const timeDiff = new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    if (timeDiff !== 0) return timeDiff;
+    return b.orderNumber - a.orderNumber;
+  });
+
+  return allOrders.map((order) => ({
+    id: order.id,
+    orderNumber: order.orderNumber,
+    status: order.status,
+    receiveType: order.receiveType,
+    note: order.note ?? null,
+    totalAmount: order.totalAmount,
+    createdAt: order.createdAt,
+    items: order.items,
+    customer: order.customer ?? MOCK_DEFAULT_CUSTOMER,
+  }));
+}
+
+/**
+ * Giả lập PATCH /orders/:id/status (STAFF, ADMIN)
+ */
+export async function mockUpdateOrderStatus(
+  orderId: string,
+  nextStatus: StaffUpdatableOrderStatus
+): Promise<OrderResponse> {
+  loadMockDatabaseFromStorage();
+  ensureSeedMockOrders();
+
+  await new Promise((resolve) => setTimeout(resolve, 50));
+
+  if (mockNetworkSimulation === 'timeout') {
+    throw new ApiHttpError({ statusCode: 0, message: ORDER_ERROR_MESSAGES.NETWORK_TIMEOUT });
+  }
+  if (mockNetworkSimulation === 'offline') {
+    throw new ApiHttpError({ statusCode: 0, message: ORDER_ERROR_MESSAGES.NETWORK_ERROR });
+  }
+
+  if (!STAFF_UPDATABLE_STATUSES.includes(nextStatus)) {
+    throw new ApiHttpError({
+      statusCode: 400,
+      message: ['status must be one of PREPARING, READY, COMPLETED, CANCELLED'],
+      error: 'Bad Request',
+    });
+  }
+
+  const order = mockOrdersDatabase.get(orderId);
+  if (!order) {
+    throw new ApiHttpError({
+      statusCode: 404,
+      message: ORDER_ERROR_MESSAGES.ORDER_NOT_FOUND,
+      error: 'Not Found',
+    });
+  }
+
+  if (!validateOrderTransition(order.status, nextStatus)) {
+    throw new ApiHttpError({
+      statusCode: 409,
+      message: `Không thể chuyển đơn từ trạng thái '${ORDER_STATUS_LABELS[order.status]}' sang '${ORDER_STATUS_LABELS[nextStatus]}'`,
+      error: 'Conflict',
+    });
+  }
+
+  order.status = nextStatus;
+  persistMockDatabaseToStorage();
+
+  return {
+    id: order.id,
+    orderNumber: order.orderNumber,
+    status: order.status,
+    receiveType: order.receiveType,
+    note: order.note ?? null,
+    totalAmount: order.totalAmount,
+    createdAt: order.createdAt,
+    items: order.items,
+    customer: order.customer ?? MOCK_DEFAULT_CUSTOMER,
+  };
+}
+
+/**
+ * Giả lập POST /orders/:id/cancel
+ */
+export async function mockCancelOrder(orderId: string): Promise<OrderResponse> {
+  loadMockDatabaseFromStorage();
+  ensureSeedMockOrders();
+
+  await new Promise((resolve) => setTimeout(resolve, 50));
+
+  if (mockNetworkSimulation === 'timeout') {
+    throw new ApiHttpError({ statusCode: 0, message: ORDER_ERROR_MESSAGES.NETWORK_TIMEOUT });
+  }
+  if (mockNetworkSimulation === 'offline') {
+    throw new ApiHttpError({ statusCode: 0, message: ORDER_ERROR_MESSAGES.NETWORK_ERROR });
+  }
+
+  const order = mockOrdersDatabase.get(orderId);
+  if (!order) {
+    throw new ApiHttpError({
+      statusCode: 404,
+      message: ORDER_ERROR_MESSAGES.ORDER_NOT_FOUND,
+      error: 'Not Found',
+    });
+  }
+
+  if (!validateOrderTransition(order.status, 'CANCELLED')) {
+    throw new ApiHttpError({
+      statusCode: 409,
+      message: ORDER_ERROR_MESSAGES.ORDER_CANCEL_INVALID,
+      error: 'Conflict',
+    });
+  }
+
+  order.status = 'CANCELLED';
+  persistMockDatabaseToStorage();
+
+  return {
+    id: order.id,
+    orderNumber: order.orderNumber,
+    status: order.status,
+    receiveType: order.receiveType,
+    note: order.note ?? null,
+    totalAmount: order.totalAmount,
+    createdAt: order.createdAt,
+    items: order.items,
+  };
 }

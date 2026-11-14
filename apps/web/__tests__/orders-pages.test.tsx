@@ -73,7 +73,7 @@ describe('Task 18 - Bảng nhãn tiếng Việt & Tiện ích định dạng đ�
 
     // 2 hình thức thanh toán (PaymentMethod)
     expect(PAYMENT_METHOD_LABELS).toEqual({
-      WALLET: 'Ví điện tử',
+      WALLET: 'Ví điện tử (ZaloPay/Momo)',
       CARD: 'Thẻ ngân hàng',
     });
 
@@ -184,9 +184,9 @@ describe('Task 18 - Trang chi tiết & theo dõi đơn hàng (/orders/[id])', ()
     // Tổng tiền đơn hàng nguyên vẹn từ server: 136.000đ
     expect(screen.getByTestId('order-total-amount')).toHaveTextContent('136.000đ');
 
-    // Lịch sử thanh toán: hiện Ví điện tử, •••• 4321, Thành công
+    // Lịch sử thanh toán: hiện Ví điện tử (ZaloPay/Momo), •••• 4321, Thành công
     const paymentItem = screen.getByTestId('payment-history-item');
-    expect(within(paymentItem).getByText('Ví điện tử')).toBeInTheDocument();
+    expect(within(paymentItem).getByText('Ví điện tử (ZaloPay/Momo)')).toBeInTheDocument();
     expect(within(paymentItem).getByText('•••• 4321')).toBeInTheDocument();
     expect(within(paymentItem).getByText('Thành công')).toBeInTheDocument();
 
