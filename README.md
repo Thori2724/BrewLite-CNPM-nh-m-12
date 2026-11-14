@@ -146,9 +146,73 @@ Kết quả đúng:
 
 Nhấn `Ctrl + C` tại cửa sổ terminal đang chạy API.
 
-## Kiểm thử End-to-End (E2E)
+## Chạy Web (local)
 
-Kiểm thử trọn vẹn luồng từ Menu -> Chi tiết món -> Đăng nhập -> Đặt đơn -> Thanh toán Idempotency -> Xác nhận đơn (Task 5.2):
+Giao diện người dùng Next.js nằm trong thư mục `apps/web`, chạy ở cổng mặc định 3000 và kết nối trực tiếp tới API (`http://localhost:3001`).
+
+**1. Cài đặt thư viện**
+
+Mở một cửa sổ PowerShell mới và chuyển vào thư mục `apps/web`:
+
+```powershell
+cd apps/web
+npm.cmd install
+```
+
+**2. Khởi động Web**
+
+```powershell
+npm.cmd run dev
+```
+
+Khi màn hình hiện `Ready in ... http://localhost:3000`, mở trình duyệt truy cập:
+👉 [http://localhost:3000](http://localhost:3000)
+
+**3. Dừng Web**
+
+Nhấn `Ctrl + C` tại terminal đang chạy Web.
+
+## Đóng gói & Build (Build & Packaging)
+
+### 1. Build mã nguồn bằng lệnh npm
+- **Build Backend API (NestJS -> dist):**
+  ```powershell
+  cd apps/api
+  npm.cmd run build
+  ```
+- **Build Frontend Web (Next.js -> .next):**
+  ```powershell
+  cd apps/web
+  npm.cmd run build
+  ```
+
+### 2. Đóng gói Docker Container
+- **Đóng gói Docker Image API:**
+  ```powershell
+  docker build -t brewlite-api ./apps/api
+  ```
+- **Đóng gói Docker Image Web:**
+  *(Lưu ý: Biến `NEXT_PUBLIC_API_URL` cần được truyền lúc build image)*
+  ```powershell
+  docker build --build-arg NEXT_PUBLIC_API_URL=http://localhost:3001 -t brewlite-web ./apps/web
+  ```
+
+## Kiểm thử Hệ thống (Testing Suite)
+
+Dự án có đầy đủ bộ kiểm thử tự động đáp ứng yêu cầu của Task 5.2 và Task 5.4:
+
+### 1. Kiểm tra nhanh Production (Smoke Test - Task 5.4)
+Kiểm tra tự động 4 chỉ số cốt lõi: API Healthcheck, kết nối Database & Menu 12 món, Web Frontend và cấu hình CORS:
+```powershell
+# Chạy với tên miền Production mặc định
+.\tests\smoke-test.ps1
+
+# Hoặc kiểm tra với server local
+.\tests\smoke-test.ps1 -ApiUrl http://localhost:3001 -WebUrl http://localhost:3000
+```
+
+### 2. Kiểm thử toàn diện End-to-End (E2E Test - Task 5.2)
+Kiểm thử trọn vẹn 16 kịch bản từ Menu -> Chi tiết món -> Đăng nhập -> Đặt đơn (trừ kho ACID) -> Thanh toán Idempotency -> Lịch sử đơn:
 
 ```powershell
 # Chạy với API local (khi API cổng 3001 đang chạy)
@@ -158,6 +222,48 @@ Kiểm thử trọn vẹn luồng từ Menu -> Chi tiết món -> Đăng nhập 
 .\tests\run-e2e.ps1 -ApiUrl https://brewlite-api.onrender.com
 ```
 Chi tiết về 16 kịch bản kiểm thử xem tại [`tests/README.md`](file:///tests/README.md).
+
+## Thông tin Môi trường Production (Render Cloud)
+
+Hệ thống được triển khai thực tế trên nền tảng **Render** theo kiến trúc [ADR-009](docs/architecture/adr/009-render-deployment.md):
+- **Web Frontend (HTTPS):** [https://brewlite-web.onrender.com](https://brewlite-web.onrender.com)
+- **Backend API (HTTPS):** [https://brewlite-api.onrender.com](https://brewlite-api.onrender.com)
+- **API Health Check:** [https://brewlite-api.onrender.com/health](https://brewlite-api.onrender.com/health)
+- **Cơ sở dữ liệu:** PostgreSQL 16 (Render Managed Database, nội bộ an toàn).
+
+*(Lưu ý: Render Free Tier sẽ tự động tạm dừng dịch vụ sau 15 phút không có truy cập. Lần gọi đầu tiên sẽ mất khoảng 40-50 giây để dịch vụ khởi động lại - cold start).*
+
+## Hướng dẫn dành cho Người Kiểm thử Độc lập (Independent Evaluation)
+
+Để phục vụ tiêu chí nghiệm thu của **Task 5.4** (*người không thuộc nhóm có thể clone repo và nghiệm thu dễ dàng*), bạn có thể chọn một trong hai cách sau:
+
+### Cách A: Trải nghiệm trực tiếp trên bản Production (Nhanh nhất)
+1. Mở trình duyệt truy cập: [https://brewlite-web.onrender.com](https://brewlite-web.onrender.com)
+2. Bấm **Đăng ký** tài khoản mới và đăng nhập.
+3. Chọn đồ uống, chọn size, mức đường/đá, topping và bấm **Thêm vào giỏ**.
+4. Vào Giỏ hàng > bấm **Đặt hàng**.
+5. Nhập số tài khoản thanh toán bất kỳ (nhập đuôi `0000` để thử nghiệm trường hợp thanh toán thất bại; nhập số khác để thành công).
+6. Sau khi thanh toán thành công, xem trạng thái đơn và lịch sử đơn hàng.
+7. Chạy kịch bản kiểm tra tự động: `.\tests\smoke-test.ps1`.
+
+### Cách B: Chạy toàn bộ hệ thống từ mã nguồn ở Local
+1. Clone repo: `git clone https://github.com/Thori2724/BrewLite-CNPM-nh-m-12.git` và chuyển vào thư mục dự án.
+2. Sao chép cấu hình: `Copy-Item .env.example .env` và chạy DB: `docker compose up -d`.
+3. Khởi tạo DB & chạy API:
+   ```powershell
+   cd apps/api
+   npm.cmd install
+   npm.cmd run migrate
+   npm.cmd run seed
+   npm.cmd run start:dev
+   ```
+4. Khởi động Web (mở cửa sổ PowerShell khác):
+   ```powershell
+   cd apps/web
+   npm.cmd install
+   npm.cmd run dev
+   ```
+5. Mở [http://localhost:3000](http://localhost:3000) trên trình duyệt hoặc chạy `.\tests\run-e2e.ps1`.
 
 ## Triển khai và Tự động hóa (CI/CD)
 

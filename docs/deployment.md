@@ -60,8 +60,25 @@ Vì sử dụng gói Free không có Shell, chúng ta chạy migration và nạp
 
 ---
 
-## 3. Kiểm tra và Nghiệm thu (Smoke Test)
+## 3. Kiểm tra và Nghiệm thu (Smoke Test & Task 5.4 Checklist)
 
+### 3.1 Chạy Kịch bản Smoke Test Tự động
+Để kiểm tra tính sẵn sàng của toàn bộ hệ thống production (API, Database, Web, CORS), thực thi script tự động hóa:
+```powershell
+# Chạy với địa chỉ mặc định trên Render
+.\tests\smoke-test.ps1
+
+# Hoặc truyền URL tùy biến của nhóm
+.\tests\smoke-test.ps1 -ApiUrl "https://brewlite-api.onrender.com" -WebUrl "https://brewlite-web.onrender.com"
+```
+
+Script sẽ tự động:
+1. Gửi request `GET /health` với tối đa 10 lần retry để hỗ trợ trường hợp Render Free Tier cold-start.
+2. Kiểm tra `GET /products` đảm bảo đã seed đủ 12 món ăn/uống và database kết nối ổn định.
+3. Kiểm tra truy cập Web Frontend `GET /` đảm bảo trả về mã HTTP 200 OK.
+4. Kiểm tra cấu hình CORS (Preflight OPTIONS) đảm bảo Web có quyền gọi API trực tiếp.
+
+### 3.2 Kiểm tra thủ công từng bước (Manual Verification)
 1. **Kiểm tra Healthcheck API:**
    ```powershell
    curl.exe https://<API_URL>/health
@@ -77,6 +94,15 @@ Vì sử dụng gói Free không có Shell, chúng ta chạy migration và nạp
 3. **Kiểm tra giao diện Web trên trình duyệt:**
    - Mở `https://<WEB_URL>/` và truy cập trang `https://<WEB_URL>/menu`.
    - Kiểm tra F12 > tab Network: các request lấy dữ liệu menu được gọi thành công tới domain của API và nhận dữ liệu hiển thị lên giao diện.
+
+### 3.3 Checklist Nghiệm thu Bản Cuối (Task 5.4 Delivery Checklist)
+| Hạng mục kiểm tra | Yêu cầu Task 5.4 | Trạng thái / Cách kiểm chứng |
+|---|---|---|
+| **Frontend Production** | URL truy cập được qua HTTPS | `https://brewlite-web.onrender.com` (Render cấp SSL tự động) |
+| **API Backend** | URL API hoạt động có HTTPS và health check | `https://brewlite-api.onrender.com/health` phản hồi `{"status":"ok"}` |
+| **Database An toàn** | Không mở cổng PostgreSQL 5432 ra Internet | `brewlite-db` chỉ cho phép kết nối nội bộ trong mạng Render; migration dùng External SSL URL |
+| **Bảo mật Secret** | Secret không vào repo hoặc log CI | Dùng GitHub Actions Secrets và Render Environment Variables |
+| **Kiểm thử E2E Production** | Xác minh toàn bộ luồng nghiệp vụ trên Production | Chạy `.\tests\run-e2e.ps1 -ApiUrl <API_URL>` vượt qua toàn bộ 16 kịch bản |
 
 ---
 
