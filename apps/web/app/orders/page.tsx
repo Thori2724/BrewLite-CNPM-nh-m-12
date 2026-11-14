@@ -6,11 +6,11 @@ import { useRouter } from 'next/navigation';
 import { useRequireAuth } from '../../context/useRequireAuth';
 import {
   OrderResponse,
-  OrderStatus,
   ORDER_STATUS_LABELS,
   RECEIVE_TYPE_LABELS,
   ORDER_ERROR_MESSAGES,
   formatVietnamDateTime,
+  getOrderStatusBadgeClass,
   summarizeOrderItems,
 } from '../../services/order-contract';
 import { getMyOrdersApi, OrderApiError } from '../../services/orders';
@@ -19,24 +19,6 @@ import { calculatePrice } from '../../utils/price';
 function formatVndPrice(amount: number): string {
   const safeValue = calculatePrice({ basePrice: amount, toppings: [], quantity: 1 });
   return `${safeValue.toLocaleString('vi-VN')}đ`;
-}
-
-function getOrderStatusBadgeClass(status: OrderStatus): string {
-  switch (status) {
-    case 'PAID':
-    case 'COMPLETED':
-      return 'bg-moss text-kombu font-bold';
-    case 'PENDING':
-    case 'PREPARING':
-      return 'bg-warning text-noir font-bold';
-    case 'READY':
-      return 'bg-tan/50 text-noir border border-tan font-bold';
-    case 'PAYMENT_FAILED':
-    case 'CANCELLED':
-      return 'bg-error/15 text-error border border-error/30 font-bold';
-    default:
-      return 'bg-tan/40 text-noir font-semibold';
-  }
 }
 
 function OrdersHistoryContent() {
@@ -190,51 +172,68 @@ function OrdersHistoryContent() {
       ) : (
         /* 4. Danh sách đơn hàng (KHÔNG phân trang, KHÔNG lọc/tìm kiếm, giữ nguyên thứ tự server trả về) */
         <div className="space-y-4">
-          {orders.map((order) => (
-            <Link
-              key={order.id}
-              href={`/orders/${order.id}`}
-              data-testid={`order-card-${order.orderNumber}`}
-              className="block bg-cream hover:bg-tan/20 border border-tan/60 hover:border-tan rounded-card p-4 sm:p-5 shadow-soft hover:shadow-raised transition group"
-            >
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-tan/40">
-                <div className="flex items-center gap-3 flex-wrap">
-                  <span className="font-display text-lg sm:text-xl font-bold text-noir group-hover:text-kombu transition">
-                    #{order.orderNumber}
-                  </span>
-                  <span
-                    className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-caption font-bold ${getOrderStatusBadgeClass(
-                      order.status
-                    )}`}
-                  >
-                    {ORDER_STATUS_LABELS[order.status] || order.status}
-                  </span>
-                  <span className="text-caption font-semibold text-noir/70 bg-bone/70 border border-tan/50 px-2.5 py-0.5 rounded-control">
-                    {RECEIVE_TYPE_LABELS[order.receiveType] || order.receiveType}
-                  </span>
-                </div>
+          {orders.map((order) => {
+            const isPayable =
+              order.status === 'PENDING' || order.status === 'PAYMENT_FAILED';
 
-                <div className="text-xs text-noir/60">
-                  {formatVietnamDateTime(order.createdAt)}
+            return (
+              <div
+                key={order.id}
+                data-testid={`order-card-${order.orderNumber}`}
+                className="block bg-cream hover:bg-tan/20 border border-tan/60 hover:border-tan rounded-card p-4 sm:p-5 shadow-soft hover:shadow-raised transition group"
+              >
+                <Link href={`/orders/${order.id}`} className="block">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-tan/40">
+                    <div className="flex items-center gap-3 flex-wrap">
+                      <span className="font-display text-lg sm:text-xl font-bold text-noir group-hover:text-kombu transition">
+                        #{order.orderNumber}
+                      </span>
+                      <span
+                        className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-caption font-bold ${getOrderStatusBadgeClass(
+                          order.status
+                        )}`}
+                      >
+                        {ORDER_STATUS_LABELS[order.status] || order.status}
+                      </span>
+                      <span className="text-caption font-semibold text-noir/70 bg-bone/70 border border-tan/50 px-2.5 py-0.5 rounded-control">
+                        {RECEIVE_TYPE_LABELS[order.receiveType] || order.receiveType}
+                      </span>
+                    </div>
+
+                    <div className="text-xs text-noir/60">
+                      {formatVietnamDateTime(order.createdAt)}
+                    </div>
+                  </div>
+                </Link>
+
+                <div className="pt-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <p className="text-sm text-noir/75 font-medium line-clamp-2 sm:line-clamp-1 break-words">
+                    {summarizeOrderItems(order.items)}
+                  </p>
+
+                  <div className="flex items-center justify-between sm:justify-end gap-3 shrink-0 flex-wrap">
+                    <span className="font-display text-base sm:text-lg font-bold text-kombu">
+                      {formatVndPrice(order.totalAmount)}
+                    </span>
+                    {isPayable && (
+                      <Link
+                        href={`/checkout?orderId=${encodeURIComponent(order.id)}`}
+                        className="inline-flex items-center justify-center px-3.5 py-1.5 bg-kombu hover:bg-noir text-bone font-semibold rounded-control text-xs transition shadow-soft"
+                      >
+                        Thanh toán
+                      </Link>
+                    )}
+                    <Link
+                      href={`/orders/${order.id}`}
+                      className="text-xs font-semibold text-kombu group-hover:translate-x-0.5 transition"
+                    >
+                      Chi tiết →
+                    </Link>
+                  </div>
                 </div>
               </div>
-
-              <div className="pt-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                <p className="text-sm text-noir/75 font-medium line-clamp-2 sm:line-clamp-1 break-words">
-                  {summarizeOrderItems(order.items)}
-                </p>
-
-                <div className="flex items-center justify-between sm:justify-end gap-3 shrink-0">
-                  <span className="font-display text-base sm:text-lg font-bold text-kombu">
-                    {formatVndPrice(order.totalAmount)}
-                  </span>
-                  <span className="text-xs font-semibold text-kombu group-hover:translate-x-0.5 transition">
-                    Chi tiết →
-                  </span>
-                </div>
-              </div>
-            </Link>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>

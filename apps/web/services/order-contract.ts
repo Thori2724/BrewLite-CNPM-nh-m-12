@@ -41,6 +41,20 @@ export const ORDER_STATUS_LABELS: Record<OrderStatus, string> = {
   CANCELLED: 'Đã hủy',
 };
 
+export const ORDER_STATUS_BADGE_CLASSES: Record<OrderStatus, string> = {
+  PAID: 'bg-moss text-kombu font-bold',
+  COMPLETED: 'bg-moss text-kombu font-bold',
+  PENDING: 'bg-warning text-noir font-bold',
+  PREPARING: 'bg-warning text-noir font-bold',
+  READY: 'bg-tan/50 text-noir border border-tan font-bold',
+  PAYMENT_FAILED: 'bg-error/15 text-error border border-error/30 font-bold',
+  CANCELLED: 'bg-neutral-200 text-neutral-800 border border-neutral-300 font-bold',
+};
+
+export function getOrderStatusBadgeClass(status: OrderStatus): string {
+  return ORDER_STATUS_BADGE_CLASSES[status] || 'bg-tan/40 text-noir font-semibold';
+}
+
 // 4. Enum Trạng thái thanh toán (PaymentStatus)
 export type PaymentStatus = 'PENDING' | 'SUCCESS' | 'FAILED';
 

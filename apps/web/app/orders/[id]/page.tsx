@@ -16,6 +16,7 @@ import {
   PAYMENT_STATUS_LABELS,
   ORDER_ERROR_MESSAGES,
   formatVietnamDateTime,
+  getOrderStatusBadgeClass,
 } from '../../../services/order-contract';
 import {
   SIZE_LABELS,
@@ -26,30 +27,16 @@ import {
   IceLevel,
 } from '../../../services/api';
 import { getOrderByIdApi, OrderApiError } from '../../../services/orders';
-import { generateIdempotencyKey, savePendingOrder } from '../../../utils/checkout';
+import {
+  generateIdempotencyKey,
+  loadPendingOrder,
+  savePendingOrder,
+} from '../../../utils/checkout';
 import { calculatePrice } from '../../../utils/price';
 
 function formatVndPrice(amount: number): string {
   const safeValue = calculatePrice({ basePrice: amount, toppings: [], quantity: 1 });
   return `${safeValue.toLocaleString('vi-VN')}đ`;
-}
-
-function getOrderStatusBadgeClass(status: OrderStatus): string {
-  switch (status) {
-    case 'PAID':
-    case 'COMPLETED':
-      return 'bg-moss text-kombu font-bold';
-    case 'PENDING':
-    case 'PREPARING':
-      return 'bg-warning text-noir font-bold';
-    case 'READY':
-      return 'bg-tan/50 text-noir border border-tan font-bold';
-    case 'PAYMENT_FAILED':
-    case 'CANCELLED':
-      return 'bg-error/15 text-error border border-error/30 font-bold';
-    default:
-      return 'bg-tan/40 text-noir font-semibold';
-  }
 }
 
 function getBannerStyleClass(status: OrderStatus): string {
@@ -181,6 +168,9 @@ function OrderDetailContent() {
       (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
     );
     const latestMethod = sortedPayments[0]?.method || 'WALLET';
+    const existingPending = loadPendingOrder();
+    const shouldKeepCreatedFromCart =
+      existingPending?.orderId === order.id && existingPending.createdFromCart === true;
 
     savePendingOrder({
       orderId: order.id,
@@ -191,6 +181,7 @@ function OrderDetailContent() {
       method: latestMethod,
       createdAt: order.createdAt,
       itemCount: order.items?.length || 1,
+      ...(shouldKeepCreatedFromCart ? { createdFromCart: true } : {}),
     });
 
     router.push(`/checkout?orderId=${encodeURIComponent(order.id)}`);

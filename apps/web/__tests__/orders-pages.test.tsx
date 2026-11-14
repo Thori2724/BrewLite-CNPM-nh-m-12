@@ -13,6 +13,7 @@ import {
   PAYMENT_METHOD_LABELS,
   PAYMENT_STATUS_LABELS,
   formatVietnamDateTime,
+  getOrderStatusBadgeClass,
   summarizeOrderItems,
 } from '../services/order-contract';
 import { MOCK_SEED_ORDERS } from '../mocks/mock-orders';
@@ -37,6 +38,8 @@ vi.mock('../services/orders', async () => {
   const actual = await vi.importActual<typeof import('../services/orders')>('../services/orders');
   return {
     ...actual,
+    createOrderApi: vi.fn(),
+    payOrderApi: vi.fn(),
     getOrderByIdApi: vi.fn(),
     getMyOrdersApi: vi.fn(),
   };
@@ -307,7 +310,10 @@ describe('Task 18 - Trang lịch sử đơn hàng (/orders)', () => {
     const card1003 = screen.getByTestId('order-card-1003');
     const card1004 = screen.getByTestId('order-card-1004');
 
-    expect(card1001).toHaveAttribute('href', `/orders/${MOCK_SEED_ORDERS[0].id}`);
+    expect(within(card1001).getByRole('link', { name: /chi tiết/i })).toHaveAttribute(
+      'href',
+      `/orders/${MOCK_SEED_ORDERS[0].id}`
+    );
     expect(within(card1001).getByText('#1001')).toBeInTheDocument();
     expect(within(card1001).getByText('Đã thanh toán')).toBeInTheDocument();
     expect(within(card1001).getByText('Mang đi')).toBeInTheDocument();
@@ -318,6 +324,206 @@ describe('Task 18 - Trang lịch sử đơn hàng (/orders)', () => {
 
     expect(within(card1003).getByText('Thanh toán lỗi')).toBeInTheDocument();
     expect(within(card1004).getByText('Sẵn sàng nhận')).toBeInTheDocument();
+  });
+});
+
+describe('Task 13 - Nút Thanh toán cho PENDING/PAYMENT_FAILED & Nhãn Đã hủy', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    localStorage.clear();
+    mockParams = { id: '33333333-0000-0000-0000-000000000001' };
+
+    vi.mocked(navigation.useRouter).mockReturnValue({
+      push: mockPush,
+      replace: mockReplace,
+      back: vi.fn(),
+      forward: vi.fn(),
+      refresh: vi.fn(),
+      prefetch: vi.fn(),
+    } as unknown as ReturnType<typeof navigation.useRouter>);
+
+    vi.mocked(navigation.useParams).mockImplementation(() => mockParams);
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  it('9. Trang /orders phủ cả 7 trạng thái: nút Thanh toán CHỈ hiện cho PENDING và PAYMENT_FAILED với link /checkout?orderId=<id>, CANCELLED có nhãn Đã hủy, màu riêng và vẫn xem chi tiết được', async () => {
+    localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(loggedInSession));
+    const allSevenOrders = [...MOCK_SEED_ORDERS].reverse();
+    vi.mocked(ordersService.getMyOrdersApi).mockResolvedValueOnce(allSevenOrders);
+
+    render(
+      <AuthProvider>
+        <OrdersHistoryPage />
+      </AuthProvider>
+    );
+
+    const cancelledCard = await screen.findByTestId('order-card-1007');
+    expect(cancelledCard).toBeInTheDocument();
+
+    for (const order of allSevenOrders) {
+      const card = screen.getByTestId(`order-card-${order.orderNumber}`);
+      const expectedLabel = ORDER_STATUS_LABELS[order.status];
+      const badge = within(card).getByText(expectedLabel);
+      expect(badge).toBeInTheDocument();
+      expect(badge.className).toContain(getOrderStatusBadgeClass(order.status));
+
+      const detailLink = within(card).getByRole('link', { name: /chi tiết/i });
+      expect(detailLink).toHaveAttribute('href', `/orders/${order.id}`);
+
+      if (order.status === 'PENDING' || order.status === 'PAYMENT_FAILED') {
+        const payLink = within(card).getByRole('link', { name: 'Thanh toán' });
+        expect(payLink).toHaveAttribute(
+          'href',
+          `/checkout?orderId=${encodeURIComponent(order.id)}`
+        );
+      } else {
+        expect(within(card).queryByRole('link', { name: 'Thanh toán' })).not.toBeInTheDocument();
+        expect(within(card).queryByRole('button', { name: /thanh toán/i })).not.toBeInTheDocument();
+        expect(
+          within(card)
+            .getAllByRole('link')
+            .some((link) => link.getAttribute('href')?.startsWith('/checkout'))
+        ).toBe(false);
+      }
+    }
+
+    const cancelledBadge = within(cancelledCard).getByText('Đã hủy');
+    const failedCard = screen.getByTestId('order-card-1003');
+    const failedBadge = within(failedCard).getByText('Thanh toán lỗi');
+    expect(getOrderStatusBadgeClass('CANCELLED')).not.toBe(
+      getOrderStatusBadgeClass('PAYMENT_FAILED')
+    );
+    expect(cancelledBadge.className).not.toBe(failedBadge.className);
+
+    // Nút Thanh toán ở /orders là <Link> thuần: không tự ghi localStorage hay gọi API đặt/thanh toán
+    expect(localStorage.getItem(PENDING_ORDER_STORAGE_KEY)).toBeNull();
+    expect(ordersService.createOrderApi).not.toHaveBeenCalled();
+    expect(ordersService.payOrderApi).not.toHaveBeenCalled();
+  });
+
+  it('10. Trang /orders/[id] phủ cả 7 trạng thái: nút thanh toán CHỈ hiện cho PENDING và PAYMENT_FAILED, CANCELLED hiển thị Đã hủy với badge riêng và đầy đủ chi tiết', async () => {
+    const user = userEvent.setup();
+    localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(loggedInSession));
+
+    for (const order of MOCK_SEED_ORDERS) {
+      mockParams = { id: order.id };
+      vi.mocked(ordersService.getOrderByIdApi).mockResolvedValueOnce(order);
+
+      const { unmount } = render(
+        <AuthProvider>
+          <OrderDetailPage />
+        </AuthProvider>
+      );
+
+      const heading = await screen.findByTestId('order-number-heading');
+      expect(heading).toHaveTextContent(`#${order.orderNumber}`);
+
+      const badge = screen.getByTestId('order-status-badge');
+      expect(badge).toHaveTextContent(ORDER_STATUS_LABELS[order.status]);
+      expect(badge.className).toContain(getOrderStatusBadgeClass(order.status));
+
+      if (order.status === 'PENDING' || order.status === 'PAYMENT_FAILED') {
+        const expectedBtnLabel =
+          order.status === 'PAYMENT_FAILED' ? 'Thử lại thanh toán' : 'Thanh toán đơn hàng';
+        const payBtn = screen.getByRole('button', { name: expectedBtnLabel });
+        expect(payBtn).toBeInTheDocument();
+
+        await user.click(payBtn);
+        expect(mockPush).toHaveBeenCalledWith(
+          `/checkout?orderId=${encodeURIComponent(order.id)}`
+        );
+      } else {
+        expect(screen.queryByRole('button', { name: /thanh toán/i })).not.toBeInTheDocument();
+        expect(screen.queryByRole('link', { name: /thanh toán/i })).not.toBeInTheDocument();
+      }
+
+      if (order.status === 'CANCELLED') {
+        expect(screen.queryByTestId('order-progress-stepper')).not.toBeInTheDocument();
+        expect(screen.getByTestId('order-total-amount')).toHaveTextContent('30.000đ');
+        expect(screen.getByRole('link', { name: 'Xem lịch sử đơn' })).toHaveAttribute(
+          'href',
+          '/orders'
+        );
+      }
+
+      unmount();
+      cleanup();
+    }
+
+    expect(ordersService.createOrderApi).not.toHaveBeenCalled();
+    expect(ordersService.payOrderApi).not.toHaveBeenCalled();
+  });
+
+  it('11. Trang /orders/[id]: handleRetryPayment chỉ giữ createdFromCart khi localStorage đang lưu pendingOrder trùng order.id', async () => {
+    const user = userEvent.setup();
+    localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(loggedInSession));
+
+    const pendingOrderData = MOCK_SEED_ORDERS[1]; // #1002 PENDING
+    mockParams = { id: pendingOrderData.id };
+
+    // Trường hợp 1: trùng order.id và có createdFromCart: true -> giữ lại createdFromCart: true kèm key mới
+    localStorage.setItem(
+      PENDING_ORDER_STORAGE_KEY,
+      JSON.stringify({
+        orderId: pendingOrderData.id,
+        orderNumber: pendingOrderData.orderNumber,
+        totalAmount: pendingOrderData.totalAmount,
+        receiveType: pendingOrderData.receiveType,
+        idempotencyKey: 'old-key-same-order',
+        createdAt: pendingOrderData.createdAt,
+        itemCount: 1,
+        createdFromCart: true,
+      })
+    );
+    vi.mocked(ordersService.getOrderByIdApi).mockResolvedValueOnce(pendingOrderData);
+
+    const firstRender = render(
+      <AuthProvider>
+        <OrderDetailPage />
+      </AuthProvider>
+    );
+
+    const payBtn1 = await screen.findByRole('button', { name: 'Thanh toán đơn hàng' });
+    await user.click(payBtn1);
+
+    const savedSame = JSON.parse(localStorage.getItem(PENDING_ORDER_STORAGE_KEY)!);
+    expect(savedSame.orderId).toBe(pendingOrderData.id);
+    expect(savedSame.idempotencyKey).not.toBe('old-key-same-order');
+    expect(savedSame.createdFromCart).toBe(true);
+    firstRender.unmount();
+    cleanup();
+
+    // Trường hợp 2: localStorage đang lưu pendingOrder KHÁC order.id -> KHÔNG đặt createdFromCart
+    localStorage.setItem(
+      PENDING_ORDER_STORAGE_KEY,
+      JSON.stringify({
+        orderId: 'another-order-id',
+        orderNumber: 9999,
+        totalAmount: 50000,
+        receiveType: 'AT_COUNTER',
+        idempotencyKey: 'other-order-key',
+        createdAt: '2026-11-05T00:00:00.000Z',
+        itemCount: 1,
+        createdFromCart: true,
+      })
+    );
+    vi.mocked(ordersService.getOrderByIdApi).mockResolvedValueOnce(pendingOrderData);
+
+    render(
+      <AuthProvider>
+        <OrderDetailPage />
+      </AuthProvider>
+    );
+
+    const payBtn2 = await screen.findByRole('button', { name: 'Thanh toán đơn hàng' });
+    await user.click(payBtn2);
+
+    const savedDiff = JSON.parse(localStorage.getItem(PENDING_ORDER_STORAGE_KEY)!);
+    expect(savedDiff.orderId).toBe(pendingOrderData.id);
+    expect(savedDiff.createdFromCart).toBeUndefined();
   });
 });
 
