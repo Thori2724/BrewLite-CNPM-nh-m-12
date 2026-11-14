@@ -1,143 +1,24 @@
-@startuml class-domain
-title BrewLite – Class Diagram (Domain)
+@startuml classdiagram
+title Class Diagram - BrewLite Domain Model (Task 2.3 - Assignment 2)
+
 skinparam classAttributeIconSize 0
-skinparam linetype ortho
+skinparam shadowing false
+skinparam roundcorner 8
+hide empty members
 
-class User {
-  - id: UUID
-  - email: String {unique}
-  - passwordHash: String
-  - fullName: String
-  - role: Role
-  - loyaltyPoints: int
-  - createdAt: DateTime
-}
-
-class Product {
-  - id: UUID
-  - name: String
-  - category: Category
-  - basePrice: Decimal
-  - imageUrl: String
-  - stock: int
-  - isVisible: boolean
-}
-
-class Topping {
-  - id: UUID
-  - name: String
-  - price: Decimal
-}
-
-class Order {
-  - id: UUID
-  - status: OrderStatus
-  - receiveType: ReceiveType
-  - subtotal: Decimal
-  - discountAmount: Decimal
-  - totalAmount: Decimal
-  - note: String
-  - createdAt: DateTime
-  - expiresAt: DateTime
-}
-
-class OrderItem {
-  - id: UUID
-  - productName: String
-  - unitPrice: Decimal
-  - quantity: int
-  - size: Size
-  - sugarLevel: SugarLevel
-  - iceLevel: IceLevel
-  - note: String
-  - lineTotal: Decimal
-}
-
-class Payment {
-  - id: UUID
-  - amount: Decimal
-  - method: PaymentMethod
-  - status: PaymentStatus
-  - idempotencyKey: String {unique}
-  - gatewayRef: String
-  - createdAt: DateTime
-}
-
-class Promotion {
-  - id: UUID
-  - code: String {unique}
-  - discountType: DiscountType
-  - discountValue: Decimal
-  - minOrderAmount: Decimal
-  - validFrom: DateTime
-  - validTo: DateTime
-  - isActive: boolean
-}
-
-class LoyaltyTransaction {
-  - id: UUID
-  - points: int
-  - type: LoyaltyType
-  - createdAt: DateTime
-}
-
-' ===== Quan hệ =====
-User "1" -- "0..*" Order : places >
-Order "1" *-- "1..*" OrderItem : contains >
-OrderItem "0..*" --> "1" Product : refers to >
-OrderItem "0..*" -- "0..*" Topping : has >
-Order "1" *-- "0..*" Payment : paid by >
-Order "0..*" -- "0..1" Promotion : applies >
-User "1" -- "0..*" LoyaltyTransaction : owns >
-Order "1" -- "0..1" LoyaltyTransaction : generates >
-
-' ===== Enum trạng thái và phân loại =====
-enum Role {
-  CUSTOMER
-  STAFF
-  ADMIN
-}
-
-enum OrderStatus {
-  PENDING
-  PAYMENT_FAILED
-  PAID
-  PREPARING
-  READY
-  COMPLETED
-  CANCELLED
-}
-
-enum ReceiveType {
-  AT_COUNTER
-  TAKE_AWAY
-}
-
-enum PaymentMethod {
-  E_WALLET
-  BANK_CARD
-}
-
-enum PaymentStatus {
-  SUCCESS
-  FAILED
-}
-
-enum DiscountType {
-  PERCENT
-  FIXED
-}
-
-enum LoyaltyType {
-  EARN
-  REDEEM
-}
+' =================== CORE ENUMS (Khớp schema.prisma) ===================
 
 enum Category {
   TEA
   COFFEE
   MILK_TEA
   CAKE
+}
+
+enum Role {
+  CUSTOMER
+  STAFF
+  ADMIN
 }
 
 enum Size {
@@ -160,5 +41,182 @@ enum IceLevel {
   NORMAL
   FULL
 }
+
+enum ReceiveType {
+  AT_COUNTER
+  TAKE_AWAY
+}
+
+enum OrderStatus {
+  PENDING
+  PAID
+  PREPARING
+  READY
+  COMPLETED
+  PAYMENT_FAILED
+  CANCELLED
+}
+
+enum PaymentMethod {
+  WALLET
+  CARD
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCESS
+  FAILED
+}
+
+' =================== EXTENSION ENUMS (Phạm vi mở rộng) ===================
+
+enum DiscountType #FFF9C4 {
+  PERCENT
+  FIXED
+}
+
+enum LoyaltyType #FFF9C4 {
+  EARN
+  REDEEM
+}
+
+' =================== CORE MODELS (Khớp schema.prisma 100%) ===================
+
+class Product #E8F5E9 {
+  {field} <<PK>> id : String
+  name : String
+  category : Category
+  basePrice : Int
+  imageUrl : String
+  stock : Int = 0
+  isVisible : Boolean = true
+  createdAt : DateTime = now()
+  updatedAt : DateTime
+}
+
+class User #E3F2FD {
+  {field} <<PK>> id : String
+  email : String {unique}
+  passwordHash : String
+  displayName : String
+  role : Role = CUSTOMER
+  createdAt : DateTime = now()
+  updatedAt : DateTime
+}
+
+class Topping #E8F5E9 {
+  {field} <<PK>> id : String
+  name : String
+  price : Int
+  isVisible : Boolean = true
+}
+
+class Order #F3E5F5 {
+  {field} <<PK>> id : String
+  orderNumber : Int {unique, autoincrement}
+  {field} <<FK>> userId : String
+  status : OrderStatus = PENDING
+  receiveType : ReceiveType = AT_COUNTER
+  note : String?
+  totalAmount : Int
+  createdAt : DateTime = now()
+  updatedAt : DateTime
+}
+
+class OrderItem #F3E5F5 {
+  {field} <<PK>> id : String
+  {field} <<FK>> orderId : String
+  {field} <<FK>> productId : String
+  productName : String
+  unitPrice : Int
+  quantity : Int
+  size : Size?
+  sugarLevel : SugarLevel?
+  iceLevel : IceLevel?
+  lineTotal : Int
+  note : String?
+}
+
+class OrderItemTopping #F3E5F5 {
+  {field} <<PK>> id : String
+  {field} <<FK>> orderItemId : String
+  {field} <<FK>> toppingId : String
+  name : String
+  price : Int
+}
+
+class Payment #FFE0B2 {
+  {field} <<PK>> id : String
+  {field} <<FK>> orderId : String
+  {field} <<FK>> userId : String
+  idempotencyKey : String
+  method : PaymentMethod
+  accountLast4 : String
+  amount : Int
+  status : PaymentStatus
+  failureReason : String?
+  createdAt : DateTime = now()
+}
+
+note right of Payment
+  Ràng buộc duy nhất:
+  @@unique([userId, idempotencyKey])
+end note
+
+' =================== EXTENSION MODELS (Task 2.3 - Đề bài Assignment 2) ===================
+
+class Promotion #FFF9C4 {
+  {field} <<PK>> id : String
+  code : String {unique}
+  discountType : DiscountType
+  discountValue : Int
+  minOrderAmount : Int
+  validFrom : DateTime
+  validTo : DateTime
+  isActive : Boolean = true
+}
+
+class LoyaltyTransaction #FFF9C4 {
+  {field} <<PK>> id : String
+  {field} <<FK>> userId : String
+  {field} <<FK>> orderId : String?
+  points : Int
+  type : LoyaltyType
+  createdAt : DateTime = now()
+}
+
+note "<b>Phạm vi mở rộng (Task 2.3 Assignment 2)</b>\nCác thực thể Promotion và LoyaltyTransaction được mô hình hóa\nở mức domain phục vụ mở rộng trong tương lai.\n(Chưa hiện thực bảng trong database MVP theo Hợp đồng API)" as N_EXT #FFFDE7
+
+Promotion .. N_EXT
+LoyaltyTransaction .. N_EXT
+
+' =================== RELATIONSHIPS & MULTIPLICITY ===================
+
+User "1" -- "0..*" Order : đặt >
+User "1" -- "0..*" Payment : thanh toán >
+Order "1" *-- "1..*" OrderItem : gồm >
+Order "1" -- "0..*" Payment : có >
+Product "1" -- "0..*" OrderItem : được đặt trong >
+OrderItem "1" *-- "0..*" OrderItemTopping : gồm >
+Topping "1" -- "0..*" OrderItemTopping : được chọn trong >
+
+' Mối quan hệ mở rộng
+Order "0..*" -- "0..1" Promotion : áp dụng >
+User "1" -- "0..*" LoyaltyTransaction : sở hữu >
+Order "1" -- "0..1" LoyaltyTransaction : tích điểm >
+
+' =================== ENUM DEPENDENCIES ===================
+
+Product ..> Category
+User ..> Role
+Order ..> OrderStatus
+Order ..> ReceiveType
+OrderItem ..> Size
+OrderItem ..> SugarLevel
+OrderItem ..> IceLevel
+Payment ..> PaymentMethod
+Payment ..> PaymentStatus
+Promotion ..> DiscountType
+LoyaltyTransaction ..> LoyaltyType
 
 @enduml

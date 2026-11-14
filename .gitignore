@@ -156,3 +156,10 @@ vite.config.ts.timestamp-*
 .turbo
 
 .role.local
+AGENTS.md
+api-contract.md
+Assignment2.md
+
+# Diagram PNGs (local only, do not commit)
+docs/diagrams/*.png
+docs/architecture/deployment-diagram.png
