@@ -6,7 +6,9 @@ import OrderDetailPage from '../app/orders/[id]/page';
 import OrdersHistoryPage from '../app/orders/page';
 import { AuthProvider } from '../context/AuthContext';
 import { AUTH_STORAGE_KEY } from '../utils/auth';
+import { CART_STORAGE_KEY } from '../utils/cart';
 import { PENDING_ORDER_STORAGE_KEY } from '../utils/checkout';
+import { ApiHttpError } from '../services/auth-contract';
 import {
   ORDER_STATUS_LABELS,
   RECEIVE_TYPE_LABELS,
@@ -15,6 +17,8 @@ import {
   formatVietnamDateTime,
   getOrderStatusBadgeClass,
   summarizeOrderItems,
+  type OrderResponse,
+  type OrderStatus,
 } from '../services/order-contract';
 import { MOCK_SEED_ORDERS } from '../mocks/mock-orders';
 import * as ordersService from '../services/orders';
@@ -42,6 +46,7 @@ vi.mock('../services/orders', async () => {
     payOrderApi: vi.fn(),
     getOrderByIdApi: vi.fn(),
     getMyOrdersApi: vi.fn(),
+    cancelOrderApi: vi.fn(),
   };
 });
 
@@ -193,9 +198,9 @@ describe('Task 18 - Trang chi tiết & theo dõi đơn hàng (/orders/[id])', ()
     expect(within(paymentItem).getByText('•••• 4321')).toBeInTheDocument();
     expect(within(paymentItem).getByText('Thành công')).toBeInTheDocument();
 
-    // Đơn PAID không hiện nút thử lại thanh toán và không có nút Hủy đơn
+    // Đơn PAID không hiện nút thử lại thanh toán nhưng CÓ nút Hủy đơn (Task 14)
     expect(screen.queryByRole('button', { name: /thanh toán/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /hủy đơn/i })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Hủy đơn' })).toBeInTheDocument();
   });
 
   it('4. Đơn PAYMENT_FAILED: ẩn stepper, hiện lý do lỗi, bấm "Thử lại thanh toán" lưu đúng orderId kèm Idempotency-Key MỚI và chuyển về /checkout', async () => {
@@ -524,6 +529,594 @@ describe('Task 13 - Nút Thanh toán cho PENDING/PAYMENT_FAILED & Nhãn Đã h�
     const savedDiff = JSON.parse(localStorage.getItem(PENDING_ORDER_STORAGE_KEY)!);
     expect(savedDiff.orderId).toBe(pendingOrderData.id);
     expect(savedDiff.createdFromCart).toBeUndefined();
+  });
+});
+
+describe('Task 14 - Hủy đơn hàng phía khách hàng (/orders và /orders/[id])', () => {
+  const cloneOrder = (base: OrderResponse, overrides: Partial<OrderResponse> = {}): OrderResponse => ({
+    ...base,
+    items: (base.items ?? []).map((item) => ({
+      ...item,
+      toppings: item.toppings?.map((t) => ({ ...t })) ?? [],
+    })),
+    payments: base.payments?.map((p) => ({ ...p })) ?? [],
+    ...overrides,
+  });
+
+  const sampleCartJson = JSON.stringify([
+    {
+      id: 'cart-keep-1',
+      productId: 'prod-1',
+      name: 'Cà phê sữa đá',
+      unitPrice: 29000,
+      quantity: 2,
+      toppings: [],
+      note: '',
+    },
+  ]);
+
+  function renderOrdersListPage() {
+    return render(
+      <AuthProvider>
+        <OrdersHistoryPage />
+      </AuthProvider>
+    );
+  }
+
+  function renderOrderDetailPage() {
+    return render(
+      <AuthProvider>
+        <OrderDetailPage />
+      </AuthProvider>
+    );
+  }
+
+  const makePendingSnapshot = (order: OrderResponse) =>
+    JSON.stringify({
+      orderId: order.id,
+      orderNumber: order.orderNumber,
+      totalAmount: order.totalAmount,
+      receiveType: order.receiveType,
+      idempotencyKey: `idem-${order.id}`,
+      method: 'WALLET',
+      createdAt: '2026-11-10T10:00:00.000Z',
+      itemCount: 1,
+    });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(ordersService.createOrderApi).mockReset();
+    vi.mocked(ordersService.payOrderApi).mockReset();
+    vi.mocked(ordersService.getOrderByIdApi).mockReset();
+    vi.mocked(ordersService.getMyOrdersApi).mockReset();
+    vi.mocked(ordersService.cancelOrderApi).mockReset();
+    localStorage.clear();
+    localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(loggedInSession));
+    mockParams = { id: MOCK_SEED_ORDERS[1].id };
+    window.history.pushState({}, '', '/');
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  it('12. Trên /orders, nút "Hủy đơn" chỉ hiện cho PENDING, PAYMENT_FAILED, PAID; không hiện cho 4 trạng thái còn lại và đơn CANCELLED vẫn xem chi tiết được', async () => {
+    const allStatusOrders = [
+      cloneOrder(MOCK_SEED_ORDERS[0]), // #1001 PAID
+      cloneOrder(MOCK_SEED_ORDERS[1]), // #1002 PENDING
+      cloneOrder(MOCK_SEED_ORDERS[2]), // #1003 PAYMENT_FAILED
+      cloneOrder(MOCK_SEED_ORDERS[3]), // #1004 READY
+      cloneOrder(MOCK_SEED_ORDERS[4]), // #1005 PREPARING
+      cloneOrder(MOCK_SEED_ORDERS[5]), // #1006 COMPLETED
+      cloneOrder(MOCK_SEED_ORDERS[6]), // #1007 CANCELLED
+    ];
+    vi.mocked(ordersService.getMyOrdersApi).mockResolvedValueOnce(allStatusOrders);
+
+    renderOrdersListPage();
+
+    expect(await screen.findByText('#1001')).toBeInTheDocument();
+    expect(screen.getByText('#1007')).toBeInTheDocument();
+
+    // Chỉ đúng 3 đơn PENDING (#1002), PAYMENT_FAILED (#1003), PAID (#1001) có nút Hủy đơn
+    const cancelButtons = screen.getAllByRole('button', { name: 'Hủy đơn' });
+    expect(cancelButtons).toHaveLength(3);
+
+    // Đơn CANCELLED vẫn nằm trong danh sách và có link Chi tiết tới đúng /orders/[id]
+    const detailLinks = screen.getAllByRole('link', { name: /chi tiết/i });
+    const cancelledLink = detailLinks.find(
+      (link) => link.getAttribute('href') === `/orders/${MOCK_SEED_ORDERS[6].id}`
+    );
+    expect(cancelledLink).toBeDefined();
+  });
+
+  it.each<[OrderStatus, boolean]>([
+    ['PENDING', true],
+    ['PAYMENT_FAILED', true],
+    ['PAID', true],
+    ['PREPARING', false],
+    ['READY', false],
+    ['COMPLETED', false],
+    ['CANCELLED', false],
+  ])('13. Trên cả /orders và /orders/[id], trạng thái %s -> hiện nút Hủy đơn = %s', async (status, shouldShow) => {
+    const order = cloneOrder(MOCK_SEED_ORDERS[1], {
+      id: `order-status-${status}`,
+      orderNumber: 2001,
+      status,
+      payments: status === 'PAID' ? cloneOrder(MOCK_SEED_ORDERS[0]).payments : [],
+    });
+
+    // Kiểm tra /orders với 1 đơn ở trạng thái tương ứng
+    vi.mocked(ordersService.getMyOrdersApi).mockResolvedValueOnce([order]);
+    const listView = renderOrdersListPage();
+    expect(await screen.findByText('#2001')).toBeInTheDocument();
+
+    if (shouldShow) {
+      expect(screen.getByRole('button', { name: 'Hủy đơn' })).toBeInTheDocument();
+    } else {
+      expect(screen.queryByRole('button', { name: 'Hủy đơn' })).not.toBeInTheDocument();
+    }
+    listView.unmount();
+
+    // Kiểm tra /orders/[id] với cùng đơn đó
+    mockParams = { id: order.id };
+    vi.mocked(ordersService.getOrderByIdApi).mockResolvedValueOnce(order);
+    renderOrderDetailPage();
+    expect(await screen.findByTestId('order-number-heading')).toHaveTextContent('#2001');
+
+    if (shouldShow) {
+      expect(screen.getByRole('button', { name: 'Hủy đơn' })).toBeInTheDocument();
+    } else {
+      expect(screen.queryByRole('button', { name: 'Hủy đơn' })).not.toBeInTheDocument();
+    }
+  });
+
+  it('14. Bấm "Hủy đơn" chỉ mở hộp xác nhận (có thông tin hoàn tiền mô phỏng với đơn PAID), CHƯA gọi API; "Giữ đơn", phím Esc và bấm nền ngoài đóng hộp không gọi API', async () => {
+    const user = userEvent.setup();
+    const paidOrder = cloneOrder(MOCK_SEED_ORDERS[0]); // #1001 PAID
+    mockParams = { id: paidOrder.id };
+    vi.mocked(ordersService.getOrderByIdApi).mockResolvedValueOnce(paidOrder);
+
+    renderOrderDetailPage();
+
+    const cancelPageBtn = await screen.findByRole('button', { name: 'Hủy đơn' });
+    await user.click(cancelPageBtn);
+
+    // Mở dialog đúng chuẩn a11y, chưa gọi cancelOrderApi
+    const dialog = screen.getByRole('dialog');
+    expect(dialog).toHaveAttribute('aria-modal', 'true');
+    expect(within(dialog).getByRole('heading', { name: 'Hủy đơn #1001?' })).toBeInTheDocument();
+    expect(within(dialog).getByText(/tiền sẽ được hoàn lại \(mô phỏng\)/i)).toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: 'Giữ đơn' })).toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: 'Xác nhận hủy' })).toBeInTheDocument();
+    expect(ordersService.cancelOrderApi).not.toHaveBeenCalled();
+
+    // Bấm "Giữ đơn" -> đóng hộp, không gọi API
+    await user.click(within(dialog).getByRole('button', { name: 'Giữ đơn' }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(ordersService.cancelOrderApi).not.toHaveBeenCalled();
+
+    // Mở lại và bấm Esc -> đóng hộp, không gọi API
+    await user.click(screen.getByRole('button', { name: 'Hủy đơn' }));
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(ordersService.cancelOrderApi).not.toHaveBeenCalled();
+
+    // Mở lại và bấm nền ngoài -> đóng hộp, không gọi API
+    await user.click(screen.getByRole('button', { name: 'Hủy đơn' }));
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    await user.click(screen.getByTestId('confirm-dialog-backdrop'));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(ordersService.cancelOrderApi).not.toHaveBeenCalled();
+  });
+
+  it('15. Bấm "Xác nhận hủy" gọi cancelOrderApi đúng 1 lần, khóa các nút và hiện "Đang hủy..." khi đang xử lý (chống bấm đúp)', async () => {
+    const user = userEvent.setup();
+    const pendingOrder = cloneOrder(MOCK_SEED_ORDERS[1]); // #1002 PENDING
+    mockParams = { id: pendingOrder.id };
+
+    let resolveCancel!: (value: OrderResponse) => void;
+    const cancelDeferred = new Promise<OrderResponse>((resolve) => {
+      resolveCancel = resolve;
+    });
+
+    const cancelledOrder = cloneOrder(pendingOrder, { status: 'CANCELLED' });
+    vi.mocked(ordersService.getOrderByIdApi)
+      .mockResolvedValueOnce(pendingOrder)
+      .mockResolvedValueOnce(cancelledOrder);
+    vi.mocked(ordersService.cancelOrderApi).mockReturnValueOnce(cancelDeferred);
+
+    renderOrderDetailPage();
+
+    const pageCancelBtn = await screen.findByRole('button', { name: 'Hủy đơn' });
+    await user.click(pageCancelBtn);
+
+    const dialog = screen.getByRole('dialog');
+    const confirmBtn = within(dialog).getByRole('button', { name: 'Xác nhận hủy' });
+    const keepBtn = within(dialog).getByRole('button', { name: 'Giữ đơn' });
+
+    await user.click(confirmBtn);
+
+    // Đang xử lý: gọi đúng 1 lần chỉ với orderId (không truyền body), khóa nút trong hộp & ngoài trang
+    expect(ordersService.cancelOrderApi).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(ordersService.cancelOrderApi).mock.calls[0]).toEqual([pendingOrder.id]);
+    const processingButtons = screen.getAllByRole('button', { name: 'Đang hủy...' });
+    expect(processingButtons).toHaveLength(2);
+    processingButtons.forEach((btn) => expect(btn).toBeDisabled());
+    expect(keepBtn).toBeDisabled();
+
+    // Bấm đúp hoặc bấm Esc/nền ngoài khi đang hủy cũng không gọi thêm hay đóng hộp
+    await user.click(within(dialog).getByRole('button', { name: 'Đang hủy...' }));
+    await user.keyboard('{Escape}');
+    await user.click(screen.getByTestId('confirm-dialog-backdrop'));
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    expect(ordersService.cancelOrderApi).toHaveBeenCalledTimes(1);
+
+    // Hoàn tất
+    resolveCancel(cancelledOrder);
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    });
+  });
+
+  it('16. Hủy đơn PENDING trên /orders thành công: cập nhật nhãn "Đã hủy" (huy hiệu xám), ẩn nút Thanh toán & Hủy đơn, xóa brewlite_pending_order_v2 khớp id và giữ nguyên giỏ hàng', async () => {
+    const user = userEvent.setup();
+    const pendingOrder = cloneOrder(MOCK_SEED_ORDERS[1]); // #1002 PENDING
+    const cancelledFromPending = cloneOrder(pendingOrder, { status: 'CANCELLED' });
+
+    localStorage.setItem(CART_STORAGE_KEY, sampleCartJson);
+    localStorage.setItem(PENDING_ORDER_STORAGE_KEY, makePendingSnapshot(pendingOrder));
+
+    vi.mocked(ordersService.getMyOrdersApi).mockResolvedValueOnce([pendingOrder]);
+    vi.mocked(ordersService.cancelOrderApi).mockResolvedValueOnce(cancelledFromPending);
+
+    renderOrdersListPage();
+
+    expect(await screen.findByText('#1002')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Thanh toán' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Hủy đơn' }));
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Xác nhận hủy' }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    });
+
+    const cancelledBadge = screen.getByText('Đã hủy');
+    expect(cancelledBadge).toBeInTheDocument();
+    expect(cancelledBadge.className).toContain(getOrderStatusBadgeClass('CANCELLED'));
+    expect(screen.queryByRole('button', { name: 'Hủy đơn' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Thanh toán' })).not.toBeInTheDocument();
+    expect(screen.getByText('Đã hủy đơn #1002.')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /chi tiết/i })).toHaveAttribute(
+      'href',
+      `/orders/${pendingOrder.id}`
+    );
+
+    // Trang danh sách KHÔNG hiện dòng hoàn tiền mô phỏng
+    expect(screen.queryByText(/tiền sẽ được hoàn lại \(mô phỏng\)/i)).not.toBeInTheDocument();
+
+    // Đã xóa pending order khớp id, NHƯNG giỏ hàng vẫn giữ nguyên hoàn toàn
+    expect(localStorage.getItem(PENDING_ORDER_STORAGE_KEY)).toBeNull();
+    expect(localStorage.getItem(CART_STORAGE_KEY)).toBe(sampleCartJson);
+  });
+
+  it('17. Trên /orders, hủy một đơn PAID khác với brewlite_pending_order_v2 thì KHÔNG xóa pending order của đơn kia và KHÔNG hiện dòng hoàn tiền', async () => {
+    const user = userEvent.setup();
+    const paidOrder = cloneOrder(MOCK_SEED_ORDERS[0]); // #1001 PAID
+    const cancelledPaid = cloneOrder(paidOrder, { status: 'CANCELLED', payments: [] });
+    const otherPendingSnapshot = makePendingSnapshot(MOCK_SEED_ORDERS[1]);
+
+    localStorage.setItem(CART_STORAGE_KEY, sampleCartJson);
+    localStorage.setItem(PENDING_ORDER_STORAGE_KEY, otherPendingSnapshot);
+
+    vi.mocked(ordersService.getMyOrdersApi).mockResolvedValueOnce([paidOrder]);
+    vi.mocked(ordersService.cancelOrderApi).mockResolvedValueOnce(cancelledPaid);
+
+    renderOrdersListPage();
+
+    await user.click(await screen.findByRole('button', { name: 'Hủy đơn' }));
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Xác nhận hủy' }));
+
+    await waitFor(() => {
+      expect(screen.getByText('Đã hủy đơn #1001.')).toBeInTheDocument();
+    });
+
+    expect(screen.queryByText(/tiền sẽ được hoàn lại \(mô phỏng\)/i)).not.toBeInTheDocument();
+    expect(localStorage.getItem(PENDING_ORDER_STORAGE_KEY)).toBe(otherPendingSnapshot);
+    expect(localStorage.getItem(CART_STORAGE_KEY)).toBe(sampleCartJson);
+  });
+
+  it('18. Trang chi tiết /orders/[id]: hủy đơn PENDING và PAYMENT_FAILED thành công -> KHÔNG hiện dòng hoàn tiền mô phỏng, ẩn stepper & thanh toán', async () => {
+    const user = userEvent.setup();
+
+    // (a) PENDING -> CANCELLED (không có payment SUCCESS)
+    const pendingOrder = cloneOrder(MOCK_SEED_ORDERS[1]);
+    const cancelledPending = cloneOrder(pendingOrder, { status: 'CANCELLED', payments: [] });
+    mockParams = { id: pendingOrder.id };
+    localStorage.setItem(CART_STORAGE_KEY, sampleCartJson);
+    localStorage.setItem(PENDING_ORDER_STORAGE_KEY, makePendingSnapshot(pendingOrder));
+
+    vi.mocked(ordersService.getOrderByIdApi)
+      .mockResolvedValueOnce(pendingOrder)
+      .mockResolvedValueOnce(cancelledPending);
+    vi.mocked(ordersService.cancelOrderApi).mockResolvedValueOnce(cancelledPending);
+
+    const view1 = renderOrderDetailPage();
+    await user.click(await screen.findByRole('button', { name: 'Hủy đơn' }));
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Xác nhận hủy' }));
+
+    expect(await screen.findByText('Đã hủy đơn #1002.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Hủy đơn' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /thanh toán/i })).not.toBeInTheDocument();
+    expect(screen.queryByText('Tiến trình đơn hàng')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('order-refund-notice')).not.toBeInTheDocument();
+    expect(screen.queryByText('Tiền sẽ được hoàn lại (mô phỏng)')).not.toBeInTheDocument();
+    expect(localStorage.getItem(CART_STORAGE_KEY)).toBe(sampleCartJson);
+    expect(localStorage.getItem(PENDING_ORDER_STORAGE_KEY)).toBeNull();
+    view1.unmount();
+
+    // (b) PAYMENT_FAILED -> CANCELLED (chỉ có payment FAILED)
+    const failedOrder = cloneOrder(MOCK_SEED_ORDERS[2]); // #1003
+    const cancelledFailed = cloneOrder(failedOrder, { status: 'CANCELLED' });
+    mockParams = { id: failedOrder.id };
+
+    vi.mocked(ordersService.getOrderByIdApi)
+      .mockResolvedValueOnce(failedOrder)
+      .mockResolvedValueOnce(cancelledFailed);
+    vi.mocked(ordersService.cancelOrderApi).mockResolvedValueOnce(cancelledFailed);
+
+    renderOrderDetailPage();
+    await user.click(await screen.findByRole('button', { name: 'Hủy đơn' }));
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Xác nhận hủy' }));
+
+    expect(await screen.findByText('Đã hủy đơn #1003.')).toBeInTheDocument();
+    expect(screen.queryByTestId('order-refund-notice')).not.toBeInTheDocument();
+    expect(screen.queryByText('Tiền sẽ được hoàn lại (mô phỏng)')).not.toBeInTheDocument();
+  });
+
+  it('19. Trang chi tiết /orders/[id]: hủy đơn PAID -> hiện dòng "Tiền sẽ được hoàn lại (mô phỏng)" khi tải lại có payment SUCCESS và ngay cả khi getOrderByIdApi tải lại sau hủy bị lỗi mạng/5xx', async () => {
+    const user = userEvent.setup();
+    const paidOrder = cloneOrder(MOCK_SEED_ORDERS[0]); // #1001 PAID với payment SUCCESS
+    // Giả lập cancelOrderApi trả Order KHÔNG kèm mảng payments (hoặc mảng rỗng như một số response)
+    const cancelApiResponseWithoutPayments = cloneOrder(paidOrder, { status: 'CANCELLED', payments: [] });
+    const fullReloadedCancelled = cloneOrder(paidOrder, { status: 'CANCELLED' });
+
+    mockParams = { id: paidOrder.id };
+    vi.mocked(ordersService.getOrderByIdApi)
+      .mockResolvedValueOnce(paidOrder)
+      .mockResolvedValueOnce(fullReloadedCancelled);
+    vi.mocked(ordersService.cancelOrderApi).mockResolvedValueOnce(cancelApiResponseWithoutPayments);
+
+    const view1 = renderOrderDetailPage();
+    await user.click(await screen.findByRole('button', { name: 'Hủy đơn' }));
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Xác nhận hủy' }));
+
+    expect(await screen.findByText('Đã hủy đơn #1001.')).toBeInTheDocument();
+    expect(await screen.findByTestId('order-refund-notice')).toHaveTextContent(
+      'Tiền sẽ được hoàn lại (mô phỏng)'
+    );
+    view1.unmount();
+
+    // Trường hợp getOrderByIdApi sau khi hủy bị lỗi mạng/5xx: KHÔNG báo lỗi và KHÔNG làm mất dòng hoàn tiền từ payments có sẵn
+    vi.mocked(ordersService.getOrderByIdApi)
+      .mockResolvedValueOnce(paidOrder)
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'));
+    vi.mocked(ordersService.cancelOrderApi).mockResolvedValueOnce(cancelApiResponseWithoutPayments);
+
+    renderOrderDetailPage();
+    await user.click(await screen.findByRole('button', { name: 'Hủy đơn' }));
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Xác nhận hủy' }));
+
+    expect(await screen.findByText('Đã hủy đơn #1001.')).toBeInTheDocument();
+    expect(await screen.findByTestId('order-refund-notice')).toHaveTextContent(
+      'Tiền sẽ được hoàn lại (mô phỏng)'
+    );
+    expect(screen.queryByText(/không thể tải/i)).not.toBeInTheDocument();
+  });
+
+  it('20. Mở lại trang chi tiết (F5) của đơn đã hủy: hiện "Tiền sẽ được hoàn lại (mô phỏng)" nếu có payment SUCCESS (#1007), không hiện nếu chỉ có payment FAILED/trống', async () => {
+    // Có payment SUCCESS (#1007)
+    const cancelledWithRefund = cloneOrder(MOCK_SEED_ORDERS[6]);
+    mockParams = { id: cancelledWithRefund.id };
+    vi.mocked(ordersService.getOrderByIdApi).mockResolvedValueOnce(cancelledWithRefund);
+
+    const view1 = renderOrderDetailPage();
+    expect(await screen.findByTestId('order-number-heading')).toHaveTextContent('#1007');
+    expect(screen.getByTestId('order-refund-notice')).toHaveTextContent(
+      'Tiền sẽ được hoàn lại (mô phỏng)'
+    );
+    expect(screen.queryByRole('button', { name: 'Hủy đơn' })).not.toBeInTheDocument();
+    view1.unmount();
+
+    // Không có payment SUCCESS
+    const cancelledNoRefund = cloneOrder(MOCK_SEED_ORDERS[1], { status: 'CANCELLED', payments: [] });
+    mockParams = { id: cancelledNoRefund.id };
+    vi.mocked(ordersService.getOrderByIdApi).mockResolvedValueOnce(cancelledNoRefund);
+
+    renderOrderDetailPage();
+    expect(await screen.findByTestId('order-number-heading')).toHaveTextContent('#1002');
+    expect(screen.queryByTestId('order-refund-notice')).not.toBeInTheDocument();
+    expect(screen.queryByText('Tiền sẽ được hoàn lại (mô phỏng)')).not.toBeInTheDocument();
+  });
+
+  it.each([
+    'Không thể hủy đơn ở trạng thái hiện tại',
+    'Trạng thái đơn đã thay đổi, vui lòng tải lại',
+  ])('21. Lỗi 409 ("%s") trên /orders/[id] đóng hộp, hiện đúng thông báo server và TỰ tải lại trạng thái mới nhất', async (serverMsg) => {
+    const user = userEvent.setup();
+    const initialOrder = cloneOrder(MOCK_SEED_ORDERS[1]); // #1002 PENDING
+    const refreshedOrder = cloneOrder(MOCK_SEED_ORDERS[1], { status: 'PREPARING' });
+
+    mockParams = { id: initialOrder.id };
+    vi.mocked(ordersService.getOrderByIdApi)
+      .mockResolvedValueOnce(initialOrder)
+      .mockResolvedValueOnce(refreshedOrder);
+    vi.mocked(ordersService.cancelOrderApi).mockRejectedValueOnce(
+      new ApiHttpError({ statusCode: 409, message: serverMsg })
+    );
+
+    renderOrderDetailPage();
+    await user.click(await screen.findByRole('button', { name: 'Hủy đơn' }));
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Xác nhận hủy' }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    });
+    expect(screen.getByText(serverMsg)).toBeInTheDocument();
+    expect(ordersService.getOrderByIdApi).toHaveBeenCalledTimes(2);
+    await waitFor(() => {
+      expect(screen.getByTestId('order-status-badge')).toHaveTextContent('Đang pha chế');
+    });
+    expect(screen.queryByRole('button', { name: 'Hủy đơn' })).not.toBeInTheDocument();
+  });
+
+  it('22. Lỗi 409 trên /orders đóng hộp, hiện đúng thông báo server và tự tải lại danh sách đơn', async () => {
+    const user = userEvent.setup();
+    const initialOrder = cloneOrder(MOCK_SEED_ORDERS[1]); // PENDING
+    const refreshedOrder = cloneOrder(MOCK_SEED_ORDERS[1], { status: 'PREPARING' });
+
+    vi.mocked(ordersService.getMyOrdersApi)
+      .mockResolvedValueOnce([initialOrder])
+      .mockResolvedValueOnce([refreshedOrder]);
+    vi.mocked(ordersService.cancelOrderApi).mockRejectedValueOnce(
+      new ApiHttpError({
+        statusCode: 409,
+        message: 'Trạng thái đơn đã thay đổi, vui lòng tải lại',
+      })
+    );
+
+    renderOrdersListPage();
+    await user.click(await screen.findByRole('button', { name: 'Hủy đơn' }));
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Xác nhận hủy' }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    });
+    expect(screen.getByText('Trạng thái đơn đã thay đổi, vui lòng tải lại')).toBeInTheDocument();
+    expect(ordersService.getMyOrdersApi).toHaveBeenCalledTimes(2);
+    expect(await screen.findByText('Đang pha chế')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Hủy đơn' })).not.toBeInTheDocument();
+  });
+
+  it('23. Lỗi 404 "Không tìm thấy đơn hàng" trên /orders/[id] và /orders xử lý đúng thông báo server', async () => {
+    const user = userEvent.setup();
+    const pendingOrder = cloneOrder(MOCK_SEED_ORDERS[1]);
+    mockParams = { id: pendingOrder.id };
+
+    // Trên trang chi tiết /orders/[id]
+    vi.mocked(ordersService.getOrderByIdApi).mockResolvedValueOnce(pendingOrder);
+    vi.mocked(ordersService.cancelOrderApi).mockRejectedValueOnce(
+      new ApiHttpError({ statusCode: 404, message: 'Không tìm thấy đơn hàng' })
+    );
+
+    const detailView = renderOrderDetailPage();
+    await user.click(await screen.findByRole('button', { name: 'Hủy đơn' }));
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Xác nhận hủy' }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    });
+    expect(await screen.findByText('Không tìm thấy đơn hàng')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /lịch sử đơn/i })).toHaveAttribute('href', '/orders');
+    detailView.unmount();
+
+    // Trên trang danh sách /orders
+    vi.mocked(ordersService.getMyOrdersApi)
+      .mockResolvedValueOnce([pendingOrder])
+      .mockResolvedValueOnce([]);
+    vi.mocked(ordersService.cancelOrderApi).mockRejectedValueOnce(
+      new ApiHttpError({ statusCode: 404, message: 'Không tìm thấy đơn hàng' })
+    );
+
+    renderOrdersListPage();
+    await user.click(await screen.findByRole('button', { name: 'Hủy đơn' }));
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Xác nhận hủy' }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    });
+    expect(screen.getByText('Không tìm thấy đơn hàng')).toBeInTheDocument();
+    expect(ordersService.getMyOrdersApi).toHaveBeenCalledTimes(2);
+  });
+
+  it('24. Lỗi 401 khi gọi cancelOrderApi xóa phiên đăng nhập và chuyển về /login?redirect=...&expired=true (không bị useRequireAuth ghi đè)', async () => {
+    const user = userEvent.setup();
+    const pendingOrder = cloneOrder(MOCK_SEED_ORDERS[1]);
+    mockParams = { id: pendingOrder.id };
+    window.history.pushState({}, '', `/orders/${pendingOrder.id}`);
+
+    vi.mocked(ordersService.getOrderByIdApi).mockResolvedValueOnce(pendingOrder);
+    vi.mocked(ordersService.cancelOrderApi).mockRejectedValueOnce(
+      new ApiHttpError({ statusCode: 401, message: 'Phiên đăng nhập đã hết hạn' })
+    );
+
+    const detailView = renderOrderDetailPage();
+    await user.click(await screen.findByRole('button', { name: 'Hủy đơn' }));
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Xác nhận hủy' }));
+
+    await waitFor(() => {
+      expect(mockPush).toHaveBeenCalledWith(
+        `/login?redirect=${encodeURIComponent(`/orders/${pendingOrder.id}`)}&expired=true`
+      );
+    });
+    expect(localStorage.getItem(AUTH_STORAGE_KEY)).toBeNull();
+    expect(mockReplace).not.toHaveBeenCalled();
+    detailView.unmount();
+
+    // Tương tự trên /orders
+    vi.clearAllMocks();
+    window.history.pushState({}, '', '/orders');
+    localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(loggedInSession));
+    vi.mocked(ordersService.getMyOrdersApi).mockResolvedValueOnce([pendingOrder]);
+    vi.mocked(ordersService.cancelOrderApi).mockRejectedValueOnce(
+      new ApiHttpError({ statusCode: 401, message: 'Phiên đăng nhập đã hết hạn' })
+    );
+
+    renderOrdersListPage();
+    await user.click(await screen.findByRole('button', { name: 'Hủy đơn' }));
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Xác nhận hủy' }));
+
+    await waitFor(() => {
+      expect(mockPush).toHaveBeenCalledWith(
+        `/login?redirect=${encodeURIComponent('/orders')}&expired=true`
+      );
+    });
+    expect(localStorage.getItem(AUTH_STORAGE_KEY)).toBeNull();
+    expect(mockReplace).not.toHaveBeenCalled();
+  });
+
+  it('25. Lỗi mạng/5xx khi hủy đơn: đóng hộp, hiện thông báo dễ hiểu, giữ nguyên trạng thái cũ và cho phép thử lại', async () => {
+    const user = userEvent.setup();
+    const pendingOrder = cloneOrder(MOCK_SEED_ORDERS[1]); // #1002 PENDING
+    const cancelledOrder = cloneOrder(pendingOrder, { status: 'CANCELLED' });
+    mockParams = { id: pendingOrder.id };
+
+    vi.mocked(ordersService.getOrderByIdApi)
+      .mockResolvedValueOnce(pendingOrder)
+      .mockResolvedValueOnce(cancelledOrder);
+    vi.mocked(ordersService.cancelOrderApi)
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+      .mockResolvedValueOnce(cancelledOrder);
+
+    renderOrderDetailPage();
+
+    await user.click(await screen.findByRole('button', { name: 'Hủy đơn' }));
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Xác nhận hủy' }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    });
+
+    // Giữ nguyên trạng thái Chờ thanh toán và nút Hủy đơn vẫn cho phép thử lại
+    expect(screen.getByTestId('order-status-badge')).toHaveTextContent('Chờ thanh toán');
+    expect(screen.getByRole('button', { name: 'Hủy đơn' })).toBeEnabled();
+    expect(screen.getByRole('alert')).toBeInTheDocument();
+
+    // Thử lại lần 2 thành công
+    await user.click(screen.getByRole('button', { name: 'Hủy đơn' }));
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Xác nhận hủy' }));
+    expect(await screen.findByText('Đã hủy đơn #1002.')).toBeInTheDocument();
   });
 });
 

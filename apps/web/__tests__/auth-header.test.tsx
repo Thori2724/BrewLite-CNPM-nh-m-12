@@ -194,3 +194,48 @@ describe('Hook bảo vệ trang useRequireAuth', () => {
     expect(localStorage.getItem(AUTH_STORAGE_KEY)).toBeNull();
   });
 });
+
+function ProtectedProbeSkipRedirect() {
+  const { isReady, isChecking } = useRequireAuth({ skipRedirect: true });
+  if (isChecking) return <p>Đang kiểm tra đăng nhập...</p>;
+  if (!isReady) return <p>Đang chuyển hướng tùy chỉnh</p>;
+  return <p>Đã đăng nhập</p>;
+}
+
+describe('useRequireAuth với tùy chọn skipRedirect', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    localStorage.clear();
+  });
+
+  it('11. Khi skipRedirect=true và chưa đăng nhập hoặc bị xóa phiên, hook không tự gọi router.replace đè redirect tùy chỉnh', async () => {
+    const firstView = render(
+      <AuthProvider>
+        <ProtectedProbeSkipRedirect />
+      </AuthProvider>
+    );
+
+    expect(await screen.findByText('Đang chuyển hướng tùy chỉnh')).toBeInTheDocument();
+    expect(mockReplace).not.toHaveBeenCalled();
+    firstView.unmount();
+
+    // Khi đang đăng nhập rồi bị clearAuthSession() cũng không tự gọi replace
+    localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(loggedInSession));
+    const { unmount } = render(
+      <AuthProvider>
+        <ProtectedProbeSkipRedirect />
+      </AuthProvider>
+    );
+    expect(await screen.findByText('Đã đăng nhập')).toBeInTheDocument();
+
+    act(() => {
+      clearAuthSession();
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('Đang chuyển hướng tùy chỉnh')).toBeInTheDocument();
+    });
+    expect(mockReplace).not.toHaveBeenCalled();
+    unmount();
+  });
+});

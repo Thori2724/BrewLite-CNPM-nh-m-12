@@ -1,11 +1,12 @@
 'use client';
 
-import React, { Suspense, useCallback, useEffect, useState } from 'react';
+import React, { Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useRequireAuth } from '../../context/useRequireAuth';
 import {
   OrderResponse,
+  OrderStatus,
   ORDER_STATUS_LABELS,
   RECEIVE_TYPE_LABELS,
   ORDER_ERROR_MESSAGES,
@@ -13,22 +14,88 @@ import {
   getOrderStatusBadgeClass,
   summarizeOrderItems,
 } from '../../services/order-contract';
-import { getMyOrdersApi, OrderApiError } from '../../services/orders';
+import { cancelOrderApi, getMyOrdersApi, OrderApiError } from '../../services/orders';
+import { clearAuthSession, getSafeRedirectUrl } from '../../utils/auth';
+import { clearPendingOrder, loadPendingOrder } from '../../utils/checkout';
 import { calculatePrice } from '../../utils/price';
+import ConfirmDialog from '../components/ConfirmDialog';
 
 function formatVndPrice(amount: number): string {
   const safeValue = calculatePrice({ basePrice: amount, toppings: [], quantity: 1 });
   return `${safeValue.toLocaleString('vi-VN')}đ`;
 }
 
+function isOrderCancellable(status: OrderStatus): boolean {
+  return status === 'PENDING' || status === 'PAYMENT_FAILED' || status === 'PAID';
+}
+
+function parseOrderActionError(err: unknown): { statusCode: number; message: string } {
+  if (err && typeof err === 'object') {
+    const candidate = err as { statusCode?: unknown; message?: unknown };
+    const statusCode = typeof candidate.statusCode === 'number' ? candidate.statusCode : 0;
+    const rawMessage = candidate.message;
+    let message = '';
+    if (Array.isArray(rawMessage)) {
+      message = rawMessage.map((item) => String(item)).filter(Boolean).join(', ');
+    } else if (typeof rawMessage === 'string') {
+      message = rawMessage.trim();
+    }
+    return { statusCode, message };
+  }
+  return { statusCode: 0, message: '' };
+}
+
+function formatServerOrNetworkErrorMessage(statusCode: number, rawMessage: string): string {
+  if (statusCode >= 500) {
+    if (!rawMessage || rawMessage === 'Internal Server Error' || rawMessage === 'Mock Status') {
+      return 'Máy chủ đang gặp sự cố tạm thời. Vui lòng thử lại.';
+    }
+    return rawMessage;
+  }
+  if (statusCode === 0) {
+    return rawMessage || ORDER_ERROR_MESSAGES.NETWORK_ERROR;
+  }
+  return rawMessage || ORDER_ERROR_MESSAGES.UNKNOWN_ERROR;
+}
+
+function clearMatchingPendingOrder(orderId: string): void {
+  const storedPending = loadPendingOrder();
+  if (storedPending && storedPending.orderId === orderId) {
+    clearPendingOrder();
+  }
+}
+
 function OrdersHistoryContent() {
   const router = useRouter();
-  const { isChecking, isReady } = useRequireAuth();
+  const [isSessionExpiredRedirecting, setIsSessionExpiredRedirecting] = useState(false);
+  const { isChecking, isReady } = useRequireAuth({
+    skipRedirect: isSessionExpiredRedirecting,
+  });
 
   const [orders, setOrders] = useState<OrderResponse[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [isReloading, setIsReloading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+
+  const [confirmTargetOrder, setConfirmTargetOrder] = useState<OrderResponse | null>(null);
+  const [cancellingOrderId, setCancellingOrderId] = useState<string | null>(null);
+  const [actionFeedback, setActionFeedback] = useState<{
+    type: 'success' | 'error';
+    message: string;
+  } | null>(null);
+
+  const cancelInFlightRef = useRef(false);
+
+  const redirectToExpiredLogin = useCallback(() => {
+    setIsSessionExpiredRedirecting(true);
+    clearAuthSession();
+    const browserPath =
+      typeof window !== 'undefined' && window.location.pathname !== '/'
+        ? window.location.pathname + window.location.search
+        : '/orders';
+    const currentPath = getSafeRedirectUrl(browserPath, '/orders');
+    router.push(`/login?redirect=${encodeURIComponent(currentPath)}&expired=true`);
+  }, [router]);
 
   useEffect(() => {
     if (!isReady) return;
@@ -66,6 +133,7 @@ function OrdersHistoryContent() {
   const handleManualReload = useCallback(async () => {
     setIsReloading(true);
     setError(null);
+    setActionFeedback(null);
 
     try {
       const data = await getMyOrdersApi();
@@ -85,6 +153,111 @@ function OrdersHistoryContent() {
       setIsReloading(false);
     }
   }, [router]);
+
+  const handleOpenCancelDialog = (order: OrderResponse) => {
+    if (cancelInFlightRef.current || cancellingOrderId) return;
+    setActionFeedback(null);
+    setConfirmTargetOrder(order);
+  };
+
+  const handleCloseCancelDialog = () => {
+    if (cancelInFlightRef.current || cancellingOrderId) return;
+    setConfirmTargetOrder(null);
+  };
+
+  const handleConfirmCancelOrder = async () => {
+    const targetOrder = confirmTargetOrder;
+    if (!targetOrder || cancelInFlightRef.current) return;
+
+    cancelInFlightRef.current = true;
+    setCancellingOrderId(targetOrder.id);
+
+    try {
+      const cancelledOrder = await cancelOrderApi(targetOrder.id);
+      clearMatchingPendingOrder(targetOrder.id);
+
+      setOrders((prev) =>
+        prev.map((item) =>
+          item.id === targetOrder.id
+            ? {
+                ...item,
+                ...cancelledOrder,
+                status: cancelledOrder.status || 'CANCELLED',
+              }
+            : item
+        )
+      );
+      setConfirmTargetOrder(null);
+      setActionFeedback({
+        type: 'success',
+        message: `Đã hủy đơn #${targetOrder.orderNumber}.`,
+      });
+    } catch (err: unknown) {
+      const parsed = parseOrderActionError(err);
+
+      if (parsed.statusCode === 401) {
+        setConfirmTargetOrder(null);
+        redirectToExpiredLogin();
+        return;
+      }
+
+      setConfirmTargetOrder(null);
+
+      if (parsed.statusCode === 409) {
+        setActionFeedback({
+          type: 'error',
+          message: parsed.message || ORDER_ERROR_MESSAGES.ORDER_CANCEL_INVALID,
+        });
+        try {
+          const freshOrders = await getMyOrdersApi();
+          const safeOrders = Array.isArray(freshOrders) ? freshOrders : [];
+          setOrders(safeOrders);
+          const refreshedTarget = safeOrders.find((o) => o.id === targetOrder.id);
+          if (
+            refreshedTarget &&
+            refreshedTarget.status !== 'PENDING' &&
+            refreshedTarget.status !== 'PAYMENT_FAILED'
+          ) {
+            clearMatchingPendingOrder(targetOrder.id);
+          }
+        } catch (reloadErr: unknown) {
+          const reloadParsed = parseOrderActionError(reloadErr);
+          if (reloadParsed.statusCode === 401) {
+            redirectToExpiredLogin();
+            return;
+          }
+        }
+        return;
+      }
+
+      if (parsed.statusCode === 404) {
+        clearMatchingPendingOrder(targetOrder.id);
+        setActionFeedback({
+          type: 'error',
+          message: parsed.message || ORDER_ERROR_MESSAGES.ORDER_NOT_FOUND,
+        });
+        try {
+          const freshOrders = await getMyOrdersApi();
+          setOrders(Array.isArray(freshOrders) ? freshOrders : []);
+        } catch (reloadErr: unknown) {
+          const reloadParsed = parseOrderActionError(reloadErr);
+          if (reloadParsed.statusCode === 401) {
+            redirectToExpiredLogin();
+            return;
+          }
+        }
+        return;
+      }
+
+      setActionFeedback({
+        type: 'error',
+        message: formatServerOrNetworkErrorMessage(parsed.statusCode, parsed.message),
+      });
+    } finally {
+      cancelInFlightRef.current = false;
+      setCancellingOrderId(null);
+    }
+  };
 
   // 1. Trạng thái Loading
   if (isChecking || !isReady || loading) {
@@ -147,6 +320,31 @@ function OrdersHistoryContent() {
         </button>
       </div>
 
+      {/* Thông báo kết quả thao tác hủy đơn ngay trong trang */}
+      {actionFeedback && (
+        <div
+          role={actionFeedback.type === 'error' ? 'alert' : 'status'}
+          data-testid={
+            actionFeedback.type === 'error' ? 'orders-action-error' : 'orders-action-success'
+          }
+          className={`flex items-start justify-between gap-3 rounded-control border px-4 py-3 text-sm font-medium shadow-soft ${
+            actionFeedback.type === 'error'
+              ? 'border-error/45 bg-error/10 text-error'
+              : 'border-moss/60 bg-tan/35 text-kombu'
+          }`}
+        >
+          <span>{actionFeedback.message}</span>
+          <button
+            type="button"
+            onClick={() => setActionFeedback(null)}
+            aria-label="Đóng thông báo"
+            className="shrink-0 text-xs font-bold opacity-75 hover:opacity-100 cursor-pointer"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
       {/* 3. Trạng thái Empty ("Bạn chưa có đơn hàng nào" + nút "Xem menu") */}
       {orders.length === 0 ? (
         <div
@@ -175,6 +373,8 @@ function OrdersHistoryContent() {
           {orders.map((order) => {
             const isPayable =
               order.status === 'PENDING' || order.status === 'PAYMENT_FAILED';
+            const canCancel = isOrderCancellable(order.status);
+            const isCancellingThis = cancellingOrderId === order.id;
 
             return (
               <div
@@ -223,6 +423,16 @@ function OrdersHistoryContent() {
                         Thanh toán
                       </Link>
                     )}
+                    {canCancel && (
+                      <button
+                        type="button"
+                        disabled={cancellingOrderId !== null}
+                        onClick={() => handleOpenCancelDialog(order)}
+                        className="inline-flex items-center justify-center px-3.5 py-1.5 bg-cream hover:bg-error/10 text-error border border-error/45 font-semibold rounded-control text-xs transition disabled:opacity-45 disabled:cursor-not-allowed cursor-pointer"
+                      >
+                        {isCancellingThis ? 'Đang hủy...' : 'Hủy đơn'}
+                      </button>
+                    )}
                     <Link
                       href={`/orders/${order.id}`}
                       className="text-xs font-semibold text-kombu group-hover:translate-x-0.5 transition"
@@ -236,6 +446,27 @@ function OrdersHistoryContent() {
           })}
         </div>
       )}
+
+      <ConfirmDialog
+        isOpen={Boolean(confirmTargetOrder)}
+        title={confirmTargetOrder ? `Hủy đơn #${confirmTargetOrder.orderNumber}?` : ''}
+        description="Bạn có chắc chắn muốn hủy đơn hàng này? Thao tác này không thể hoàn tác."
+        cancelLabel="Giữ đơn"
+        confirmLabel="Xác nhận hủy"
+        processingLabel="Đang hủy..."
+        variant="danger"
+        isProcessing={cancellingOrderId !== null}
+        onCancel={handleCloseCancelDialog}
+        onConfirm={() => {
+          void handleConfirmCancelOrder();
+        }}
+      >
+        {confirmTargetOrder?.status === 'PAID' && (
+          <p className="rounded-control border border-tan bg-bone/70 px-3 py-2 text-xs text-noir">
+            Đơn hàng này đã thanh toán. Khi hủy, tiền sẽ được hoàn lại (mô phỏng).
+          </p>
+        )}
+      </ConfirmDialog>
     </div>
   );
 }

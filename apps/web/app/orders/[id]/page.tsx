@@ -1,6 +1,6 @@
 'use client';
 
-import React, { Suspense, useCallback, useEffect, useState } from 'react';
+import React, { Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useRequireAuth } from '../../../context/useRequireAuth';
@@ -26,17 +26,60 @@ import {
   SugarLevel,
   IceLevel,
 } from '../../../services/api';
-import { getOrderByIdApi, OrderApiError } from '../../../services/orders';
+import { cancelOrderApi, getOrderByIdApi, OrderApiError } from '../../../services/orders';
+import { clearAuthSession, getSafeRedirectUrl } from '../../../utils/auth';
 import {
+  clearPendingOrder,
   generateIdempotencyKey,
   loadPendingOrder,
   savePendingOrder,
 } from '../../../utils/checkout';
 import { calculatePrice } from '../../../utils/price';
+import ConfirmDialog from '../../components/ConfirmDialog';
 
 function formatVndPrice(amount: number): string {
   const safeValue = calculatePrice({ basePrice: amount, toppings: [], quantity: 1 });
   return `${safeValue.toLocaleString('vi-VN')}đ`;
+}
+
+function isOrderCancellable(status: OrderStatus): boolean {
+  return status === 'PENDING' || status === 'PAYMENT_FAILED' || status === 'PAID';
+}
+
+function parseOrderActionError(err: unknown): { statusCode: number; message: string } {
+  if (err && typeof err === 'object') {
+    const candidate = err as { statusCode?: unknown; message?: unknown };
+    const statusCode = typeof candidate.statusCode === 'number' ? candidate.statusCode : 0;
+    const rawMessage = candidate.message;
+    let message = '';
+    if (Array.isArray(rawMessage)) {
+      message = rawMessage.map((item) => String(item)).filter(Boolean).join(', ');
+    } else if (typeof rawMessage === 'string') {
+      message = rawMessage.trim();
+    }
+    return { statusCode, message };
+  }
+  return { statusCode: 0, message: '' };
+}
+
+function formatServerOrNetworkErrorMessage(statusCode: number, rawMessage: string): string {
+  if (statusCode >= 500) {
+    if (!rawMessage || rawMessage === 'Internal Server Error' || rawMessage === 'Mock Status') {
+      return 'Máy chủ đang gặp sự cố tạm thời. Vui lòng thử lại.';
+    }
+    return rawMessage;
+  }
+  if (statusCode === 0) {
+    return rawMessage || ORDER_ERROR_MESSAGES.NETWORK_ERROR;
+  }
+  return rawMessage || ORDER_ERROR_MESSAGES.UNKNOWN_ERROR;
+}
+
+function clearMatchingPendingOrder(orderId: string): void {
+  const storedPending = loadPendingOrder();
+  if (storedPending && storedPending.orderId === orderId) {
+    clearPendingOrder();
+  }
 }
 
 function getBannerStyleClass(status: OrderStatus): string {
@@ -71,7 +114,10 @@ function getPaymentStatusBadgeClass(status: PaymentStatus): string {
 function OrderDetailContent() {
   const params = useParams();
   const router = useRouter();
-  const { isChecking, isReady } = useRequireAuth();
+  const [isSessionExpiredRedirecting, setIsSessionExpiredRedirecting] = useState(false);
+  const { isChecking, isReady } = useRequireAuth({
+    skipRedirect: isSessionExpiredRedirecting,
+  });
 
   const orderId =
     typeof params?.id === 'string'
@@ -84,7 +130,30 @@ function OrderDetailContent() {
   const [loading, setLoading] = useState<boolean>(true);
   const [isReloading, setIsReloading] = useState<boolean>(false);
   const [isNotFound, setIsNotFound] = useState<boolean>(false);
+  const [notFoundMessage, setNotFoundMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const [isCancelDialogOpen, setIsCancelDialogOpen] = useState<boolean>(false);
+  const [isCancelling, setIsCancelling] = useState<boolean>(false);
+  const [isVerifyingRefundStatus, setIsVerifyingRefundStatus] = useState<boolean>(false);
+  const [actionFeedback, setActionFeedback] = useState<{
+    type: 'success' | 'error';
+    message: string;
+  } | null>(null);
+
+  const cancelInFlightRef = useRef(false);
+
+  const redirectToExpiredLogin = useCallback(() => {
+    setIsSessionExpiredRedirecting(true);
+    clearAuthSession();
+    const fallbackPath = orderId ? `/orders/${orderId}` : '/orders';
+    const browserPath =
+      typeof window !== 'undefined' && window.location.pathname !== '/'
+        ? window.location.pathname + window.location.search
+        : fallbackPath;
+    const currentPath = getSafeRedirectUrl(browserPath, fallbackPath);
+    router.push(`/login?redirect=${encodeURIComponent(currentPath)}&expired=true`);
+  }, [orderId, router]);
 
   // Gọi GET /orders/:id ĐÚNG MỘT LẦN khi mở trang và đã xác nhận đăng nhập (KHÔNG polling, KHÔNG setInterval)
   useEffect(() => {
@@ -97,6 +166,7 @@ function OrderDetailContent() {
           setOrder(data);
           setError(null);
           setIsNotFound(false);
+          setNotFoundMessage(null);
           setLoading(false);
         }
       })
@@ -109,6 +179,7 @@ function OrderDetailContent() {
             }
             if (err.statusCode === 404) {
               setIsNotFound(true);
+              setNotFoundMessage(err.message || null);
               setOrder(null);
               setLoading(false);
               return;
@@ -132,6 +203,8 @@ function OrderDetailContent() {
     setIsReloading(true);
     setError(null);
     setIsNotFound(false);
+    setNotFoundMessage(null);
+    setActionFeedback(null);
 
     try {
       const data = await getOrderByIdApi(orderId);
@@ -144,6 +217,7 @@ function OrderDetailContent() {
         }
         if (err.statusCode === 404) {
           setIsNotFound(true);
+          setNotFoundMessage(err.message || null);
           setOrder(null);
           return;
         }
@@ -156,6 +230,123 @@ function OrderDetailContent() {
       setIsReloading(false);
     }
   }, [orderId, router]);
+
+  const handleOpenCancelDialog = () => {
+    if (!order || cancelInFlightRef.current || isCancelling) return;
+    setActionFeedback(null);
+    setIsCancelDialogOpen(true);
+  };
+
+  const handleCloseCancelDialog = () => {
+    if (cancelInFlightRef.current || isCancelling) return;
+    setIsCancelDialogOpen(false);
+  };
+
+  const handleConfirmCancelOrder = async () => {
+    if (!order || cancelInFlightRef.current) return;
+
+    cancelInFlightRef.current = true;
+    setIsCancelling(true);
+    setActionFeedback(null);
+
+    const targetOrderId = order.id;
+    const targetOrderNumber = order.orderNumber;
+    const existingPayments = order.payments;
+
+    try {
+      const cancelledOrder = await cancelOrderApi(targetOrderId);
+      clearMatchingPendingOrder(targetOrderId);
+
+      const resolvedCancelPayments =
+        cancelledOrder.payments && cancelledOrder.payments.length > 0
+          ? cancelledOrder.payments
+          : existingPayments;
+
+      setIsVerifyingRefundStatus(true);
+      setIsCancelDialogOpen(false);
+      setOrder((prev) => ({
+        ...(prev || cancelledOrder),
+        ...cancelledOrder,
+        status: cancelledOrder.status || 'CANCELLED',
+        payments: resolvedCancelPayments,
+      }));
+      setActionFeedback({
+        type: 'success',
+        message: `Đã hủy đơn #${targetOrderNumber}.`,
+      });
+
+      try {
+        const refreshedOrder = await getOrderByIdApi(targetOrderId);
+        setOrder({
+          ...refreshedOrder,
+          payments: refreshedOrder.payments ?? resolvedCancelPayments,
+        });
+      } catch (reloadErr: unknown) {
+        const reloadParsed = parseOrderActionError(reloadErr);
+        if (reloadParsed.statusCode === 401) {
+          redirectToExpiredLogin();
+          return;
+        }
+        // Nếu tải lại getOrderByIdApi sau khi hủy bị lỗi mạng/5xx:
+        // giữ nguyên payments đã có trước khi hủy, không báo lỗi và không làm mất dòng hoàn tiền
+      } finally {
+        setIsVerifyingRefundStatus(false);
+      }
+    } catch (err: unknown) {
+      const parsed = parseOrderActionError(err);
+
+      if (parsed.statusCode === 401) {
+        setIsCancelDialogOpen(false);
+        redirectToExpiredLogin();
+        return;
+      }
+
+      setIsCancelDialogOpen(false);
+
+      if (parsed.statusCode === 404) {
+        clearMatchingPendingOrder(targetOrderId);
+        setNotFoundMessage(parsed.message || ORDER_ERROR_MESSAGES.ORDER_NOT_FOUND);
+        setIsNotFound(true);
+        setOrder(null);
+        return;
+      }
+
+      if (parsed.statusCode === 409) {
+        setActionFeedback({
+          type: 'error',
+          message: parsed.message || ORDER_ERROR_MESSAGES.ORDER_CANCEL_INVALID,
+        });
+        try {
+          const freshOrder = await getOrderByIdApi(targetOrderId);
+          setOrder(freshOrder);
+          if (freshOrder.status !== 'PENDING' && freshOrder.status !== 'PAYMENT_FAILED') {
+            clearMatchingPendingOrder(targetOrderId);
+          }
+        } catch (reloadErr: unknown) {
+          const reloadParsed = parseOrderActionError(reloadErr);
+          if (reloadParsed.statusCode === 401) {
+            redirectToExpiredLogin();
+            return;
+          }
+          if (reloadParsed.statusCode === 404) {
+            clearMatchingPendingOrder(targetOrderId);
+            setNotFoundMessage(reloadParsed.message || ORDER_ERROR_MESSAGES.ORDER_NOT_FOUND);
+            setIsNotFound(true);
+            setOrder(null);
+          }
+        }
+        return;
+      }
+
+      setActionFeedback({
+        type: 'error',
+        message: formatServerOrNetworkErrorMessage(parsed.statusCode, parsed.message),
+      });
+    } finally {
+      cancelInFlightRef.current = false;
+      setIsCancelling(false);
+    }
+  };
 
   // Xử lý bấm nút "Thanh toán" / "Thử lại thanh toán" cho đơn PENDING hoặc PAYMENT_FAILED
   // Lưu đơn chờ kèm Idempotency-Key MỚI vào localStorage rồi chuyển sang /checkout (bước thanh toán)
@@ -210,17 +401,29 @@ function OrderDetailContent() {
         <div className="w-16 h-16 bg-tan/45 text-kombu rounded-full flex items-center justify-center mx-auto text-3xl">
           🔍
         </div>
-        <h1 className="font-display text-xl font-bold text-noir">Không tìm thấy đơn hàng</h1>
+        <h1 className="font-display text-xl font-bold text-noir">
+          Không tìm thấy đơn hàng
+        </h1>
         <p className="text-sm text-noir/65">
-          Đơn hàng này không tồn tại hoặc bạn không có quyền truy cập.
+          {notFoundMessage && notFoundMessage !== 'Không tìm thấy đơn hàng'
+            ? notFoundMessage
+            : 'Đơn hàng này không tồn tại hoặc bạn không có quyền truy cập.'}
         </p>
-        <div className="pt-2">
+        <div className="pt-2 flex flex-wrap justify-center gap-3">
           <Link
             href="/orders"
             className="inline-block px-6 py-2.5 bg-kombu hover:bg-noir text-bone font-semibold rounded-control text-sm transition shadow-soft"
           >
             ← Về lịch sử đơn hàng
           </Link>
+          <button
+            type="button"
+            onClick={handleManualReload}
+            disabled={isReloading}
+            className="px-5 py-2.5 bg-cream hover:bg-tan/30 text-noir border border-tan font-semibold rounded-control text-sm transition shadow-soft disabled:opacity-45 cursor-pointer"
+          >
+            {isReloading ? 'Đang tải lại...' : 'Tải lại'}
+          </button>
         </div>
       </div>
     );
@@ -274,6 +477,10 @@ function OrderDetailContent() {
     ORDER_MAIN_FLOW_STEPS.includes(order.status);
   const currentStepIndex = ORDER_MAIN_FLOW_STEPS.indexOf(order.status);
   const isPayable = order.status === 'PENDING' || order.status === 'PAYMENT_FAILED';
+  const canCancel = isOrderCancellable(order.status);
+  const hasSuccessPayment = (order.payments || []).some((p) => p.status === 'SUCCESS');
+  const showRefundNotice =
+    !isVerifyingRefundStatus && order.status === 'CANCELLED' && hasSuccessPayment;
 
   return (
     <div className="max-w-5xl mx-auto space-y-6">
@@ -297,6 +504,31 @@ function OrderDetailContent() {
         </button>
       </div>
 
+      {/* Thông báo kết quả thao tác hủy đơn ngay trong trang */}
+      {actionFeedback && (
+        <div
+          role={actionFeedback.type === 'error' ? 'alert' : 'status'}
+          data-testid={
+            actionFeedback.type === 'error' ? 'order-action-error' : 'order-action-success'
+          }
+          className={`flex items-start justify-between gap-3 rounded-control border px-4 py-3 text-sm font-medium shadow-soft ${
+            actionFeedback.type === 'error'
+              ? 'border-error/45 bg-error/10 text-error'
+              : 'border-moss/60 bg-tan/35 text-kombu'
+          }`}
+        >
+          <span>{actionFeedback.message}</span>
+          <button
+            type="button"
+            onClick={() => setActionFeedback(null)}
+            aria-label="Đóng thông báo"
+            className="shrink-0 text-xs font-bold opacity-75 hover:opacity-100 cursor-pointer"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
       {/* 1. Banner đầu trang theo status */}
       <div
         data-testid="order-status-banner"
@@ -307,6 +539,14 @@ function OrderDetailContent() {
         <div className="space-y-1">
           <h1 className="font-display text-lg sm:text-xl font-bold">{bannerConfig.title}</h1>
           <p className="text-xs sm:text-sm opacity-90">{bannerConfig.description}</p>
+          {showRefundNotice && (
+            <p
+              data-testid="order-refund-notice"
+              className="mt-1.5 inline-block rounded-control border border-tan/70 bg-bone/80 px-3 py-1.5 text-xs sm:text-sm font-semibold text-kombu"
+            >
+              Tiền sẽ được hoàn lại (mô phỏng)
+            </p>
+          )}
           {order.status === 'PAYMENT_FAILED' && latestFailureReason && (
             <p
               data-testid="banner-failure-reason"
@@ -594,7 +834,7 @@ function OrderDetailContent() {
               </div>
             </div>
 
-            {/* 9. Các nút hành động (KHÔNG có nút Hủy đơn) */}
+            {/* 9. Các nút hành động */}
             <div className="pt-2 space-y-2.5">
               {isPayable && (
                 <button
@@ -603,6 +843,17 @@ function OrderDetailContent() {
                   className="w-full min-h-11 py-3.5 bg-kombu hover:bg-noir text-bone font-bold rounded-control text-sm transition shadow-soft cursor-pointer"
                 >
                   {order.status === 'PAYMENT_FAILED' ? 'Thử lại thanh toán' : 'Thanh toán đơn hàng'}
+                </button>
+              )}
+
+              {canCancel && (
+                <button
+                  type="button"
+                  onClick={handleOpenCancelDialog}
+                  disabled={isCancelling}
+                  className="w-full min-h-11 py-3 bg-red-50 hover:bg-red-100 text-red-700 border border-red-300 font-semibold rounded-control text-sm transition cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  {isCancelling ? 'Đang hủy...' : 'Hủy đơn'}
                 </button>
               )}
 
@@ -627,6 +878,25 @@ function OrderDetailContent() {
           </div>
         </div>
       </div>
+
+      <ConfirmDialog
+        isOpen={isCancelDialogOpen}
+        title={`Hủy đơn #${order.orderNumber}?`}
+        description="Bạn có chắc chắn muốn hủy đơn hàng này không? Thao tác này không thể hoàn tác."
+        cancelLabel="Giữ đơn"
+        confirmLabel="Xác nhận hủy"
+        processingLabel="Đang hủy..."
+        isProcessing={isCancelling}
+        variant="danger"
+        onCancel={handleCloseCancelDialog}
+        onConfirm={handleConfirmCancelOrder}
+      >
+        {order.status === 'PAID' && (
+          <p className="mt-2 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800">
+            Đơn hàng đã thanh toán — sau khi hủy, tiền sẽ được hoàn lại (mô phỏng).
+          </p>
+        )}
+      </ConfirmDialog>
     </div>
   );
 }
