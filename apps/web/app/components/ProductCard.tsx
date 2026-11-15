@@ -58,19 +58,24 @@ export default function ProductCard({ product }: ProductCardProps) {
 
       {/* Nút thêm món */}
       <div className="p-3.5 sm:p-4 pt-0">
-        <Link href={!isOutOfStock ? `/menu/${product.id}` : '#'} className="block">
+        {!isOutOfStock ? (
+          <Link href={`/menu/${product.id}`} className="block">
+            <button
+              type="button"
+              className="w-full py-2.5 rounded-control text-xs sm:text-sm font-semibold transition bg-kombu text-bone hover:bg-moss active:scale-98 cursor-pointer shadow-xs"
+            >
+              + Thêm
+            </button>
+          </Link>
+        ) : (
           <button
             type="button"
-            disabled={isOutOfStock}
-            className={`w-full py-2.5 rounded-control text-xs sm:text-sm font-semibold transition ${
-              !isOutOfStock
-                ? 'bg-kombu text-bone hover:bg-moss active:scale-98 cursor-pointer shadow-xs'
-                : 'bg-tan/40 text-noir/40 cursor-not-allowed pointer-events-none'
-            }`}
+            disabled
+            className="w-full py-2.5 rounded-control text-xs sm:text-sm font-semibold transition bg-tan/40 text-noir/40 cursor-not-allowed pointer-events-none"
           >
-            {!isOutOfStock ? '+ Thêm' : 'Tạm hết'}
+            Tạm hết
           </button>
-        </Link>
+        )}
       </div>
     </div>
   );
