@@ -37,7 +37,11 @@ import {
   updateOrderStatusApi,
 } from '../services/orders';
 import { getStaffListApi, updateStaffStatusApi } from '../services/staff';
-import { loadAuthSession, saveAuthSession } from '../utils/auth';
+import {
+  AUTH_ACCOUNT_LOCKED_EVENT,
+  loadAuthSession,
+  saveAuthSession,
+} from '../utils/auth';
 import {
   isMockAuthActive,
   isMockOrdersActive,
@@ -276,7 +280,7 @@ describe('Task 11 - Lớp nền API, TypeScript, Mock và Bảng nhãn tiếng V
       expect(sentBody.items[0].unitPrice).toBeUndefined();
     });
 
-    it('2.4. Các hàm mới giữ nguyên message dạng string[] khi lỗi 400 và KHÔNG tự xóa token hay redirect khi gặp 401/403', async () => {
+    it('2.4. Các hàm mới giữ nguyên message dạng string[] khi 400, không đăng xuất khi 403 sai vai trò, nhưng xử lý 401 và 403 tài khoản bị khóa', async () => {
       const originalLocation = window.location;
       delete (window as unknown as Record<string, unknown>).location;
       (window as unknown as Record<string, unknown>).location = {
@@ -284,6 +288,13 @@ describe('Task 11 - Lớp nền API, TypeScript, Mock và Bảng nhãn tiếng V
         search: '',
         href: '/staff',
       };
+
+      const lockedEvents: string[] = [];
+      const onLocked = (e: Event) => {
+        const custom = e as CustomEvent<{ message?: string }>;
+        lockedEvents.push(custom.detail?.message || '');
+      };
+      window.addEventListener(AUTH_ACCOUNT_LOCKED_EVENT, onLocked);
 
       globalThis.fetch = vi
         .fn()
@@ -298,9 +309,10 @@ describe('Task 11 - Lớp nền API, TypeScript, Mock và Bảng nhãn tiếng V
           })
         )
         .mockResolvedValueOnce(
-          mockJsonResponse(401, {
-            statusCode: 401,
-            message: 'Unauthorized',
+          mockJsonResponse(403, {
+            statusCode: 403,
+            message: 'Bạn không có quyền thực hiện thao tác này',
+            error: 'Forbidden',
           })
         )
         .mockResolvedValueOnce(
@@ -308,6 +320,12 @@ describe('Task 11 - Lớp nền API, TypeScript, Mock và Bảng nhãn tiếng V
             statusCode: 403,
             message: 'Tài khoản đã bị khóa',
             error: 'Forbidden',
+          })
+        )
+        .mockResolvedValueOnce(
+          mockJsonResponse(401, {
+            statusCode: 401,
+            message: 'Unauthorized',
           })
         );
 
@@ -325,6 +343,41 @@ describe('Task 11 - Lớp nền API, TypeScript, Mock và Bảng nhãn tiếng V
         ]);
       }
 
+      // 403 sai vai trò không tự xóa phiên và không chuyển hướng
+      try {
+        await getStaffListApi();
+        expect.unreachable('Phải ném lỗi 403 sai vai trò');
+      } catch (err) {
+        const httpErr = err as ApiHttpError;
+        expect(httpErr.statusCode).toBe(403);
+        expect(httpErr.message).toBe('Bạn không có quyền thực hiện thao tác này');
+      }
+      expect(loadAuthSession()).not.toBeNull();
+      expect(lockedEvents).toHaveLength(0);
+      expect(window.location.href).toBe('/staff');
+
+      // 403 tài khoản bị khóa: phát thông báo + xóa phiên đăng nhập
+      try {
+        await getStaffListApi();
+        expect.unreachable('Phải ném lỗi 403 bị khóa');
+      } catch (err) {
+        const httpErr = err as ApiHttpError;
+        expect(httpErr.statusCode).toBe(403);
+        expect(httpErr.message).toBe('Tài khoản đã bị khóa');
+      }
+      expect(lockedEvents).toEqual(['Tài khoản đã bị khóa']);
+      expect(loadAuthSession()).toBeNull();
+
+      // 401: xóa phiên và chuyển về trang đăng nhập
+      saveAuthSession({
+        token: 'jwt-staff-token-123',
+        user: {
+          id: '55555555-0000-0000-0000-000000000001',
+          email: 'nhanvien1@example.com',
+          displayName: 'Nhân viên 1',
+          role: 'STAFF',
+        },
+      });
       try {
         await getAllOrdersApi();
         expect.unreachable('Phải ném lỗi 401');
@@ -332,20 +385,10 @@ describe('Task 11 - Lớp nền API, TypeScript, Mock và Bảng nhãn tiếng V
         const httpErr = err as ApiHttpError;
         expect(httpErr.statusCode).toBe(401);
       }
+      expect(loadAuthSession()).toBeNull();
+      expect(window.location.href).toBe('/login?redirect=%2Fstaff&expired=true');
 
-      try {
-        await getStaffListApi();
-        expect.unreachable('Phải ném lỗi 403');
-      } catch (err) {
-        const httpErr = err as ApiHttpError;
-        expect(httpErr.statusCode).toBe(403);
-        expect(httpErr.message).toBe('Tài khoản đã bị khóa');
-      }
-
-      // Phiên đăng nhập và URL không bị task 11 tự ý xóa/chuyển hướng
-      expect(loadAuthSession()).not.toBeNull();
-      expect(window.location.href).toBe('/staff');
-
+      window.removeEventListener(AUTH_ACCOUNT_LOCKED_EVENT, onLocked);
       (window as unknown as Record<string, unknown>).location = originalLocation;
     });
 

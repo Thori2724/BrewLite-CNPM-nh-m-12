@@ -12,6 +12,7 @@ import {
   AUTH_SESSION_CLEARED_EVENT,
   AUTH_STORAGE_KEY,
   clearAuthSession,
+  isAccountLockedError,
   loadAuthSession,
   saveAuthSession,
 } from '../utils/auth';
@@ -79,14 +80,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const login = useCallback(async (dto: LoginDto): Promise<AuthUser> => {
-    const res = await loginApi(dto);
-    saveAuthSession({
-      token: res.accessToken,
-      user: res.user,
-    });
-    setUser(res.user);
-    setToken(res.accessToken);
-    return res.user;
+    try {
+      const res = await loginApi(dto);
+      saveAuthSession({
+        token: res.accessToken,
+        user: res.user,
+      });
+      setUser(res.user);
+      setToken(res.accessToken);
+      return res.user;
+    } catch (err) {
+      if (isAccountLockedError(err)) {
+        clearAuthSession();
+        setUser(null);
+        setToken(null);
+      }
+      throw err;
+    }
   }, []);
 
   const register = useCallback(async (dto: RegisterDto): Promise<RegisterResponse> => {

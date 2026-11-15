@@ -8,6 +8,8 @@ import CartIcon from "./components/CartIcon";
 import AuthNav from "./components/AuthNav";
 import Footer from "./components/Footer";
 import { CoffeeIcon } from "./components/Icons";
+import AccountLockedNotice from "./components/AccountLockedNotice";
+import RoleRouteGuard from "./components/RoleRouteGuard";
 
 const inter = Inter({
   subsets: ["latin", "vietnamese"],
@@ -70,9 +72,12 @@ export default function RootLayout({
                 </div>
               </header>
 
+              {/* Thông báo toàn cục khi tài khoản bị khóa */}
+              <AccountLockedNotice />
+
               {/* Nội dung chính màn hình */}
               <main className="flex-1 w-full max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-                {children}
+                <RoleRouteGuard>{children}</RoleRouteGuard>
               </main>
 
               {/* Chân trang Footer */}
