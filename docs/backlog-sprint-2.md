@@ -51,7 +51,7 @@
 | **27** | Dev&Ops | Kiểm tra CI/CD không vỡ sau thay đổi (migration isActive, seed mới); đặt `DEMO_USER_PASSWORD` trong Render và `.env.example`; xác nhận seed tự chạy mỗi lần deploy cùng migration. | 5.3 | 2 | Chờ thực hiện |
 | **28** | Dev&Ops | Kiểm tra dựng lại local từ đầu: `docker compose down -v` rồi chạy lại, migration + seed phải dựng đủ món, topping, 5 tài khoản demo. | 5.2 | 2 | Chờ thực hiện |
 | **29** | Dev&Ops | Sửa docs Task 1 (context-and-scope, SRS, use-case) theo mục 12 hợp đồng (mục 1 đến 11), gom thành một pull request có ghi lý do. | 4.2 | 26 | Hoàn thành |
-| **30** | Dev&Ops | Sửa docs Task 2 theo mục 12 hợp đồng (mục 12 đến 15): activity, sequence (bỏ trừ kho), class diagram (isActive, kiểu Int, giữ Promotion và LoyaltyTransaction kèm ghi chú); xuất lại ảnh `.svg` từ `.puml`. | 4.2 | 26 | Chờ thực hiện |
+| **30** | Dev&Ops | Sửa docs Task 2 theo mục 12 hợp đồng (mục 12 đến 15): activity, sequence (bỏ trừ kho), class diagram (isActive, kiểu Int, giữ Promotion và LoyaltyTransaction kèm ghi chú); xuất lại ảnh `.svg` từ `.puml`. | 4.2 | 26 | Đang thực hiện (đã xong Sequence & Class Diagram) |
 | **31** | Dev&Ops | Đồng bộ kiến trúc (mục 12 hợp đồng, mục 16 và 17): `architecture.md`, ADR bỏ trừ kho, ADR đang bán/tạm hết, ADR 008 desktop-first. Chưa sửa phần deployment (làm ở dòng 38). | 3.1, 4.2 | 26 | Chờ thực hiện |
 | **32** | Dev&Ops | Deploy thử giữa chừng lên Render (một lần): kiểm tra migration isActive, seed 5 tài khoản, `GET /health`, đăng nhập thử khách, nhân viên, quản lý. | 5.4 | 2, 3, 7, 27 | Chờ thực hiện |
 | **33** | Cả nhóm | Báo cáo LaTeX (thầy yêu cầu thêm): lập khung, chia chương cho từng người, viết dần theo các tài liệu đã sửa; chốt nội dung sau dòng 40. | Báo cáo | 26 | Chờ thực hiện |
