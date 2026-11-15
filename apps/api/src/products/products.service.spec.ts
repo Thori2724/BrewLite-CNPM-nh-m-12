@@ -723,10 +723,7 @@ describe('ProductsService', () => {
 
     const createContext = (
       methodName:
-        | 'findAllForManage'
-        | 'updateAvailability'
-        | 'create'
-        | 'update',
+        'findAllForManage' | 'updateAvailability' | 'create' | 'update',
       authHeader?: string,
     ): ExecutionContext => {
       const req: Record<string, unknown> = {

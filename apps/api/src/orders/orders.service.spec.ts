@@ -1,9 +1,14 @@
 import {
   BadRequestException,
   ConflictException,
+  ExecutionContext,
+  ForbiddenException,
   NotFoundException,
+  UnauthorizedException,
   ValidationPipe,
 } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
+import { JwtService } from '@nestjs/jwt';
 import { Test, TestingModule } from '@nestjs/testing';
 import {
   Category,
@@ -12,17 +17,27 @@ import {
   PaymentMethod,
   PaymentStatus,
   ReceiveType,
+  Role,
   Size,
   SugarLevel,
 } from '@prisma/client';
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
+import { AuthenticatedRequest } from '../auth/jwt-auth.guard';
+import { RolesGuard } from '../auth/roles.guard';
 import { ORDER_NOT_FOUND_MESSAGE } from '../payments/payments.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { PRODUCT_NOT_FOUND_MESSAGE } from '../products/products.constants';
 import { CreateOrderDto } from './dto/create-order.dto';
+import { UpdateOrderStatusDto } from './dto/update-order-status.dto';
 import { OrdersController } from './orders.controller';
-import { OrdersService, TOPPING_NOT_FOUND_MESSAGE } from './orders.service';
+import {
+  INVALID_ORDER_STATUS_MESSAGE,
+  ORDER_STATUS_CHANGED_MESSAGE,
+  ORDER_STATUS_LABELS,
+  OrdersService,
+  TOPPING_NOT_FOUND_MESSAGE,
+} from './orders.service';
 
 describe('Orders (OrdersService & CreateOrderDto)', () => {
   let service: OrdersService;
@@ -52,6 +67,10 @@ describe('Orders (OrdersService & CreateOrderDto)', () => {
     order: {
       findMany: jest.Mock;
       findFirst: jest.Mock;
+      updateMany: jest.Mock;
+    };
+    user: {
+      findUnique: jest.Mock;
     };
     $transaction: jest.Mock;
   };
@@ -155,6 +174,10 @@ describe('Orders (OrdersService & CreateOrderDto)', () => {
       order: {
         findMany: jest.fn().mockResolvedValue([]),
         findFirst: jest.fn().mockResolvedValue(null),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      },
+      user: {
+        findUnique: jest.fn().mockResolvedValue({ isActive: true }),
       },
       $transaction: jest
         .fn()
@@ -926,6 +949,456 @@ describe('Orders (OrdersService & CreateOrderDto)', () => {
         new NotFoundException(ORDER_NOT_FOUND_MESSAGE),
       );
       expect(prisma.order.findFirst).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('10. GET /orders (findAllForStaff - STAFF & ADMIN)', () => {
+    const CUSTOMER_1 = {
+      id: '44444444-0000-0000-0000-000000000001',
+      displayName: 'Khách demo',
+      email: 'khach@example.com',
+      passwordHash: '$2b$10$secretHashShouldNotLeak1',
+      role: Role.CUSTOMER,
+      isActive: true,
+    };
+
+    const CUSTOMER_2 = {
+      id: '44444444-0000-0000-0000-000000000002',
+      displayName: 'Nguyễn Văn An',
+      email: 'nguyenan@gmail.com',
+      passwordHash: '$2b$10$secretHashShouldNotLeak2',
+      role: Role.CUSTOMER,
+      isActive: true,
+    };
+
+    const mockStaffOrders = [
+      {
+        id: '33333333-0000-0000-0000-000000000002',
+        orderNumber: 1002,
+        userId: CUSTOMER_2.id,
+        status: OrderStatus.PAID,
+        receiveType: ReceiveType.TAKE_AWAY,
+        note: 'Cho xin thêm quai xách giấy',
+        totalAmount: 53000,
+        createdAt: new Date('2026-11-05T03:05:00.000Z'),
+        updatedAt: new Date('2026-11-05T03:05:00.000Z'),
+        user: CUSTOMER_2,
+        items: [
+          {
+            id: '88888888-0000-0000-0000-000000000001',
+            orderId: '33333333-0000-0000-0000-000000000002',
+            productId: mockMilkTea.id,
+            productName: mockMilkTea.name,
+            size: Size.M,
+            sugarLevel: SugarLevel.P70,
+            iceLevel: IceLevel.NORMAL,
+            quantity: 1,
+            unitPrice: 53000,
+            lineTotal: 53000,
+            note: null,
+            toppings: [
+              {
+                id: '77777777-0000-0000-0000-000000000001',
+                orderItemId: '88888888-0000-0000-0000-000000000001',
+                toppingId: mockPearlTopping.id,
+                name: mockPearlTopping.name,
+                price: mockPearlTopping.price,
+              },
+            ],
+          },
+        ],
+      },
+      {
+        id: '33333333-0000-0000-0000-000000000001',
+        orderNumber: 1001,
+        userId: CUSTOMER_1.id,
+        status: OrderStatus.PENDING,
+        receiveType: ReceiveType.AT_COUNTER,
+        note: null,
+        totalAmount: 30000,
+        createdAt: new Date('2026-11-05T03:00:00.000Z'),
+        updatedAt: new Date('2026-11-05T03:00:00.000Z'),
+        user: CUSTOMER_1,
+        items: [
+          {
+            id: '88888888-0000-0000-0000-000000000002',
+            orderId: '33333333-0000-0000-0000-000000000001',
+            productId: mockCake.id,
+            productName: mockCake.name,
+            size: null,
+            sugarLevel: null,
+            iceLevel: null,
+            quantity: 1,
+            unitPrice: 30000,
+            lineTotal: 30000,
+            note: null,
+            toppings: [],
+          },
+        ],
+      },
+    ];
+
+    it('trả toàn bộ đơn của nhiều khách kèm customer { id, displayName, email }, mới nhất trước, và TUYỆT ĐỐI không lộ passwordHash', async () => {
+      prisma.order.findMany.mockResolvedValue(mockStaffOrders);
+
+      const result = await controller.findAll();
+
+      expect(prisma.order.findMany).toHaveBeenCalledWith({
+        where: {},
+        orderBy: [{ createdAt: 'desc' }, { orderNumber: 'desc' }],
+        include: {
+          items: {
+            include: {
+              toppings: true,
+            },
+          },
+          user: {
+            select: {
+              id: true,
+              displayName: true,
+              email: true,
+            },
+          },
+        },
+      });
+
+      expect(result).toHaveLength(2);
+      expect(result[0].orderNumber).toBe(1002);
+      expect(result[0].customer).toEqual({
+        id: CUSTOMER_2.id,
+        displayName: CUSTOMER_2.displayName,
+        email: CUSTOMER_2.email,
+      });
+      expect(result[1].orderNumber).toBe(1001);
+      expect(result[1].customer).toEqual({
+        id: CUSTOMER_1.id,
+        displayName: CUSTOMER_1.displayName,
+        email: CUSTOMER_1.email,
+      });
+      expect(result[0].customer).not.toHaveProperty('passwordHash');
+      expect(result[1].customer).not.toHaveProperty('passwordHash');
+      expect(JSON.stringify(result)).not.toContain('passwordHash');
+      expect(JSON.stringify(result)).not.toContain('secretHashShouldNotLeak');
+    });
+
+    it('lọc đúng theo query status hợp lệ', async () => {
+      prisma.order.findMany.mockResolvedValue([mockStaffOrders[0]]);
+
+      const result = await controller.findAll(OrderStatus.PAID);
+
+      expect(prisma.order.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { status: OrderStatus.PAID },
+        }),
+      );
+      expect(result).toHaveLength(1);
+      expect(result[0].status).toBe(OrderStatus.PAID);
+    });
+
+    it('ném 400 "Trạng thái không hợp lệ" khi query status sai giá trị', async () => {
+      await expect(controller.findAll('INVALID_STATUS')).rejects.toThrow(
+        new BadRequestException(INVALID_ORDER_STATUS_MESSAGE),
+      );
+      await expect(controller.findAll('')).rejects.toThrow(
+        new BadRequestException(INVALID_ORDER_STATUS_MESSAGE),
+      );
+      expect(prisma.order.findMany).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('11. PATCH /orders/:id/status (updateStatus & UpdateOrderStatusDto)', () => {
+    const ORDER_ID = '33333333-0000-0000-0000-000000000001';
+    const CUSTOMER = {
+      id: '44444444-0000-0000-0000-000000000001',
+      displayName: 'Khách demo',
+      email: 'khach@example.com',
+      passwordHash: '$2b$10$secretHashShouldNotLeak',
+    };
+
+    const buildMockOrder = (status: OrderStatus) => ({
+      id: ORDER_ID,
+      orderNumber: 1001,
+      userId: CUSTOMER.id,
+      status,
+      receiveType: ReceiveType.TAKE_AWAY,
+      note: 'Ít đá',
+      totalAmount: 40000,
+      createdAt: new Date('2026-11-05T03:00:00.000Z'),
+      updatedAt: new Date('2026-11-05T03:00:00.000Z'),
+      user: CUSTOMER,
+      items: [
+        {
+          id: '88888888-0000-0000-0000-000000000001',
+          orderId: ORDER_ID,
+          productId: mockMilkTea.id,
+          productName: mockMilkTea.name,
+          size: Size.S,
+          sugarLevel: SugarLevel.P100,
+          iceLevel: IceLevel.NORMAL,
+          quantity: 1,
+          unitPrice: 40000,
+          lineTotal: 40000,
+          note: null,
+          toppings: [
+            {
+              id: '77777777-0000-0000-0000-000000000001',
+              orderItemId: '88888888-0000-0000-0000-000000000001',
+              toppingId: mockPearlTopping.id,
+              name: mockPearlTopping.name,
+              price: mockPearlTopping.price,
+            },
+          ],
+        },
+      ],
+    });
+
+    it('cho phép các chuyển trạng thái hợp lệ: PAID→PREPARING→READY→COMPLETED và hủy từ PENDING/PAYMENT_FAILED/PAID', async () => {
+      const validTransitions: Array<
+        [OrderStatus, UpdateOrderStatusDto['status']]
+      > = [
+        [OrderStatus.PAID, OrderStatus.PREPARING],
+        [OrderStatus.PREPARING, OrderStatus.READY],
+        [OrderStatus.READY, OrderStatus.COMPLETED],
+        [OrderStatus.PENDING, OrderStatus.CANCELLED],
+        [OrderStatus.PAYMENT_FAILED, OrderStatus.CANCELLED],
+        [OrderStatus.PAID, OrderStatus.CANCELLED],
+      ];
+
+      for (const [fromStatus, toStatus] of validTransitions) {
+        prisma.order.findFirst.mockResolvedValueOnce(
+          buildMockOrder(fromStatus),
+        );
+        prisma.order.updateMany.mockResolvedValueOnce({ count: 1 });
+
+        const result = await controller.updateStatus(ORDER_ID, {
+          status: toStatus,
+        });
+
+        expect(prisma.order.updateMany).toHaveBeenLastCalledWith({
+          where: {
+            id: ORDER_ID,
+            status: fromStatus,
+          },
+          data: {
+            status: toStatus,
+          },
+        });
+        expect(result.status).toBe(toStatus);
+        expect(result.customer).toEqual({
+          id: CUSTOMER.id,
+          displayName: CUSTOMER.displayName,
+          email: CUSTOMER.email,
+        });
+        expect(result.customer).not.toHaveProperty('passwordHash');
+      }
+    });
+
+    it('từ chối các chuyển sai (lùi, bỏ bước, từ COMPLETED/CANCELLED, hủy từ PREPARING/READY) bằng 409 kèm nhãn tiếng Việt mục 9.3', async () => {
+      const invalidTransitions: Array<
+        [OrderStatus, UpdateOrderStatusDto['status']]
+      > = [
+        // Lùi trạng thái
+        [OrderStatus.READY, OrderStatus.PREPARING],
+        [OrderStatus.COMPLETED, OrderStatus.READY],
+        // Bỏ bước
+        [OrderStatus.PAID, OrderStatus.READY],
+        [OrderStatus.PAID, OrderStatus.COMPLETED],
+        [OrderStatus.PREPARING, OrderStatus.COMPLETED],
+        [OrderStatus.PENDING, OrderStatus.PREPARING],
+        // Từ trạng thái kết thúc COMPLETED / CANCELLED
+        [OrderStatus.COMPLETED, OrderStatus.PREPARING],
+        [OrderStatus.COMPLETED, OrderStatus.CANCELLED],
+        [OrderStatus.CANCELLED, OrderStatus.PREPARING],
+        [OrderStatus.CANCELLED, OrderStatus.CANCELLED],
+        // Hủy từ PREPARING / READY
+        [OrderStatus.PREPARING, OrderStatus.CANCELLED],
+        [OrderStatus.READY, OrderStatus.CANCELLED],
+      ];
+
+      for (const [fromStatus, toStatus] of invalidTransitions) {
+        prisma.order.findFirst.mockResolvedValueOnce(
+          buildMockOrder(fromStatus),
+        );
+
+        await expect(
+          controller.updateStatus(ORDER_ID, { status: toStatus }),
+        ).rejects.toThrow(
+          new ConflictException(
+            `Không thể chuyển đơn từ trạng thái '${ORDER_STATUS_LABELS[fromStatus]}' sang '${ORDER_STATUS_LABELS[toStatus]}'`,
+          ),
+        );
+      }
+
+      expect(prisma.order.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('ném 400 khi body status là PENDING, PAID, PAYMENT_FAILED hoặc giá trị không hợp lệ', async () => {
+      const invalidBodyStatuses = [
+        OrderStatus.PENDING,
+        OrderStatus.PAID,
+        OrderStatus.PAYMENT_FAILED,
+        'UNKNOWN',
+        '',
+      ];
+
+      for (const badStatus of invalidBodyStatuses) {
+        const errors = await validate(
+          plainToInstance(UpdateOrderStatusDto, { status: badStatus }),
+        );
+        expect(errors.some((e) => e.property === 'status')).toBe(true);
+
+        await expect(
+          controller.updateStatus(ORDER_ID, {
+            status: badStatus as UpdateOrderStatusDto['status'],
+          }),
+        ).rejects.toThrow(BadRequestException);
+      }
+
+      expect(prisma.order.findFirst).not.toHaveBeenCalled();
+    });
+
+    it('ném 404 "Không tìm thấy đơn hàng" khi id không tồn tại hoặc không phải UUID', async () => {
+      await expect(
+        controller.updateStatus('not-a-uuid', {
+          status: OrderStatus.PREPARING,
+        }),
+      ).rejects.toThrow(new NotFoundException(ORDER_NOT_FOUND_MESSAGE));
+      expect(prisma.order.findFirst).not.toHaveBeenCalled();
+
+      prisma.order.findFirst.mockResolvedValueOnce(null);
+      await expect(
+        controller.updateStatus(ORDER_ID, {
+          status: OrderStatus.PREPARING,
+        }),
+      ).rejects.toThrow(new NotFoundException(ORDER_NOT_FOUND_MESSAGE));
+      expect(prisma.order.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('ném 409 "Trạng thái đơn đã thay đổi, vui lòng tải lại" khi cập nhật có điều kiện thất bại (count = 0)', async () => {
+      prisma.order.findFirst.mockResolvedValueOnce(
+        buildMockOrder(OrderStatus.PAID),
+      );
+      prisma.order.updateMany.mockResolvedValueOnce({ count: 0 });
+
+      await expect(
+        controller.updateStatus(ORDER_ID, {
+          status: OrderStatus.PREPARING,
+        }),
+      ).rejects.toThrow(new ConflictException(ORDER_STATUS_CHANGED_MESSAGE));
+
+      expect(prisma.order.updateMany).toHaveBeenCalledWith({
+        where: {
+          id: ORDER_ID,
+          status: OrderStatus.PAID,
+        },
+        data: {
+          status: OrderStatus.PREPARING,
+        },
+      });
+    });
+  });
+
+  describe('12. Phân quyền RolesGuard cho GET /orders và PATCH /orders/:id/status', () => {
+    const TEST_SECRET = 'test-orders-roles-guard-secret';
+    let jwtService: JwtService;
+    let rolesGuard: RolesGuard;
+
+    const createGuardContext = (
+      methodName: 'findAll' | 'updateStatus',
+      authHeader?: string,
+    ) => {
+      const request: Partial<AuthenticatedRequest> = {
+        headers: authHeader !== undefined ? { authorization: authHeader } : {},
+      };
+      const descriptor = Object.getOwnPropertyDescriptor(
+        OrdersController.prototype,
+        methodName,
+      );
+      return {
+        switchToHttp: () => ({
+          getRequest: () => request,
+        }),
+        getHandler: () => descriptor?.value as (...args: never[]) => unknown,
+        getClass: () => OrdersController,
+      } as unknown as ExecutionContext;
+    };
+
+    beforeEach(() => {
+      jwtService = new JwtService({
+        secret: TEST_SECRET,
+        signOptions: { expiresIn: '24h' },
+      });
+      rolesGuard = new RolesGuard(
+        jwtService,
+        new Reflector(),
+        prisma as unknown as PrismaService,
+      );
+    });
+
+    it('chặn 401 khi chưa đăng nhập, 403 khi là CUSTOMER, 403 khi tài khoản bị khóa, và cho phép STAFF & ADMIN đang hoạt động', async () => {
+      const methodNames: Array<'findAll' | 'updateStatus'> = [
+        'findAll',
+        'updateStatus',
+      ];
+
+      for (const methodName of methodNames) {
+        // 1. Chưa đăng nhập -> 401
+        await expect(
+          rolesGuard.canActivate(createGuardContext(methodName)),
+        ).rejects.toThrow(
+          new UnauthorizedException(
+            'Chưa đăng nhập hoặc phiên đăng nhập đã hết hạn',
+          ),
+        );
+
+        // 2. Khách (CUSTOMER) -> 403 "Bạn không có quyền thực hiện thao tác này"
+        const customerToken = await jwtService.signAsync({
+          sub: '44444444-0000-0000-0000-000000000001',
+          email: 'khach@example.com',
+          role: Role.CUSTOMER,
+        });
+        await expect(
+          rolesGuard.canActivate(
+            createGuardContext(methodName, `Bearer ${customerToken}`),
+          ),
+        ).rejects.toThrow(
+          new ForbiddenException('Bạn không có quyền thực hiện thao tác này'),
+        );
+
+        // 3. Tài khoản STAFF bị khóa (isActive = false) -> 403 "Tài khoản đã bị khóa"
+        const staffToken = await jwtService.signAsync({
+          sub: '55555555-0000-0000-0000-000000000001',
+          email: 'nhanvien1@example.com',
+          role: Role.STAFF,
+        });
+        prisma.user.findUnique.mockResolvedValueOnce({ isActive: false });
+        await expect(
+          rolesGuard.canActivate(
+            createGuardContext(methodName, `Bearer ${staffToken}`),
+          ),
+        ).rejects.toThrow(new ForbiddenException('Tài khoản đã bị khóa'));
+
+        // 4. STAFF đang hoạt động -> qua được
+        prisma.user.findUnique.mockResolvedValueOnce({ isActive: true });
+        await expect(
+          rolesGuard.canActivate(
+            createGuardContext(methodName, `Bearer ${staffToken}`),
+          ),
+        ).resolves.toBe(true);
+
+        // 5. ADMIN đang hoạt động -> qua được
+        const adminToken = await jwtService.signAsync({
+          sub: '66666666-0000-0000-0000-000000000001',
+          email: 'quanly@example.com',
+          role: Role.ADMIN,
+        });
+        prisma.user.findUnique.mockResolvedValueOnce({ isActive: true });
+        await expect(
+          rolesGuard.canActivate(
+            createGuardContext(methodName, `Bearer ${adminToken}`),
+          ),
+        ).resolves.toBe(true);
+      }
     });
   });
 });
