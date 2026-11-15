@@ -167,3 +167,6 @@ docs/api-contract.md
 # Diagram PNGs (local only, do not commit)
 docs/diagrams/*.png
 docs/architecture/deployment-diagram.png
+.gitignore
+api-contract-ver2.md
+AGENTS-ver2.md
