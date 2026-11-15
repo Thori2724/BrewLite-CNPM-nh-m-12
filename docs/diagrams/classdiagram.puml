@@ -6,7 +6,7 @@ skinparam shadowing false
 skinparam roundcorner 8
 hide empty members
 
-' =================== CORE ENUMS (Khớp schema.prisma & Hợp đồng API Bản 2) ===================
+' =================== CORE ENUMS (Khớp schema.prisma) ===================
 
 enum Category {
   TEA
@@ -57,21 +57,10 @@ enum OrderStatus {
   CANCELLED
 }
 
-note right of OrderStatus
-  Trạng thái chỉ đi tiến.
-  CANCELLED chỉ đến được từ
-  PENDING, PAYMENT_FAILED hoặc PAID.
-  Không có đường lùi trạng thái.
-end note
-
 enum PaymentMethod {
   WALLET
+  CARD
 }
-
-note right of PaymentMethod
-  Ví điện tử (ZaloPay/Momo).
-  Bản 2 bỏ hình thức thẻ CARD.
-end note
 
 enum PaymentStatus {
   PENDING
@@ -105,29 +94,15 @@ class Product #E8F5E9 {
   updatedAt : DateTime
 }
 
-note right of Product::stock
-  0 là tạm hết (nút gạt đặt 0),
-  lớn hơn 0 là đang bán (đặt 999).
-  Bỏ trừ kho đếm ly.
-end note
-
 class User #E3F2FD {
   {field} <<PK>> id : String
   email : String {unique}
   passwordHash : String
   displayName : String
   role : Role = CUSTOMER
-  isActive : Boolean = true
   createdAt : DateTime = now()
   updatedAt : DateTime
 }
-
-note right of User::isActive
-  Trạng thái tài khoản:
-  true = Hoạt động, false = Đã khóa.
-  Admin khóa/mở khóa Staff.
-  Guard kiểm tra mỗi request.
-end note
 
 class Topping #E8F5E9 {
   {field} <<PK>> id : String
@@ -210,7 +185,7 @@ class LoyaltyTransaction #FFF9C4 {
   createdAt : DateTime = now()
 }
 
-note "<b>Phạm vi mở rộng (Task 2.3 Assignment 2)</b>\nCác thực thể Promotion và LoyaltyTransaction được mô hình hóa\nở mức domain phục vụ mở rộng trong tương lai.\n(Phạm vi mở rộng, chưa hiện thực trong code theo Hợp đồng API bản 2)" as N_EXT #FFFDE7
+note "<b>Phạm vi mở rộng (Task 2.3 Assignment 2)</b>\nCác thực thể Promotion và LoyaltyTransaction được mô hình hóa\nở mức domain phục vụ mở rộng trong tương lai.\n(Chưa hiện thực bảng trong database MVP theo Hợp đồng API)" as N_EXT #FFFDE7
 
 Promotion .. N_EXT
 LoyaltyTransaction .. N_EXT

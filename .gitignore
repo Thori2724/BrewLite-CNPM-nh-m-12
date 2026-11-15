@@ -156,17 +156,10 @@ vite.config.ts.timestamp-*
 .turbo
 
 .role.local
+AGENTS.md
+api-contract.md
 Assignment2.md
-phan-cong-ver2.xlsx
-
-# Agent & API Contract (local only)
-AGENTS*.md
-*api-contract*.md
-docs/api-contract.md
 
 # Diagram PNGs (local only, do not commit)
 docs/diagrams/*.png
 docs/architecture/deployment-diagram.png
-.gitignore
-api-contract-ver2.md
-AGENTS-ver2.md
