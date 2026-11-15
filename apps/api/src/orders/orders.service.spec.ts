@@ -33,6 +33,7 @@ import { UpdateOrderStatusDto } from './dto/update-order-status.dto';
 import { OrdersController } from './orders.controller';
 import {
   INVALID_ORDER_STATUS_MESSAGE,
+  ORDER_CANNOT_CANCEL_MESSAGE,
   ORDER_STATUS_CHANGED_MESSAGE,
   ORDER_STATUS_LABELS,
   OrdersService,
@@ -67,6 +68,10 @@ describe('Orders (OrdersService & CreateOrderDto)', () => {
     order: {
       findMany: jest.Mock;
       findFirst: jest.Mock;
+      updateMany: jest.Mock;
+    };
+    payment: {
+      update: jest.Mock;
       updateMany: jest.Mock;
     };
     user: {
@@ -175,6 +180,10 @@ describe('Orders (OrdersService & CreateOrderDto)', () => {
         findMany: jest.fn().mockResolvedValue([]),
         findFirst: jest.fn().mockResolvedValue(null),
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      },
+      payment: {
+        update: jest.fn(),
+        updateMany: jest.fn(),
       },
       user: {
         findUnique: jest.fn().mockResolvedValue({ isActive: true }),
@@ -1399,6 +1408,254 @@ describe('Orders (OrdersService & CreateOrderDto)', () => {
           ),
         ).resolves.toBe(true);
       }
+    });
+  });
+
+  describe('13. POST /orders/:id/cancel (cancelForUser)', () => {
+    const ORDER_ID = '33333333-0000-0000-0000-000000000001';
+
+    const buildUserOrder = (status: OrderStatus) => ({
+      id: ORDER_ID,
+      orderNumber: 1001,
+      userId: USER_ID,
+      status,
+      receiveType: ReceiveType.TAKE_AWAY,
+      note: 'Cho xin thêm quai xách giấy',
+      totalAmount: 53000,
+      createdAt: new Date('2026-11-05T03:00:00.000Z'),
+      updatedAt: new Date('2026-11-05T03:00:00.000Z'),
+      items: [
+        {
+          id: '88888888-0000-0000-0000-000000000001',
+          orderId: ORDER_ID,
+          productId: mockMilkTea.id,
+          productName: mockMilkTea.name,
+          size: Size.M,
+          sugarLevel: SugarLevel.P70,
+          iceLevel: IceLevel.NORMAL,
+          quantity: 1,
+          unitPrice: 53000,
+          lineTotal: 53000,
+          note: 'Ít ngọt vừa phải',
+          toppings: [
+            {
+              id: '77777777-0000-0000-0000-000000000001',
+              orderItemId: '88888888-0000-0000-0000-000000000001',
+              toppingId: mockPearlTopping.id,
+              name: mockPearlTopping.name,
+              price: mockPearlTopping.price,
+            },
+            {
+              id: '77777777-0000-0000-0000-000000000002',
+              orderItemId: '88888888-0000-0000-0000-000000000001',
+              toppingId: mockPuddingTopping.id,
+              name: mockPuddingTopping.name,
+              price: mockPuddingTopping.price,
+            },
+          ],
+        },
+      ],
+    });
+
+    it('hủy đơn thành công từ PENDING, PAYMENT_FAILED, PAID và trả về Order object với status = CANCELLED kèm items và toppings', async () => {
+      const cancellableStatuses: OrderStatus[] = [
+        OrderStatus.PENDING,
+        OrderStatus.PAYMENT_FAILED,
+        OrderStatus.PAID,
+      ];
+
+      for (const fromStatus of cancellableStatuses) {
+        prisma.order.findFirst.mockResolvedValueOnce(
+          buildUserOrder(fromStatus),
+        );
+        prisma.order.updateMany.mockResolvedValueOnce({ count: 1 });
+
+        const result = await controller.cancel(
+          {
+            user: {
+              id: USER_ID,
+              email: 'khach@example.com',
+              role: Role.CUSTOMER,
+            },
+          } as never,
+          ORDER_ID,
+        );
+
+        expect(prisma.order.findFirst).toHaveBeenLastCalledWith({
+          where: {
+            id: ORDER_ID,
+            userId: USER_ID,
+          },
+          include: {
+            items: {
+              include: {
+                toppings: true,
+              },
+            },
+          },
+        });
+        expect(prisma.order.updateMany).toHaveBeenLastCalledWith({
+          where: {
+            id: ORDER_ID,
+            status: fromStatus,
+          },
+          data: {
+            status: OrderStatus.CANCELLED,
+          },
+        });
+        expect(result).toEqual({
+          id: ORDER_ID,
+          orderNumber: 1001,
+          status: OrderStatus.CANCELLED,
+          receiveType: ReceiveType.TAKE_AWAY,
+          note: 'Cho xin thêm quai xách giấy',
+          totalAmount: 53000,
+          createdAt: new Date('2026-11-05T03:00:00.000Z'),
+          items: [
+            {
+              id: '88888888-0000-0000-0000-000000000001',
+              productId: mockMilkTea.id,
+              productName: mockMilkTea.name,
+              size: Size.M,
+              sugarLevel: SugarLevel.P70,
+              iceLevel: IceLevel.NORMAL,
+              quantity: 1,
+              unitPrice: 53000,
+              lineTotal: 53000,
+              note: 'Ít ngọt vừa phải',
+              toppings: [
+                {
+                  id: mockPearlTopping.id,
+                  name: mockPearlTopping.name,
+                  price: mockPearlTopping.price,
+                },
+                {
+                  id: mockPuddingTopping.id,
+                  name: mockPuddingTopping.name,
+                  price: mockPuddingTopping.price,
+                },
+              ],
+            },
+          ],
+        });
+        expect(result).not.toHaveProperty('userId');
+        expect(result).not.toHaveProperty('payments');
+      }
+    });
+
+    it('không thay đổi bảng Payment khi hủy đơn đang PAID (Payment vẫn giữ nguyên SUCCESS)', async () => {
+      prisma.order.findFirst.mockResolvedValueOnce(
+        buildUserOrder(OrderStatus.PAID),
+      );
+      prisma.order.updateMany.mockResolvedValueOnce({ count: 1 });
+
+      const cancelResult = await service.cancelForUser(USER_ID, ORDER_ID);
+      expect(cancelResult.status).toBe(OrderStatus.CANCELLED);
+      expect(prisma.payment.update).not.toHaveBeenCalled();
+      expect(prisma.payment.updateMany).not.toHaveBeenCalled();
+
+      prisma.order.findFirst.mockResolvedValueOnce({
+        ...buildUserOrder(OrderStatus.CANCELLED),
+        payments: [
+          {
+            id: '44444444-0000-0000-0000-000000000002',
+            orderId: ORDER_ID,
+            userId: USER_ID,
+            idempotencyKey: 'idem-paid-1001',
+            method: PaymentMethod.WALLET,
+            accountLast4: '0001',
+            amount: 53000,
+            status: PaymentStatus.SUCCESS,
+            failureReason: null,
+            createdAt: new Date('2026-11-05T03:03:00.000Z'),
+          },
+        ],
+      });
+
+      const detailAfterCancel = await service.findOneForUser(USER_ID, ORDER_ID);
+      expect(detailAfterCancel.status).toBe(OrderStatus.CANCELLED);
+      expect(detailAfterCancel.payments).toEqual([
+        {
+          id: '44444444-0000-0000-0000-000000000002',
+          method: PaymentMethod.WALLET,
+          accountLast4: '0001',
+          status: PaymentStatus.SUCCESS,
+          failureReason: null,
+          createdAt: new Date('2026-11-05T03:03:00.000Z'),
+        },
+      ]);
+    });
+
+    it('ném 404 "Không tìm thấy đơn hàng" khi đơn không tồn tại, không phải UUID hoặc thuộc người dùng khác', async () => {
+      await expect(
+        service.cancelForUser(USER_ID, 'not-a-uuid'),
+      ).rejects.toThrow(new NotFoundException(ORDER_NOT_FOUND_MESSAGE));
+      expect(prisma.order.findFirst).not.toHaveBeenCalled();
+
+      prisma.order.findFirst.mockResolvedValueOnce(null);
+      await expect(
+        service.cancelForUser('99999999-0000-0000-0000-000000000099', ORDER_ID),
+      ).rejects.toThrow(new NotFoundException(ORDER_NOT_FOUND_MESSAGE));
+      expect(prisma.order.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            id: ORDER_ID,
+            userId: '99999999-0000-0000-0000-000000000099',
+          },
+        }),
+      );
+      expect(prisma.order.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('ném 409 "Không thể hủy đơn ở trạng thái hiện tại" khi đơn đang PREPARING, READY, COMPLETED hoặc CANCELLED', async () => {
+      const nonCancellableStatuses: OrderStatus[] = [
+        OrderStatus.PREPARING,
+        OrderStatus.READY,
+        OrderStatus.COMPLETED,
+        OrderStatus.CANCELLED,
+      ];
+
+      for (const status of nonCancellableStatuses) {
+        prisma.order.findFirst.mockResolvedValueOnce(buildUserOrder(status));
+
+        await expect(service.cancelForUser(USER_ID, ORDER_ID)).rejects.toThrow(
+          new ConflictException(ORDER_CANNOT_CANCEL_MESSAGE),
+        );
+      }
+
+      expect(prisma.order.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('ném 409 "Trạng thái đơn đã thay đổi, vui lòng tải lại" khi cập nhật có điều kiện thất bại (count = 0)', async () => {
+      prisma.order.findFirst.mockResolvedValueOnce(
+        buildUserOrder(OrderStatus.PAID),
+      );
+      prisma.order.updateMany.mockResolvedValueOnce({ count: 0 });
+
+      await expect(service.cancelForUser(USER_ID, ORDER_ID)).rejects.toThrow(
+        new ConflictException(ORDER_STATUS_CHANGED_MESSAGE),
+      );
+
+      expect(prisma.order.updateMany).toHaveBeenCalledWith({
+        where: {
+          id: ORDER_ID,
+          status: OrderStatus.PAID,
+        },
+        data: {
+          status: OrderStatus.CANCELLED,
+        },
+      });
+    });
+
+    it('ném 401 khi chưa đăng nhập (req.user thiếu id)', () => {
+      expect(() =>
+        controller.cancel({} as AuthenticatedRequest, ORDER_ID),
+      ).toThrow(
+        new UnauthorizedException(
+          'Chưa đăng nhập hoặc phiên đăng nhập đã hết hạn',
+        ),
+      );
+      expect(prisma.order.findFirst).not.toHaveBeenCalled();
     });
   });
 });
