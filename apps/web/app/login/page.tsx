@@ -5,7 +5,9 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '../../context/AuthContext';
 import {
+  getPostLoginRedirectUrl,
   getSafeRedirectUrl,
+  isAccountLockedError,
   validateEmail,
   validateLoginPassword,
 } from '../../utils/auth';
@@ -15,7 +17,7 @@ import { AUTH_ERROR_MESSAGES } from '../../services/auth-contract';
 function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { login, isAuthenticated, isHydrated } = useAuth();
+  const { login, user, isAuthenticated, isHydrated } = useAuth();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -33,12 +35,12 @@ function LoginForm() {
   const isExpired = searchParams.get('expired') === 'true';
   const isRegistered = searchParams.get('registered') === 'true';
 
-  // Nếu người dùng đã đăng nhập từ trước, tự động chuyển về trang đích hoặc Menu
+  // Nếu người dùng đã đăng nhập từ trước, tự động chuyển theo vai trò
   useEffect(() => {
-    if (isHydrated && isAuthenticated) {
-      router.replace(targetRedirect);
+    if (isHydrated && isAuthenticated && user) {
+      router.replace(getPostLoginRedirectUrl(user.role, redirectParam));
     }
-  }, [isHydrated, isAuthenticated, targetRedirect, router]);
+  }, [isHydrated, isAuthenticated, user, redirectParam, router]);
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -66,13 +68,19 @@ function LoginForm() {
     setIsSubmitting(true);
 
     try {
-      await login({
+      const loggedInUser = await login({
         email: email.trim().toLowerCase(),
         password,
       });
-      // Đăng nhập thành công -> chuyển về trang định vào trước đó
-      router.push(targetRedirect);
+      // Đăng nhập thành công -> chuyển theo vai trò (CUSTOMER về menu/redirect, STAFF/ADMIN về /staff)
+      router.push(getPostLoginRedirectUrl(loggedInUser.role, redirectParam));
     } catch (err) {
+      if (isAccountLockedError(err)) {
+        setErrors({
+          general: AUTH_ERROR_MESSAGES.ACCOUNT_LOCKED,
+        });
+        return;
+      }
       // Thông báo lỗi chung 401 hoặc lỗi validate, không tiết lộ cụ thể sai email hay sai mật khẩu
       const classified = classifyApiError(err, AUTH_ERROR_MESSAGES.INVALID_CREDENTIALS);
       setErrors({
