@@ -47,10 +47,10 @@
 | **23** | FE / BE | Trang `/staff/employees` (chỉ ADMIN): bảng tên, email, vai trò, ngày tạo, trạng thái (Hoạt động/Đã khóa), nút Khóa/Mở khóa. *(Làm sau cùng, thiếu giờ thì bỏ cùng dòng 9)* | 5.1 | 19 | Chờ thực hiện |
 | **24** | FE | Kiểm tra dữ liệu và báo lỗi ở các form, responsive khu khách, rà soát cuối. | 5.1 | 13, 14, 15, 17 | Chờ thực hiện |
 | **25** | FE | Test cho màn QR (thành công, thoát) và hủy đơn của khách; chạy lint. | 5.2 | 12, 14 | Chờ thực hiện |
-| **26** | Dev&Ops | Đưa `docs/api-contract.md` bản 2 và `AGENTS.md` mới vào repo (qua pull request); tạo lại issue board/Backlog Sprint 2 theo bảng phân công này. | 4.1, 4.2 | Không | **Đang thực hiện** |
+| **26** | Dev&Ops | Đưa `docs/api-contract.md` bản 2 và `AGENTS.md` mới vào repo (qua pull request); tạo lại issue board/Backlog Sprint 2 theo bảng phân công này. | 4.1, 4.2 | Không | Hoàn thành |
 | **27** | Dev&Ops | Kiểm tra CI/CD không vỡ sau thay đổi (migration isActive, seed mới); đặt `DEMO_USER_PASSWORD` trong Render và `.env.example`; xác nhận seed tự chạy mỗi lần deploy cùng migration. | 5.3 | 2 | Chờ thực hiện |
 | **28** | Dev&Ops | Kiểm tra dựng lại local từ đầu: `docker compose down -v` rồi chạy lại, migration + seed phải dựng đủ món, topping, 5 tài khoản demo. | 5.2 | 2 | Chờ thực hiện |
-| **29** | Dev&Ops | Sửa docs Task 1 (context-and-scope, SRS, use-case) theo mục 12 hợp đồng (mục 1 đến 11), gom thành một pull request có ghi lý do. | 4.2 | 26 | Chờ thực hiện |
+| **29** | Dev&Ops | Sửa docs Task 1 (context-and-scope, SRS, use-case) theo mục 12 hợp đồng (mục 1 đến 11), gom thành một pull request có ghi lý do. | 4.2 | 26 | Hoàn thành |
 | **30** | Dev&Ops | Sửa docs Task 2 theo mục 12 hợp đồng (mục 12 đến 15): activity, sequence (bỏ trừ kho), class diagram (isActive, kiểu Int, giữ Promotion và LoyaltyTransaction kèm ghi chú); xuất lại ảnh `.svg` từ `.puml`. | 4.2 | 26 | Chờ thực hiện |
 | **31** | Dev&Ops | Đồng bộ kiến trúc (mục 12 hợp đồng, mục 16 và 17): `architecture.md`, ADR bỏ trừ kho, ADR đang bán/tạm hết, ADR 008 desktop-first. Chưa sửa phần deployment (làm ở dòng 38). | 3.1, 4.2 | 26 | Chờ thực hiện |
 | **32** | Dev&Ops | Deploy thử giữa chừng lên Render (một lần): kiểm tra migration isActive, seed 5 tài khoản, `GET /health`, đăng nhập thử khách, nhân viên, quản lý. | 5.4 | 2, 3, 7, 27 | Chờ thực hiện |
