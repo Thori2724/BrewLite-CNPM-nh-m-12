@@ -243,6 +243,101 @@ describe('Giao diện và luồng xử lý trang Checkout (/checkout)', () => {
     expect(localStorage.getItem(PENDING_ORDER_STORAGE_KEY)).toBeNull();
   });
 
+  it('5b. Banner lỗi 409 tự động xóa khi sửa ghi chú, khi giỏ hàng thay đổi hoặc khi bấm đặt đơn lại', async () => {
+    const user = userEvent.setup();
+    localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(mockLoggedInUser));
+    localStorage.setItem(CART_STORAGE_KEY, JSON.stringify([mockCartItem]));
+
+    const outOfStockErr = new ordersService.OrderApiError(
+      409,
+      "Sản phẩm 'Cà phê muối' hiện đã tạm hết",
+      { details: [{ productId: 'prod-1', name: 'Cà phê muối' }] }
+    );
+    vi.mocked(ordersService.createOrderApi).mockRejectedValueOnce(outOfStockErr);
+
+    renderCheckout();
+
+    await waitFor(() => {
+      expect(screen.getByText('Cà phê muối')).toBeInTheDocument();
+    });
+
+    const noteInput = screen.getByLabelText(/ghi chú đơn hàng/i);
+    await user.type(noteInput, 'hethang');
+    await user.click(screen.getByRole('button', { name: /đặt đơn hàng/i }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('alert')).toHaveTextContent(
+        "Sản phẩm 'Cà phê muối' hiện đã tạm hết"
+      );
+      expect(screen.getByText('Tạm hết')).toBeInTheDocument();
+    });
+
+    // 1. Sửa ghi chú -> banner 409 và nhãn Tạm hết phải biến mất (và không hiện lại nếu gõ lại chữ cũ)
+    await user.type(noteInput, ' x');
+    await waitFor(() => {
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+      expect(screen.queryByText('Tạm hết')).not.toBeInTheDocument();
+    });
+    await user.type(noteInput, '{Backspace}{Backspace}');
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+
+    // 2. Gặp 409 lần nữa rồi giỏ hàng thay đổi -> banner 409 phải biến mất
+    vi.mocked(ordersService.createOrderApi).mockRejectedValueOnce(outOfStockErr);
+    await user.click(screen.getByRole('button', { name: /đặt đơn hàng/i }));
+    await waitFor(() => {
+      expect(screen.getByRole('alert')).toHaveTextContent(
+        "Sản phẩm 'Cà phê muối' hiện đã tạm hết"
+      );
+    });
+
+    const updatedCart: CartItem[] = [{ ...mockCartItem, quantity: 3 }];
+    localStorage.setItem(CART_STORAGE_KEY, JSON.stringify(updatedCart));
+    act(() => {
+      window.dispatchEvent(new StorageEvent('storage', { key: CART_STORAGE_KEY }));
+    });
+    await waitFor(() => {
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+      expect(screen.queryByText('Tạm hết')).not.toBeInTheDocument();
+    });
+
+    // 3. Gặp 409 lần nữa rồi bấm đặt đơn lại (không đổi ghi chú/giỏ) -> banner 409 biến mất ngay khi bấm đặt lại
+    vi.mocked(ordersService.createOrderApi).mockRejectedValueOnce(outOfStockErr);
+    await user.click(screen.getByRole('button', { name: /đặt đơn hàng/i }));
+    await waitFor(() => {
+      expect(screen.getByRole('alert')).toHaveTextContent(
+        "Sản phẩm 'Cà phê muối' hiện đã tạm hết"
+      );
+    });
+
+    let resolveRetryOrder!: (order: OrderResponse) => void;
+    const retryPromise = new Promise<OrderResponse>((resolve) => {
+      resolveRetryOrder = resolve;
+    });
+    vi.mocked(ordersService.createOrderApi).mockImplementationOnce(() => retryPromise);
+
+    await user.click(screen.getByRole('button', { name: /đặt đơn hàng/i }));
+    await waitFor(() => {
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+      expect(screen.queryByText('Tạm hết')).not.toBeInTheDocument();
+    });
+
+    await act(async () => {
+      resolveRetryOrder({
+        id: 'order-retry-ok',
+        orderNumber: 2002,
+        status: 'PENDING',
+        receiveType: 'AT_COUNTER',
+        totalAmount: 135000,
+        createdAt: new Date().toISOString(),
+        items: [],
+      });
+    });
+
+    await waitFor(() => {
+      expect(mockReplace).toHaveBeenCalledWith('/checkout?orderId=order-retry-ok');
+    });
+  });
+
   // 6. Thanh toán QR thành công: Dọn sạch đơn chờ, giữ nguyên giỏ khi không có cờ createdFromCart và hiện màn hình thành công
   it('6. Thanh toán QR thành công: Dọn sạch đơn chờ, hiện màn hình thành công và ẩn 4 số cuối tài khoản', async () => {
     vi.useFakeTimers();

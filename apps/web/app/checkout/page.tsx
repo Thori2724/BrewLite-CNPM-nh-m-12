@@ -90,10 +90,45 @@ function CheckoutContent() {
   const [isCreatingOrder, setIsCreatingOrder] = useState<boolean>(false);
   const [createOrderError, setCreateOrderError] = useState<string | null>(null);
   const [outOfStockDetails, setOutOfStockDetails] = useState<OutOfStockDetail[]>([]);
+  const [outOfStockCartSignature, setOutOfStockCartSignature] = useState<string | null>(null);
   const [isCreateOrderNetworkError, setIsCreateOrderNetworkError] = useState<boolean>(false);
   const [isCreateOrderNotFoundError, setIsCreateOrderNotFoundError] = useState<boolean>(false);
   const [showHistoryLinkInOrderError, setShowHistoryLinkInOrderError] = useState<boolean>(false);
   const [noteError, setNoteError] = useState<string | null>(null);
+
+  const cartSignature = React.useMemo(
+    () =>
+      JSON.stringify(
+        items.map((item) => ({
+          id: item.id,
+          productId: item.productId,
+          quantity: item.quantity,
+          size: item.size ?? null,
+          sugarLevel: item.sugarLevel ?? null,
+          iceLevel: item.iceLevel ?? null,
+          note: item.note || '',
+          toppingIds: (item.toppings || []).map((t) => t.id),
+        }))
+      ),
+    [items]
+  );
+
+  const clearOutOfStockBanner = () => {
+    setOutOfStockCartSignature(null);
+    setOutOfStockDetails([]);
+    setCreateOrderError(null);
+  };
+
+  // Tự động xóa banner lỗi 409 khi giỏ hàng thay đổi
+  useEffect(() => {
+    if (outOfStockCartSignature !== null && outOfStockCartSignature !== cartSignature) {
+      queueMicrotask(() => {
+        setOutOfStockCartSignature(null);
+        setOutOfStockDetails([]);
+        setCreateOrderError(null);
+      });
+    }
+  }, [cartSignature, outOfStockCartSignature]);
 
   const clearAllRef = React.useRef(clearAll);
   const itemsLengthRef = React.useRef(items.length);
@@ -277,6 +312,11 @@ function CheckoutContent() {
   const submitCreateOrder = async () => {
     if (isCreatingOrder) return;
 
+    // Xóa banner 409 cũ ngay khi bấm đặt đơn lại
+    if (outOfStockCartSignature !== null) {
+      clearOutOfStockBanner();
+    }
+
     const noteValidation = validateNote(note);
     if (!noteValidation.isValid) {
       setNoteError(noteValidation.error || 'Ghi chú tối đa 200 ký tự');
@@ -292,6 +332,7 @@ function CheckoutContent() {
 
     setCreateOrderError(null);
     setOutOfStockDetails([]);
+    setOutOfStockCartSignature(null);
     setIsCreateOrderNetworkError(false);
     setIsCreateOrderNotFoundError(false);
     setShowHistoryLinkInOrderError(false);
@@ -331,6 +372,7 @@ function CheckoutContent() {
           // Lỗi món tạm hết 409 (chỉ nêu tên món từ message và details[], không hiện số lượng tồn kho)
           const details = err.details || [];
           const outOfStockNames = details.map((d) => d.name).filter(Boolean);
+          setOutOfStockCartSignature(cartSignature);
           setOutOfStockDetails(details);
           setCreateOrderError(
             err.message ||
@@ -377,6 +419,11 @@ function CheckoutContent() {
     setPendingOrder(null);
     setStep('order');
   };
+
+  const isStaleOutOfStockError =
+    outOfStockCartSignature !== null && outOfStockCartSignature !== cartSignature;
+  const visibleCreateOrderError = isStaleOutOfStockError ? null : createOrderError;
+  const visibleOutOfStockDetails = isStaleOutOfStockError ? [] : outOfStockDetails;
 
   return (
     <div className="max-w-5xl mx-auto space-y-6">
@@ -430,22 +477,22 @@ function CheckoutContent() {
           {/* CỘT TRÁI (7 CỘT): Hình thức & Ghi chú */}
           <div className="lg:col-span-7 space-y-5">
             {/* Lỗi hết hàng 409 hoặc lỗi tạo đơn (ví dụ 404 đơn cũ không còn tồn tại) */}
-            {createOrderError && (
+            {visibleCreateOrderError && (
               <div
                 role="alert"
                 className="max-w-xl mx-auto lg:max-w-none bg-error/10 border border-error/45 text-error rounded-card p-4 sm:p-5 text-sm space-y-2 shadow-soft"
               >
-                <div className="font-bold text-error">{createOrderError}</div>
+                <div className="font-bold text-error">{visibleCreateOrderError}</div>
                 {isCreateOrderNotFoundError && (
                   <p className="text-xs text-noir/80">
                     Món hoặc topping trong giỏ hiện không còn phục vụ. Vui lòng cập nhật lại giỏ hàng.
                   </p>
                 )}
-                {outOfStockDetails.length > 0 && (
+                {visibleOutOfStockDetails.length > 0 && (
                   <div>
                     <p className="text-xs text-noir/80 mb-1">Món hiện đã tạm hết:</p>
                     <ul className="list-disc list-inside text-xs font-semibold text-noir space-y-0.5">
-                      {outOfStockDetails.map((item, idx) => (
+                      {visibleOutOfStockDetails.map((item, idx) => (
                         <li key={item.productId || idx}>{item.name} — Tạm hết</li>
                       ))}
                     </ul>
@@ -557,6 +604,9 @@ function CheckoutContent() {
                     const res = validateNote(val);
                     setNoteError(res.isValid ? null : res.error || null);
                   }
+                  if (outOfStockCartSignature !== null) {
+                    clearOutOfStockBanner();
+                  }
                 }}
                 placeholder="Ví dụ: Giao nhanh giúp mình, để riêng ống hút..."
                 className={`w-full px-3.5 py-2.5 rounded-control border text-sm outline-none transition placeholder:text-noir/45 ${
@@ -631,7 +681,7 @@ function CheckoutContent() {
               {/* Danh sách món */}
               <div className="space-y-3 max-h-72 overflow-y-auto pr-1">
                 {items.map((item) => {
-                  const matchedOutOfStock = outOfStockDetails.find(
+                  const matchedOutOfStock = visibleOutOfStockDetails.find(
                     (d) =>
                       (d.productId && d.productId === item.productId) ||
                       d.name === item.name

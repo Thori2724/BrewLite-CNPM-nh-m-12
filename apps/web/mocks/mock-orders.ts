@@ -14,6 +14,7 @@ import {
   StaffUpdatableOrderStatus,
 } from '../services/order-contract';
 import { OrderApiError } from '../services/orders';
+import { loadCartFromStorage } from '../utils/cart';
 import { isMockOrdersActive } from './mock-config';
 import { findMockProductById, MOCK_TOPPINGS } from './mock-products';
 
@@ -456,6 +457,17 @@ export function clearMockMemoryOnlyForTesting(): void {
   mockLastOrderNumber = 1000;
 }
 
+function resolveMockOrderProduct(productId: string) {
+  return (
+    findMockProductById(productId) ||
+    (productId === '1'
+      ? findMockProductById('11111111-0000-0000-0000-000000000001')
+      : productId === '3'
+        ? findMockProductById('11111111-0000-0000-0000-000000000004')
+        : undefined)
+  );
+}
+
 /**
  * Giả lập tạo đơn hàng phía server POST /orders
  */
@@ -473,20 +485,34 @@ export async function mockCreateOrder(dto: CreateOrderDto): Promise<OrderRespons
     throw new OrderApiError(0, ORDER_ERROR_MESSAGES.NETWORK_ERROR);
   }
 
-  // Giả lập qua ghi chú
+  // Giả lập qua ghi chú: lấy đúng món đầu tiên trong body request / giỏ hàng
   const lowerNote = (dto.note || '').toLowerCase();
   if (lowerNote.includes('hethang') || lowerNote.includes('hết hàng')) {
+    const firstItem = dto.items?.[0];
+    const firstProduct = firstItem ? resolveMockOrderProduct(firstItem.productId) : undefined;
+    const cartMatch =
+      firstItem && !firstProduct
+        ? loadCartFromStorage().find((cartItem) => cartItem.productId === firstItem.productId)
+        : undefined;
+    const targetProductId = firstItem?.productId || 'mock-p-out';
+    const targetName = firstProduct?.name || cartMatch?.name || 'Đồ uống BrewLite';
+
     const details: OutOfStockDetail[] = [
       {
-        productId: 'mock-p-out',
-        name: 'Trà đào cam sả',
+        productId: targetProductId,
+        name: targetName,
       },
     ];
-    const message = "Sản phẩm 'Trà đào cam sả' hiện đã tạm hết";
+    const message = `Sản phẩm '${targetName}' hiện đã tạm hết`;
     throw new OrderApiError(409, message, {
       details,
-      outOfStockItems: ['Trà đào cam sả'],
-      errorData: { statusCode: 409, message, details },
+      outOfStockItems: [targetName],
+      errorData: {
+        statusCode: 409,
+        message,
+        error: 'Conflict',
+        details,
+      },
     });
   }
   if (lowerNote.includes('timeout')) {
@@ -531,11 +557,7 @@ export async function mockCreateOrder(dto: CreateOrderDto): Promise<OrderRespons
   // 2. SERVER TỰ TÍNH TIỀN (tuyệt đối không nhận giá từ client)
   let calculatedTotal = 0;
   const processedItems: OrderItemResponse[] = dto.items.map((item, idx) => {
-    const product =
-      findMockProductById(item.productId) ||
-      (item.productId === '1'
-        ? findMockProductById('11111111-0000-0000-0000-000000000001')
-        : undefined);
+    const product = resolveMockOrderProduct(item.productId);
     const isCake = product?.category === 'CAKE';
     const basePrice = product ? product.basePrice : 29000;
     let unitPrice = basePrice;

@@ -89,10 +89,13 @@ describe('Lớp gọi API Đơn hàng và Thanh toán (services/orders.ts)', () 
       }
     });
 
-    it('1.3. Mô phỏng hết hàng qua ghi chú "hethang" trả về 409 kèm details', async () => {
+    it('1.3. Mô phỏng hết hàng qua ghi chú "hethang" trả về 409 đúng tên món đầu tiên trong body request và details[] theo hợp đồng', async () => {
       const noteOutOfStockDto: CreateOrderDto = {
         receiveType: 'AT_COUNTER',
-        items: [{ productId: '11111111-0000-0000-0000-000000000001', quantity: 1 }],
+        items: [
+          { productId: '11111111-0000-0000-0000-000000000001', quantity: 1 }, // Cà phê sữa đá
+          { productId: '11111111-0000-0000-0000-000000000004', quantity: 1 }, // Trà đào cam sả
+        ],
         note: 'Giao hethang test',
       };
 
@@ -103,8 +106,44 @@ describe('Lớp gọi API Đơn hàng và Thanh toán (services/orders.ts)', () 
         expect(err).toBeInstanceOf(OrderApiError);
         const orderErr = err as OrderApiError;
         expect(orderErr.statusCode).toBe(409);
-        expect(orderErr.message).toBe("Sản phẩm 'Trà đào cam sả' hiện đã tạm hết");
-        expect(orderErr.details).toBeDefined();
+        expect(orderErr.message).toBe("Sản phẩm 'Cà phê sữa đá' hiện đã tạm hết");
+        expect(orderErr.details).toEqual([
+          {
+            productId: '11111111-0000-0000-0000-000000000001',
+            name: 'Cà phê sữa đá',
+          },
+        ]);
+        expect(orderErr.errorData).toEqual({
+          statusCode: 409,
+          message: "Sản phẩm 'Cà phê sữa đá' hiện đã tạm hết",
+          error: 'Conflict',
+          details: [
+            {
+              productId: '11111111-0000-0000-0000-000000000001',
+              name: 'Cà phê sữa đá',
+            },
+          ],
+        });
+      }
+
+      // Kiểm tra trường hợp giỏ chỉ có Bánh Croissant (không có Trà đào cam sả)
+      try {
+        await createOrderApi({
+          receiveType: 'TAKE_AWAY',
+          items: [{ productId: '11111111-0000-0000-0000-000000000010', quantity: 2 }],
+          note: 'hethang',
+        });
+        expect.unreachable('Phải ném lỗi 409');
+      } catch (err) {
+        const orderErr = err as OrderApiError;
+        expect(orderErr.statusCode).toBe(409);
+        expect(orderErr.message).toBe("Sản phẩm 'Bánh Croissant' hiện đã tạm hết");
+        expect(orderErr.details).toEqual([
+          {
+            productId: '11111111-0000-0000-0000-000000000010',
+            name: 'Bánh Croissant',
+          },
+        ]);
       }
     });
   });
