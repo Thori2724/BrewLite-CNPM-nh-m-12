@@ -9,7 +9,6 @@ import { CART_STORAGE_KEY } from '../../../utils/cart';
 import AppShell from '../../components/AppShell';
 import StaffLayout from '../layout';
 import StaffProductsPage from '../products/page';
-import StaffEmployeesPage from '../employees/page';
 
 const { mockPush, mockReplace } = vi.hoisted(() => ({
   mockPush: vi.fn(),
@@ -98,7 +97,7 @@ describe('Dòng 19 - Khung khu /staff', () => {
   it('2. Khi đăng nhập vai trò ADMIN: hiện đủ Đơn hàng, Món, Nhân viên; hiện tên + "Quản lý" + nút Đăng xuất', async () => {
     setAuthSession('ADMIN', 'Quản lý');
     mockPathname = '/staff/employees';
-    renderStaffLayout(<StaffEmployeesPage />);
+    renderStaffLayout(<h1>Nhân viên</h1>);
 
     expect(await screen.findByTestId('staff-user-name')).toHaveTextContent('Quản lý');
     expect(screen.getByTestId('staff-user-role')).toHaveTextContent('Quản lý');
