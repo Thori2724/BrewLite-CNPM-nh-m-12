@@ -1,4 +1,4 @@
-import { AuthUser, AUTH_ERROR_MESSAGES } from '../services/auth-contract';
+import { AuthUser, AUTH_ERROR_MESSAGES, UserRole } from '../services/auth-contract';
 import {
   classifyApiError,
   validateConfirmPassword,
@@ -11,6 +11,7 @@ import {
 export const AUTH_STORAGE_KEY = 'brewlite_auth_v2';
 export const LEGACY_AUTH_STORAGE_KEY = 'brewlite_auth_v1';
 export const AUTH_SESSION_CLEARED_EVENT = 'brewlite:auth-session-cleared';
+export const AUTH_ACCOUNT_LOCKED_EVENT = 'brewlite:account-locked';
 
 export interface AuthSession {
   token: string;
@@ -164,4 +165,162 @@ export function extractErrorMessage(errorData: unknown, fallbackMessage?: string
   }
   const classified = classifyApiError(errorData, defaultFallback);
   return classified.message;
+}
+
+/**
+ * Kiểm tra thông báo lỗi có phải thông báo "Tài khoản đã bị khóa" theo hợp đồng hay không.
+ */
+export function isAccountLockedMessage(message: unknown): boolean {
+  if (typeof message === 'string') {
+    return message.trim() === AUTH_ERROR_MESSAGES.ACCOUNT_LOCKED;
+  }
+  if (Array.isArray(message)) {
+    return message.some(
+      (item) => typeof item === 'string' && item.trim() === AUTH_ERROR_MESSAGES.ACCOUNT_LOCKED
+    );
+  }
+  return false;
+}
+
+/**
+ * Kiểm tra đối tượng lỗi có phải HTTP 403 "Tài khoản đã bị khóa" không.
+ */
+export function isAccountLockedError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  const errObj = error as { statusCode?: unknown; message?: unknown; errorData?: unknown };
+  const rawBody =
+    errObj.errorData && typeof errObj.errorData === 'object'
+      ? (errObj.errorData as Record<string, unknown>)
+      : undefined;
+  const statusCode =
+    typeof errObj.statusCode === 'number'
+      ? errObj.statusCode
+      : typeof rawBody?.statusCode === 'number'
+        ? rawBody.statusCode
+        : 0;
+
+  if (statusCode !== 403) return false;
+  return isAccountLockedMessage(rawBody?.message) || isAccountLockedMessage(errObj.message);
+}
+
+/**
+ * Phát sự kiện toàn cục để giao diện hiển thị thông báo tài khoản bị khóa.
+ */
+export function notifyAccountLocked(message: string = AUTH_ERROR_MESSAGES.ACCOUNT_LOCKED): void {
+  if (typeof window === 'undefined' || typeof window.dispatchEvent !== 'function') return;
+  try {
+    window.dispatchEvent(
+      new CustomEvent(AUTH_ACCOUNT_LOCKED_EVENT, {
+        detail: { message },
+      })
+    );
+  } catch {
+    // Bỏ qua nếu môi trường không hỗ trợ CustomEvent
+  }
+}
+
+export function extractPathname(urlOrPath: string): string {
+  const withoutQuery = (urlOrPath || '/').split('?')[0].split('#')[0].trim() || '/';
+  return withoutQuery.length > 1 ? withoutQuery.replace(/\/+$/, '') : withoutQuery;
+}
+
+export function isStaffPath(pathname: string): boolean {
+  const path = extractPathname(pathname);
+  return path === '/staff' || path.startsWith('/staff/');
+}
+
+export function isStaffEmployeesPath(pathname: string): boolean {
+  const path = extractPathname(pathname);
+  return path === '/staff/employees' || path.startsWith('/staff/employees/');
+}
+
+export function isCustomerRoutePath(pathname: string): boolean {
+  const path = extractPathname(pathname);
+  return (
+    path === '/' ||
+    path === '/menu' ||
+    path.startsWith('/menu/') ||
+    path === '/cart' ||
+    path.startsWith('/cart/') ||
+    path === '/checkout' ||
+    path.startsWith('/checkout/') ||
+    path === '/orders' ||
+    path.startsWith('/orders/')
+  );
+}
+
+function isAccountPath(pathname: string): boolean {
+  const path = extractPathname(pathname);
+  return path === '/account' || path.startsWith('/account/');
+}
+
+function isAuthPagePath(pathname: string): boolean {
+  const path = extractPathname(pathname);
+  return (
+    path === '/login' ||
+    path.startsWith('/login/') ||
+    path === '/register' ||
+    path.startsWith('/register/')
+  );
+}
+
+/**
+ * Xác định đường dẫn chuyển hướng (nếu cần) khi người dùng truy cập một route theo vai trò.
+ * Trả về null nếu vai trò hiện tại được phép ở lại đường dẫn này.
+ */
+export function getRoleRouteRedirect(
+  pathname: string,
+  role: UserRole | null | undefined
+): string | null {
+  const path = extractPathname(pathname);
+
+  if (isStaffEmployeesPath(path)) {
+    if (!role || role === 'CUSTOMER') return '/';
+    if (role === 'STAFF') return '/staff';
+    return null;
+  }
+
+  if (isStaffPath(path)) {
+    if (!role || role === 'CUSTOMER') return '/';
+    return null;
+  }
+
+  if (isCustomerRoutePath(path)) {
+    if (role === 'STAFF' || role === 'ADMIN') return '/staff';
+    return null;
+  }
+
+  return null;
+}
+
+/**
+ * Xác định trang đích sau khi đăng nhập thành công (hoặc khi đã đăng nhập sẵn vào /login, /register).
+ */
+export function getPostLoginRedirectUrl(
+  role: UserRole,
+  redirectParam?: string | null
+): string {
+  const defaultTarget = role === 'STAFF' || role === 'ADMIN' ? '/staff' : '/';
+  const safeTarget = getSafeRedirectUrl(redirectParam, defaultTarget);
+  const targetPath = extractPathname(safeTarget);
+
+  if (isAuthPagePath(targetPath)) {
+    return defaultTarget;
+  }
+
+  if (role === 'STAFF' || role === 'ADMIN') {
+    if (isStaffEmployeesPath(targetPath)) {
+      return role === 'ADMIN' ? safeTarget : '/staff';
+    }
+    if (isStaffPath(targetPath) || isAccountPath(targetPath)) {
+      return safeTarget;
+    }
+    return '/staff';
+  }
+
+  if (isStaffPath(targetPath)) {
+    return '/';
+  }
+
+  return safeTarget;
 }

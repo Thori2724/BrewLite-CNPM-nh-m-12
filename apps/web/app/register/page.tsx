@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '../../context/AuthContext';
 import {
+  getPostLoginRedirectUrl,
   getSafeRedirectUrl,
   validateEmail,
   validatePassword,
@@ -17,7 +18,7 @@ import { AUTH_ERROR_MESSAGES } from '../../services/auth-contract';
 function RegisterForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { register, isAuthenticated, isHydrated } = useAuth();
+  const { register, user, isAuthenticated, isHydrated } = useAuth();
 
   const [displayName, setDisplayName] = useState('');
   const [email, setEmail] = useState('');
@@ -37,12 +38,12 @@ function RegisterForm() {
   const redirectParam = searchParams.get('redirect');
   const targetRedirect = getSafeRedirectUrl(redirectParam, '/');
 
-  // Nếu người dùng đã đăng nhập từ trước, tự động chuyển về trang đích hoặc Menu
+  // Nếu người dùng đã đăng nhập từ trước, tự động chuyển theo vai trò
   useEffect(() => {
-    if (isHydrated && isAuthenticated) {
-      router.replace(targetRedirect);
+    if (isHydrated && isAuthenticated && user) {
+      router.replace(getPostLoginRedirectUrl(user.role, redirectParam));
     }
-  }, [isHydrated, isAuthenticated, targetRedirect, router]);
+  }, [isHydrated, isAuthenticated, user, redirectParam, router]);
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();

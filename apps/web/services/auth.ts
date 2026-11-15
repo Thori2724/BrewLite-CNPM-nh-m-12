@@ -1,4 +1,6 @@
 import {
+  ApiErrorDetail,
+  ApiHttpError,
   AUTH_ENDPOINTS,
   AUTH_ERROR_MESSAGES,
   LoginDto,
@@ -6,8 +8,17 @@ import {
   RegisterDto,
   RegisterResponse,
 } from './auth-contract';
-import { clearAuthSession, getSafeRedirectUrl, loadAuthSession } from '../utils/auth';
-import { isMockAuthActive, mockLogin, mockRegister } from '../mocks/mock-auth';
+import {
+  clearAuthSession,
+  getSafeRedirectUrl,
+  isAccountLockedMessage,
+  loadAuthSession,
+  notifyAccountLocked,
+} from '../utils/auth';
+import { isMockAuthActive } from '../mocks/mock-config';
+import { mockLogin, mockRegister } from '../mocks/mock-auth';
+
+export { ApiHttpError };
 
 export class AuthApiError extends Error {
   statusCode: number;
@@ -42,15 +53,15 @@ export function getApiBaseUrl(): string {
   return 'http://localhost:3001';
 }
 
-/**
- * Hàm fetch trung tâm có hỗ trợ tự động gắn Token và xử lý mã lỗi 401
- */
-export async function apiFetch<T>(
-  endpoint: string,
-  options: RequestInit & { skipAuth?: boolean } = {}
-): Promise<T> {
-  const { skipAuth, headers: customHeaders, ...fetchOptions } = options;
+function isAuthEndpoint(endpoint: string): boolean {
+  return endpoint.includes(AUTH_ENDPOINTS.LOGIN) || endpoint.includes(AUTH_ENDPOINTS.REGISTER);
+}
 
+function buildRequestConfig(
+  endpoint: string,
+  options: RequestInit & { skipAuth?: boolean }
+): { url: string; init: RequestInit } {
+  const { skipAuth, headers: customHeaders, ...fetchOptions } = options;
   const headers = new Headers(customHeaders || {});
 
   if (!headers.has('Content-Type') && !(fetchOptions.body instanceof FormData)) {
@@ -66,23 +77,65 @@ export async function apiFetch<T>(
   }
 
   const baseUrl = getApiBaseUrl();
-  const url = endpoint.startsWith('http') ? endpoint : `${baseUrl}${endpoint.startsWith('/') ? '' : '/'}${endpoint}`;
+  const url = endpoint.startsWith('http')
+    ? endpoint
+    : `${baseUrl}${endpoint.startsWith('/') ? '' : '/'}${endpoint}`;
+
+  return {
+    url,
+    init: {
+      ...fetchOptions,
+      headers,
+    },
+  };
+}
+
+function handleUnauthorizedSession(): void {
+  clearAuthSession();
+
+  if (typeof window !== 'undefined' && !isRedirectingToLogin) {
+    isRedirectingToLogin = true;
+    const currentPath = getSafeRedirectUrl(
+      window.location.pathname + window.location.search,
+      '/'
+    );
+    const redirectTarget = `/login?redirect=${encodeURIComponent(currentPath)}&expired=true`;
+
+    // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- Chuyển trang cấp hệ thống khi hết hạn token từ lớp fetch phi-React
+    window.location.href = redirectTarget;
+
+    setTimeout(() => {
+      isRedirectingToLogin = false;
+    }, 3000);
+  }
+}
+
+function handleLockedAccountResponse(isAuthRoute: boolean): void {
+  if (!isAuthRoute) {
+    notifyAccountLocked(AUTH_ERROR_MESSAGES.ACCOUNT_LOCKED);
+  }
+  clearAuthSession();
+}
+
+/**
+ * Hàm fetch trung tâm có hỗ trợ tự động gắn Token, xử lý 401 và 403 tài khoản bị khóa
+ */
+export async function apiFetch<T>(
+  endpoint: string,
+  options: RequestInit & { skipAuth?: boolean } = {}
+): Promise<T> {
+  const { url, init } = buildRequestConfig(endpoint, options);
+  const isAuthRoute = isAuthEndpoint(endpoint);
 
   let response: Response;
   try {
-    response = await fetch(url, {
-      ...fetchOptions,
-      headers,
-    });
+    response = await fetch(url, init);
   } catch (err) {
     throw new AuthApiError(0, AUTH_ERROR_MESSAGES.NETWORK_ERROR, err);
   }
 
   // Xử lý khi gặp mã 401 Unauthorized
   if (response.status === 401) {
-    const isAuthRoute =
-      endpoint.includes(AUTH_ENDPOINTS.LOGIN) || endpoint.includes(AUTH_ENDPOINTS.REGISTER);
-
     // Nếu CHÍNH lời gọi login/register trả về 401 (sai tài khoản/mật khẩu):
     // KHÔNG được chuyển trang, chỉ ném lỗi để form tự hiển thị
     if (isAuthRoute) {
@@ -95,31 +148,11 @@ export async function apiFetch<T>(
       throw new AuthApiError(401, AUTH_ERROR_MESSAGES.INVALID_CREDENTIALS, errorBody);
     }
 
-    // Nếu là request nghiệp vụ khác gặp 401 (token hết hạn):
-    // 1. Xóa phiên đăng nhập
-    clearAuthSession();
-
-    // 2. Chuyển hướng về trang /login kèm tham số redirect và thông báo (chỉ chuyển 1 lần)
-    if (typeof window !== 'undefined' && !isRedirectingToLogin) {
-      isRedirectingToLogin = true;
-      const currentPath = getSafeRedirectUrl(
-        window.location.pathname + window.location.search,
-        '/'
-      );
-      const redirectTarget = `/login?redirect=${encodeURIComponent(currentPath)}&expired=true`;
-
-      // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- Chuyển trang cấp hệ thống khi hết hạn token từ lớp fetch phi-React
-      window.location.href = redirectTarget;
-
-      setTimeout(() => {
-        isRedirectingToLogin = false;
-      }, 3000);
-    }
-
+    handleUnauthorizedSession();
     throw new AuthApiError(401, AUTH_ERROR_MESSAGES.SESSION_EXPIRED);
   }
 
-  // Xử lý các mã lỗi khác (400, 404, 409, 500...)
+  // Xử lý các mã lỗi khác (400, 403, 404, 409, 500...)
   if (!response.ok) {
     let errorData: unknown;
     let message: string = AUTH_ERROR_MESSAGES.UNKNOWN_ERROR;
@@ -141,6 +174,15 @@ export async function apiFetch<T>(
       message = response.statusText || message;
     }
 
+    if (response.status === 403) {
+      if (isAccountLockedMessage(message)) {
+        handleLockedAccountResponse(isAuthRoute);
+        message = AUTH_ERROR_MESSAGES.ACCOUNT_LOCKED;
+      } else if (!hasServerStringMessage) {
+        message = AUTH_ERROR_MESSAGES.FORBIDDEN;
+      }
+    }
+
     if (response.status === 409) {
       if (endpoint.includes(AUTH_ENDPOINTS.REGISTER)) {
         if (!hasServerStringMessage || message === 'Email đã tồn tại') {
@@ -155,6 +197,85 @@ export async function apiFetch<T>(
   }
 
   // Phản hồi thành công
+  try {
+    return (await response.json()) as T;
+  } catch {
+    return {} as T;
+  }
+}
+
+/**
+ * Hàm fetch riêng cho các API mới (quản lý đơn, hủy đơn, quản lý món, nhân viên):
+ * - Đọc base URL từ NEXT_PUBLIC_API_URL (mặc định http://localhost:3001).
+ * - Tự động gắn `Authorization: Bearer <accessToken>` khi có phiên đăng nhập (trừ `skipAuth: true`).
+ * - Xử lý 401 (xóa phiên + chuyển về /login) và 403 "Tài khoản đã bị khóa" (thông báo + tự đăng xuất).
+ * - Khi lỗi: ném `ApiHttpError` giữ nguyên `statusCode`, `message` (string | string[]), `details` nếu có.
+ */
+export async function apiRequest<T>(
+  endpoint: string,
+  options: RequestInit & { skipAuth?: boolean } = {}
+): Promise<T> {
+  const { url, init } = buildRequestConfig(endpoint, options);
+  const isAuthRoute = isAuthEndpoint(endpoint);
+
+  let response: Response;
+  try {
+    response = await fetch(url, init);
+  } catch (err) {
+    throw new ApiHttpError({
+      statusCode: 0,
+      message: AUTH_ERROR_MESSAGES.NETWORK_ERROR,
+      errorData: err,
+    });
+  }
+
+  if (!response.ok) {
+    let errorData: unknown;
+    let message: string | string[] =
+      response.status === 401
+        ? AUTH_ERROR_MESSAGES.SESSION_EXPIRED
+        : response.status === 403
+          ? AUTH_ERROR_MESSAGES.FORBIDDEN
+          : response.statusText || AUTH_ERROR_MESSAGES.UNKNOWN_ERROR;
+    let errorText: string | undefined;
+    let details: ApiErrorDetail[] | undefined;
+
+    try {
+      errorData = await response.json();
+      if (errorData && typeof errorData === 'object') {
+        const errorObj = errorData as Record<string, unknown>;
+        if (Array.isArray(errorObj.message)) {
+          message = errorObj.message.map((item) => String(item));
+        } else if (typeof errorObj.message === 'string' && errorObj.message.trim()) {
+          message = errorObj.message;
+        }
+        if (typeof errorObj.error === 'string') {
+          errorText = errorObj.error;
+        }
+        if (Array.isArray(errorObj.details)) {
+          details = errorObj.details as ApiErrorDetail[];
+        }
+      }
+    } catch {
+      // Giữ thông báo mặc định nếu response không phải JSON
+    }
+
+    if (response.status === 401 && !isAuthRoute) {
+      handleUnauthorizedSession();
+    } else if (response.status === 403 && isAccountLockedMessage(message)) {
+      handleLockedAccountResponse(isAuthRoute);
+      message = AUTH_ERROR_MESSAGES.ACCOUNT_LOCKED;
+    }
+
+    throw new ApiHttpError({
+      statusCode: response.status,
+      message,
+      error: errorText,
+      details,
+      errorData,
+    });
+  }
+
   try {
     return (await response.json()) as T;
   } catch {

@@ -583,7 +583,7 @@ function ProductDetailContent() {
             >
               {!isOutOfStock
                 ? `+ Thêm vào giỏ (${formatVnd(estimatedPrice)})`
-                : 'Món tạm hết hàng'}
+                : 'Tạm hết'}
             </button>
           </div>
         </div>

@@ -64,11 +64,15 @@ describe('Header xác thực (AuthNav)', () => {
     expect(screen.queryByRole('button', { name: 'Đăng xuất khỏi tài khoản' })).not.toBeInTheDocument();
   });
 
-  it('3. Đã đăng nhập: hiện tên người dùng và nút "Đăng xuất", ẩn liên kết đăng nhập/đăng ký', async () => {
+  it('3. Đã đăng nhập: hiện tên người dùng (liên kết tới /account) và nút "Đăng xuất", ẩn liên kết đăng nhập/đăng ký', async () => {
     localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(loggedInSession));
     renderHeader();
 
     expect(await screen.findByText('Nguyễn Văn An')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Thông tin tài khoản: Nguyễn Văn An' })).toHaveAttribute(
+      'href',
+      '/account'
+    );
     expect(screen.getByRole('button', { name: 'Đăng xuất khỏi tài khoản' })).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Đăng nhập tài khoản' })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Đăng ký tài khoản mới' })).not.toBeInTheDocument();
@@ -192,5 +196,50 @@ describe('Hook bảo vệ trang useRequireAuth', () => {
     expect(await screen.findByRole('link', { name: 'Đăng nhập tài khoản' })).toBeInTheDocument();
     expect(screen.queryByText('Nguyễn Văn An')).not.toBeInTheDocument();
     expect(localStorage.getItem(AUTH_STORAGE_KEY)).toBeNull();
+  });
+});
+
+function ProtectedProbeSkipRedirect() {
+  const { isReady, isChecking } = useRequireAuth({ skipRedirect: true });
+  if (isChecking) return <p>Đang kiểm tra đăng nhập...</p>;
+  if (!isReady) return <p>Đang chuyển hướng tùy chỉnh</p>;
+  return <p>Đã đăng nhập</p>;
+}
+
+describe('useRequireAuth với tùy chọn skipRedirect', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    localStorage.clear();
+  });
+
+  it('11. Khi skipRedirect=true và chưa đăng nhập hoặc bị xóa phiên, hook không tự gọi router.replace đè redirect tùy chỉnh', async () => {
+    const firstView = render(
+      <AuthProvider>
+        <ProtectedProbeSkipRedirect />
+      </AuthProvider>
+    );
+
+    expect(await screen.findByText('Đang chuyển hướng tùy chỉnh')).toBeInTheDocument();
+    expect(mockReplace).not.toHaveBeenCalled();
+    firstView.unmount();
+
+    // Khi đang đăng nhập rồi bị clearAuthSession() cũng không tự gọi replace
+    localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(loggedInSession));
+    const { unmount } = render(
+      <AuthProvider>
+        <ProtectedProbeSkipRedirect />
+      </AuthProvider>
+    );
+    expect(await screen.findByText('Đã đăng nhập')).toBeInTheDocument();
+
+    act(() => {
+      clearAuthSession();
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('Đang chuyển hướng tùy chỉnh')).toBeInTheDocument();
+    });
+    expect(mockReplace).not.toHaveBeenCalled();
+    unmount();
   });
 });
