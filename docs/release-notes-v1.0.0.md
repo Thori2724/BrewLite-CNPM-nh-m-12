@@ -50,7 +50,7 @@ Bản phát hành `v1.0.0` đánh dấu sự hoàn thiện trọn vẹn của h�
 
 ## 5. Hướng dẫn Nghiệm thu Nhanh (Quick Verification)
 Người kiểm thử độc lập có thể kiểm tra toàn bộ luồng hoạt động qua 2 cách:
-1. **Trực tiếp trên web:** Truy cập [https://brewlite-web.onrender.com](https://brewlite-web.onrender.com) để đặt món và thanh toán trực tiếp.
+1. **Trực tiếp trên web:** Truy cập https://brewlite-web-6sml.onrender.com/ để đặt món và thanh toán trực tiếp.
 2. **Chạy kịch bản tự động:** Mở PowerShell tại thư mục gốc và chạy:
    ```powershell
    .\tests\smoke-test.ps1
