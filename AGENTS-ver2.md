@@ -68,14 +68,14 @@ Quy tắc giữ cho 3 người không đụng nhau:
 
 
 ### Riêng Dev&Ops
-- CI: Install → Lint → Test → Build cho cả API và web; PR không merge được nếu CI đỏ.
+
 - Docker: `NEXT_PUBLIC_API_URL` phải truyền lúc build image web; `CORS_ORIGIN` đặt đúng địa chỉ web thật. Production KHÔNG mở cổng 5432 của PostgreSQL ra ngoài.
 - Không để secret xuất hiện trong repository hoặc log CI.
 - Seed chạy tự động mỗi lần deploy cùng migration. `DEMO_USER_PASSWORD` đặt trong Render và có dòng mẫu trong `.env.example` (không ghi mật khẩu thật vào repo).
 - Khi sửa tài liệu: mỗi thay đổi qua pull request và ghi rõ lý do.
 
 ## 7. Quyết định đã chốt (theo hợp đồng API, thay cho mọi chỗ cũ khác)
-- Ưu tiên giao diện WEB trên máy tính (thầy yêu cầu), vẫn responsive. Không làm PWA.
+- Ưu tiên giao diện WEB trên máy tính, vẫn responsive. Không làm PWA.
 - Giỏ hàng lưu trên trình duyệt (localStorage), chỉ gửi lên server khi đặt đơn.
 - KHÔNG làm: tự hủy sau 15 phút, voucher, tích điểm, hoàn tiền thật, lùi trạng thái đơn, timer tự chuyển trạng thái, xóa hẳn món, tạo danh mục mới, tải ảnh lên, tạo/sửa/xóa nhân viên, xếp ca, `GET /auth/me`, phân trang, polling tự động. Danh sách đầy đủ ở mục 10 hợp đồng. Trang theo dõi đơn chỉ tải khi mở trang hoặc khi bấm tải lại. (Giao diện nhân viên/quản lý, đổi trạng thái, hủy đơn, quản lý món, khóa nhân viên: ĐANG LÀM.)
 - Vai trò người dùng: CUSTOMER, STAFF, ADMIN. Đăng ký luôn tạo CUSTOMER.
