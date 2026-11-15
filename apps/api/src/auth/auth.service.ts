@@ -1,5 +1,6 @@
 import {
   ConflictException,
+  ForbiddenException,
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -13,6 +14,7 @@ import { JwtPayload } from './jwt-auth.guard';
 
 const EMAIL_ALREADY_USED_MESSAGE = 'Email này đã được sử dụng';
 const INVALID_CREDENTIALS_MESSAGE = 'Email hoặc mật khẩu không chính xác';
+const ACCOUNT_LOCKED_MESSAGE = 'Tài khoản đã bị khóa';
 const BCRYPT_SALT_ROUNDS = 10;
 
 @Injectable()
@@ -78,6 +80,10 @@ export class AuthService {
 
     if (!isPasswordValid) {
       throw new UnauthorizedException(INVALID_CREDENTIALS_MESSAGE);
+    }
+
+    if (user.isActive === false) {
+      throw new ForbiddenException(ACCOUNT_LOCKED_MESSAGE);
     }
 
     const payload: JwtPayload = {
