@@ -1,6 +1,6 @@
 # Backlog & Kế hoạch Thực hiện Sprint 2 – Hệ thống BrewLite
 
-> **Tài liệu nguồn:** `phan-cong-ver2.xlsx`, `docs/api-contract.md` (Bản 2), `AGENTS.md` (Bản 2)  
+> **Tài liệu nguồn:** `
 > **Chủ sở hữu:** Dev&Ops  
 > **Phiên bản:** 2.0  
 > **Ngày cập nhật:** 15/11/2026  
@@ -64,3 +64,4 @@
 | **39** | Dev&Ops | Ma trận truy vết `docs/traceability-matrix.md`: cập nhật mã FR theo SRS mới, 18 endpoint, test (mục 12 hợp đồng, mục 19); chốt khi test xong. | 8 | 10, 25, 29, 30, 35 | Chờ thực hiện |
 | **40** | Dev&Ops | Release tag, release notes, README đầy đủ (chạy, test, build, deploy, rollback), cấp quyền repo cho giảng viên, nhờ người ngoài nhóm clone và chạy thử theo README. | 5.4 | 37, 38, 39 | Chờ thực hiện |
 | **41** | Cả nhóm | Video demo (luồng khách + luồng nhân viên), Sprint Review, Sprint Retrospective. | 5.4 | 37 | Chờ thực hiện |
+
