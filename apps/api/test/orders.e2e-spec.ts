@@ -2,10 +2,11 @@ import { INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import {
   Category,
+  IceLevel,
   OrderStatus,
-  PrismaClient,
   ReceiveType,
   Size,
+  SugarLevel,
 } from '@prisma/client';
 import request from 'supertest';
 import { App } from 'supertest/types';
@@ -50,22 +51,15 @@ export function assertSafeTestDatabaseUrl(
 describe('Orders Integration (POST /orders)', () => {
   let app: INestApplication<App>;
   let prisma: PrismaService;
-  let testPrisma: PrismaClient;
   let accessToken: string;
   let userId: string;
 
   const PRODUCT_TEA_ID = 'aaaaaaaa-0000-4000-8000-000000009a01';
   const PRODUCT_CAKE_ID = 'aaaaaaaa-0000-4000-8000-000000009a02';
   const PRODUCT_OOS_ID = 'aaaaaaaa-0000-4000-8000-000000009a03';
-  const PRODUCT_CONCURRENT_ID = 'aaaaaaaa-0000-4000-8000-000000009a04';
   const TOPPING_PEARL_ID = 'bbbbbbbb-0000-4000-8000-000000009a01';
 
-  const SUITE_PRODUCT_IDS = [
-    PRODUCT_TEA_ID,
-    PRODUCT_CAKE_ID,
-    PRODUCT_OOS_ID,
-    PRODUCT_CONCURRENT_ID,
-  ];
+  const SUITE_PRODUCT_IDS = [PRODUCT_TEA_ID, PRODUCT_CAKE_ID, PRODUCT_OOS_ID];
   const SUITE_TOPPING_IDS = [TOPPING_PEARL_ID];
   const createdUserEmails: string[] = [];
 
@@ -147,11 +141,6 @@ describe('Orders Integration (POST /orders)', () => {
     process.env.DATABASE_URL = safeTestDbUrl;
     process.env.JWT_SECRET = 'integration-test-jwt-secret-brewlite-9a';
 
-    testPrisma = new PrismaClient({
-      datasources: { db: { url: safeTestDbUrl } },
-    });
-    await testPrisma.$connect();
-
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
     }).compile();
@@ -163,7 +152,7 @@ describe('Orders Integration (POST /orders)', () => {
     prisma = app.get(PrismaService);
     await cleanupSuiteData();
 
-    const uniqueEmail = `orders.9a.${Date.now()}@example.com`;
+    const uniqueEmail = `orders.10a.${Date.now()}@example.com`;
     createdUserEmails.push(uniqueEmail);
 
     const registerRes = await request(app.getHttpServer())
@@ -171,7 +160,7 @@ describe('Orders Integration (POST /orders)', () => {
       .send({
         email: uniqueEmail,
         password: 'Password123@',
-        displayName: 'Khách Integration 9a',
+        displayName: 'Khách Integration 10a',
       })
       .expect(201);
 
@@ -215,19 +204,19 @@ describe('Orders Integration (POST /orders)', () => {
     await prisma.product.upsert({
       where: { id: PRODUCT_TEA_ID },
       update: {
-        name: 'Trà sữa टेस्ट 9a',
+        name: 'Trà sữa truyền thống 10a',
         category: Category.MILK_TEA,
         basePrice: 35000,
-        imageUrl: 'https://example.com/tea-9a.jpg',
+        imageUrl: 'https://example.com/tea-10a.jpg',
         stock: 10,
         isVisible: true,
       },
       create: {
         id: PRODUCT_TEA_ID,
-        name: 'Trà sữa टेस्ट 9a',
+        name: 'Trà sữa truyền thống 10a',
         category: Category.MILK_TEA,
         basePrice: 35000,
-        imageUrl: 'https://example.com/tea-9a.jpg',
+        imageUrl: 'https://example.com/tea-10a.jpg',
         stock: 10,
         isVisible: true,
       },
@@ -236,19 +225,19 @@ describe('Orders Integration (POST /orders)', () => {
     await prisma.product.upsert({
       where: { id: PRODUCT_CAKE_ID },
       update: {
-        name: 'Bánh sừng bò 9a',
+        name: 'Bánh sừng bò 10a',
         category: Category.CAKE,
         basePrice: 30000,
-        imageUrl: 'https://example.com/cake-9a.jpg',
+        imageUrl: 'https://example.com/cake-10a.jpg',
         stock: 6,
         isVisible: true,
       },
       create: {
         id: PRODUCT_CAKE_ID,
-        name: 'Bánh sừng bò 9a',
+        name: 'Bánh sừng bò 10a',
         category: Category.CAKE,
         basePrice: 30000,
-        imageUrl: 'https://example.com/cake-9a.jpg',
+        imageUrl: 'https://example.com/cake-10a.jpg',
         stock: 6,
         isVisible: true,
       },
@@ -257,41 +246,20 @@ describe('Orders Integration (POST /orders)', () => {
     await prisma.product.upsert({
       where: { id: PRODUCT_OOS_ID },
       update: {
-        name: 'Bạc xỉu hết hàng 9a',
+        name: 'Bạc xỉu tạm hết 10a',
         category: Category.COFFEE,
         basePrice: 32000,
-        imageUrl: 'https://example.com/oos-9a.jpg',
+        imageUrl: 'https://example.com/oos-10a.jpg',
         stock: 0,
         isVisible: true,
       },
       create: {
         id: PRODUCT_OOS_ID,
-        name: 'Bạc xỉu hết hàng 9a',
+        name: 'Bạc xỉu tạm hết 10a',
         category: Category.COFFEE,
         basePrice: 32000,
-        imageUrl: 'https://example.com/oos-9a.jpg',
+        imageUrl: 'https://example.com/oos-10a.jpg',
         stock: 0,
-        isVisible: true,
-      },
-    });
-
-    await prisma.product.upsert({
-      where: { id: PRODUCT_CONCURRENT_ID },
-      update: {
-        name: 'Cà phê giới hạn 9a',
-        category: Category.COFFEE,
-        basePrice: 29000,
-        imageUrl: 'https://example.com/concurrent-9a.jpg',
-        stock: 5,
-        isVisible: true,
-      },
-      create: {
-        id: PRODUCT_CONCURRENT_ID,
-        name: 'Cà phê giới hạn 9a',
-        category: Category.COFFEE,
-        basePrice: 29000,
-        imageUrl: 'https://example.com/concurrent-9a.jpg',
-        stock: 5,
         isVisible: true,
       },
     });
@@ -299,13 +267,13 @@ describe('Orders Integration (POST /orders)', () => {
     await prisma.topping.upsert({
       where: { id: TOPPING_PEARL_ID },
       update: {
-        name: 'Trân châu đen 9a',
+        name: 'Trân châu đen 10a',
         price: 5000,
         isVisible: true,
       },
       create: {
         id: TOPPING_PEARL_ID,
-        name: 'Trân châu đen 9a',
+        name: 'Trân châu đen 10a',
         price: 5000,
         isVisible: true,
       },
@@ -314,9 +282,6 @@ describe('Orders Integration (POST /orders)', () => {
 
   afterAll(async () => {
     await cleanupSuiteData();
-    if (testPrisma) {
-      await testPrisma.$disconnect();
-    }
     if (app) {
       await app.close();
     }
@@ -333,7 +298,7 @@ describe('Orders Integration (POST /orders)', () => {
     ).toThrow(/bắt buộc phải kết thúc bằng "_test"/);
   });
 
-  it('a) Tạo đơn thành công: 201, totalAmount đúng, tồn kho giảm đúng trong DB, orderNumber đơn sau lớn hơn đơn trước', async () => {
+  it('a) Tạo đơn hợp lệ: 201, status PENDING, tiền do server tự tính (bỏ qua giá từ client), orderNumber tăng dần và stock KHÔNG bị trừ', async () => {
     // Đơn 1: 2 ly Trà sữa size M (35000 + 6000 + topping 5000 = 46000 x 2 = 92000) + 1 Bánh (30000) = 122000
     const res1 = await request(app.getHttpServer())
       .post('/orders')
@@ -341,16 +306,23 @@ describe('Orders Integration (POST /orders)', () => {
       .send({
         receiveType: ReceiveType.TAKE_AWAY,
         note: 'Đơn tích hợp 1',
+        totalAmount: 1,
         items: [
           {
             productId: PRODUCT_TEA_ID,
             quantity: 2,
             size: Size.M,
+            sugarLevel: SugarLevel.P70,
+            iceLevel: IceLevel.NORMAL,
             toppingIds: [TOPPING_PEARL_ID],
+            unitPrice: 1000,
+            lineTotal: 2000,
           },
           {
             productId: PRODUCT_CAKE_ID,
             quantity: 1,
+            unitPrice: 1000,
+            lineTotal: 1000,
           },
         ],
       })
@@ -361,9 +333,25 @@ describe('Orders Integration (POST /orders)', () => {
       orderNumber: number;
       totalAmount: number;
       status: OrderStatus;
+      items: Array<{
+        productId: string;
+        unitPrice: number;
+        lineTotal: number;
+      }>;
     };
-    expect(body1.totalAmount).toBe(122000);
     expect(body1.status).toBe(OrderStatus.PENDING);
+    expect(body1.totalAmount).toBe(122000);
+    expect(body1.items).toHaveLength(2);
+    expect(body1.items[0]).toMatchObject({
+      productId: PRODUCT_TEA_ID,
+      unitPrice: 46000,
+      lineTotal: 92000,
+    });
+    expect(body1.items[1]).toMatchObject({
+      productId: PRODUCT_CAKE_ID,
+      unitPrice: 30000,
+      lineTotal: 30000,
+    });
 
     // Đơn 2: 1 Bánh (30000)
     const res2 = await request(app.getHttpServer())
@@ -383,19 +371,21 @@ describe('Orders Integration (POST /orders)', () => {
       id: string;
       orderNumber: number;
       totalAmount: number;
+      status: OrderStatus;
     };
+    expect(body2.status).toBe(OrderStatus.PENDING);
     expect(body2.totalAmount).toBe(30000);
     expect(body2.orderNumber).toBeGreaterThan(body1.orderNumber);
 
-    // Kiểm tra trực tiếp trong PostgreSQL bằng Prisma
+    // Kiểm tra trực tiếp trong PostgreSQL: stock KHÔNG bị trừ (giữ nguyên 10 và 6)
     const teaInDb = await prisma.product.findUniqueOrThrow({
       where: { id: PRODUCT_TEA_ID },
     });
     const cakeInDb = await prisma.product.findUniqueOrThrow({
       where: { id: PRODUCT_CAKE_ID },
     });
-    expect(teaInDb.stock).toBe(8); // 10 - 2
-    expect(cakeInDb.stock).toBe(4); // 6 - 1 - 1
+    expect(teaInDb.stock).toBe(10);
+    expect(cakeInDb.stock).toBe(6);
 
     const ordersInDb = await prisma.order.findMany({
       where: { userId },
@@ -410,36 +400,13 @@ describe('Orders Integration (POST /orders)', () => {
     );
   });
 
-  it('b) Kho cộng gộp: cùng một món ở 2 dòng có tổng vượt tồn kho thì trả 409 kèm details; tồn kho giữ nguyên và KHÔNG có Order nào được tạo', async () => {
-    // PRODUCT_CAKE_ID có stock = 6; đặt dòng 1: 4 cái, dòng 2: 3 cái (tổng 7 > 6)
-    const res = await request(app.getHttpServer())
+  it('b) Chưa đăng nhập: trả 401 Unauthorized và không tạo đơn nào', async () => {
+    await request(app.getHttpServer())
       .post('/orders')
-      .set('Authorization', `Bearer ${accessToken}`)
       .send({
-        items: [
-          { productId: PRODUCT_CAKE_ID, quantity: 4 },
-          { productId: PRODUCT_CAKE_ID, quantity: 3 },
-        ],
+        items: [{ productId: PRODUCT_TEA_ID, quantity: 1 }],
       })
-      .expect(409);
-
-    expect(res.body).toEqual({
-      statusCode: 409,
-      message: "Sản phẩm 'Bánh sừng bò 9a' không đủ số lượng trong kho",
-      error: 'Conflict',
-      details: [
-        {
-          productId: PRODUCT_CAKE_ID,
-          name: 'Bánh sừng bò 9a',
-          available: 6,
-        },
-      ],
-    });
-
-    const cakeInDb = await prisma.product.findUniqueOrThrow({
-      where: { id: PRODUCT_CAKE_ID },
-    });
-    expect(cakeInDb.stock).toBe(6);
+      .expect(401);
 
     const orderCount = await prisma.order.count({
       where: { userId },
@@ -447,7 +414,55 @@ describe('Orders Integration (POST /orders)', () => {
     expect(orderCount).toBe(0);
   });
 
-  it('c) Đơn gồm 2 món (1 món đủ hàng, 1 món hết hàng): trả 409; món đủ hàng KHÔNG bị trừ kho và KHÔNG có Order nào được tạo (rollback thật)', async () => {
+  it('c) Giỏ rỗng hoặc dữ liệu sai (quantity sai, món bánh gửi kèm size/toppingIds): trả 400 Bad Request và không tạo đơn nào', async () => {
+    // 1. Giỏ rỗng
+    const emptyCartRes = await request(app.getHttpServer())
+      .post('/orders')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .send({ items: [] })
+      .expect(400);
+    expect(
+      Array.isArray((emptyCartRes.body as { message: unknown }).message),
+    ).toBe(true);
+
+    // 2. Dữ liệu sai (quantity = 0, productId không phải UUID)
+    const invalidDataRes = await request(app.getHttpServer())
+      .post('/orders')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .send({
+        items: [{ productId: 'not-a-uuid', quantity: 0 }],
+      })
+      .expect(400);
+    expect(
+      Array.isArray((invalidDataRes.body as { message: unknown }).message),
+    ).toBe(true);
+
+    // 3. Món bánh (CAKE) gửi kèm size / toppingIds
+    const cakeOptionRes = await request(app.getHttpServer())
+      .post('/orders')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .send({
+        items: [
+          {
+            productId: PRODUCT_CAKE_ID,
+            quantity: 1,
+            size: Size.M,
+            toppingIds: [TOPPING_PEARL_ID],
+          },
+        ],
+      })
+      .expect(400);
+    expect(
+      Array.isArray((cakeOptionRes.body as { message: unknown }).message),
+    ).toBe(true);
+
+    const orderCount = await prisma.order.count({
+      where: { userId },
+    });
+    expect(orderCount).toBe(0);
+  });
+
+  it('d) Món tạm hết (stock = 0): trả 409 từ chối CẢ ĐƠN kèm details [{ productId, name }], không tạo đơn nào và stock KHÔNG bị trừ', async () => {
     const res = await request(app.getHttpServer())
       .post('/orders')
       .set('Authorization', `Bearer ${accessToken}`)
@@ -461,16 +476,18 @@ describe('Orders Integration (POST /orders)', () => {
 
     expect(res.body).toEqual({
       statusCode: 409,
-      message: "Sản phẩm 'Bạc xỉu hết hàng 9a' không đủ số lượng trong kho",
+      message: "Sản phẩm 'Bạc xỉu tạm hết 10a' hiện đã tạm hết",
       error: 'Conflict',
       details: [
         {
           productId: PRODUCT_OOS_ID,
-          name: 'Bạc xỉu hết hàng 9a',
-          available: 0,
+          name: 'Bạc xỉu tạm hết 10a',
         },
       ],
     });
+    expect(
+      (res.body as { details: Array<Record<string, unknown>> }).details[0],
+    ).not.toHaveProperty('available');
 
     const teaInDb = await prisma.product.findUniqueOrThrow({
       where: { id: PRODUCT_TEA_ID },
@@ -478,65 +495,12 @@ describe('Orders Integration (POST /orders)', () => {
     const oosInDb = await prisma.product.findUniqueOrThrow({
       where: { id: PRODUCT_OOS_ID },
     });
-    expect(teaInDb.stock).toBe(10); // Không bị trừ kho nhờ rollback transaction
+    expect(teaInDb.stock).toBe(10);
     expect(oosInDb.stock).toBe(0);
 
     const orderCount = await prisma.order.count({
       where: { userId },
     });
     expect(orderCount).toBe(0);
-  });
-
-  it('d) Không bán quá kho khi đặt đồng thời: stock = 5, gửi 8 request POST /orders song song (quantity 1) -> đúng 5 cái 201, 3 cái 409, stock cuối = 0, đúng 5 Order trong DB', async () => {
-    const sleep = (ms: number) =>
-      new Promise<void>((resolve) => setTimeout(resolve, ms));
-
-    // Làm nóng 2 kết nối cho pool của testPrisma (dùng để kiểm tra DB)
-    await Promise.all([
-      testPrisma.$queryRaw`SELECT 1`,
-      testPrisma.$queryRaw`SELECT 1`,
-    ]);
-    await sleep(50);
-
-    // Làm nóng pool của app (PrismaService) theo từng đợt nhỏ 2 truy vấn, chờ 50ms giữa các đợt
-    for (let batch = 1; batch <= 5; batch++) {
-      await Promise.all([
-        prisma.$queryRaw`SELECT 1`,
-        prisma.$queryRaw`SELECT 1`,
-      ]);
-      await sleep(50);
-    }
-
-    const concurrentRequests = Array.from({ length: 8 }, () =>
-      request(app.getHttpServer())
-        .post('/orders')
-        .set('Authorization', `Bearer ${accessToken}`)
-        .send({
-          items: [
-            {
-              productId: PRODUCT_CONCURRENT_ID,
-              quantity: 1,
-            },
-          ],
-        }),
-    );
-
-    const responses = await Promise.all(concurrentRequests);
-
-    const successResponses = responses.filter((r) => r.status === 201);
-    const conflictResponses = responses.filter((r) => r.status === 409);
-
-    expect(successResponses).toHaveLength(5);
-    expect(conflictResponses).toHaveLength(3);
-
-    const productInDb = await prisma.product.findUniqueOrThrow({
-      where: { id: PRODUCT_CONCURRENT_ID },
-    });
-    expect(productInDb.stock).toBe(0);
-
-    const ordersInDb = await prisma.order.findMany({
-      where: { userId },
-    });
-    expect(ordersInDb).toHaveLength(5);
   });
 });
