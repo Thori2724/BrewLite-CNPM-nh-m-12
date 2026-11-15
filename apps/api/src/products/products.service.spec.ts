@@ -13,8 +13,11 @@ import { Category, Role } from '@prisma/client';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { PrismaService } from '../prisma/prisma.service';
+import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductAvailabilityDto } from './dto/update-product-availability.dto';
+import { UpdateProductDto } from './dto/update-product.dto';
 import {
+  DEFAULT_PRODUCT_IMAGE_URL,
   DRINK_ICE_LEVELS,
   DRINK_SIZES,
   DRINK_SUGAR_LEVELS,
@@ -32,6 +35,7 @@ describe('ProductsService', () => {
       findMany: jest.Mock;
       findFirst: jest.Mock;
       findUnique: jest.Mock;
+      create: jest.Mock;
       update: jest.Mock;
     };
     topping: {
@@ -98,6 +102,7 @@ describe('ProductsService', () => {
         findMany: jest.fn(),
         findFirst: jest.fn(),
         findUnique: jest.fn(),
+        create: jest.fn(),
         update: jest.fn(),
       },
       topping: {
@@ -437,13 +442,291 @@ describe('ProductsService', () => {
     });
   });
 
-  describe('Guards trên GET /products/manage và PATCH /products/:id/availability', () => {
+  describe('create (POST /products)', () => {
+    const pipe = new ValidationPipe({
+      whitelist: true,
+      transform: true,
+      forbidNonWhitelisted: false,
+    });
+
+    it('tạo món hợp lệ với stock = 999, isVisible = true, id tự sinh và bỏ qua id/stock từ client', async () => {
+      const generatedId = '77777777-0000-0000-0000-000000000001';
+      prisma.product.create.mockResolvedValue({
+        id: generatedId,
+        name: 'Trà vải hoa hồng',
+        category: Category.TEA,
+        basePrice: 45000,
+        imageUrl: 'https://images.unsplash.com/photo-tra-vai?w=500',
+        stock: 999,
+        isVisible: true,
+      });
+
+      const dto = (await pipe.transform(
+        {
+          id: 'client-id-should-be-stripped',
+          stock: 10,
+          isVisible: false,
+          name: '  Trà vải hoa hồng  ',
+          category: 'TEA',
+          basePrice: 45000,
+          imageUrl: 'https://images.unsplash.com/photo-tra-vai?w=500',
+        },
+        { type: 'body', metatype: CreateProductDto },
+      )) as CreateProductDto;
+
+      expect(dto).not.toHaveProperty('id');
+      expect(dto).not.toHaveProperty('stock');
+      expect(dto).not.toHaveProperty('isVisible');
+
+      const result = await controller.create(dto);
+
+      expect(prisma.product.create).toHaveBeenCalledWith({
+        data: {
+          name: 'Trà vải hoa hồng',
+          category: Category.TEA,
+          basePrice: 45000,
+          imageUrl: 'https://images.unsplash.com/photo-tra-vai?w=500',
+          stock: 999,
+          isVisible: true,
+        },
+        select: {
+          id: true,
+          name: true,
+          category: true,
+          basePrice: true,
+          imageUrl: true,
+          stock: true,
+          isVisible: true,
+        },
+      });
+      expect(result).toEqual({
+        id: generatedId,
+        name: 'Trà vải hoa hồng',
+        category: Category.TEA,
+        basePrice: 45000,
+        imageUrl: 'https://images.unsplash.com/photo-tra-vai?w=500',
+        stock: 999,
+        isVisible: true,
+      });
+    });
+
+    it('gán ảnh mặc định DEFAULT_PRODUCT_IMAGE_URL khi imageUrl bỏ trống hoặc chuỗi rỗng', async () => {
+      prisma.product.create.mockImplementation(
+        ({ data }: { data: Record<string, unknown> }) =>
+          Promise.resolve({
+            id: '77777777-0000-0000-0000-000000000002',
+            ...data,
+          }),
+      );
+
+      for (const emptyImage of [undefined, '', '   ']) {
+        const dto = (await pipe.transform(
+          {
+            name: 'Món thử không ảnh',
+            category: Category.COFFEE,
+            basePrice: 30000,
+            ...(emptyImage !== undefined ? { imageUrl: emptyImage } : {}),
+          },
+          { type: 'body', metatype: CreateProductDto },
+        )) as CreateProductDto;
+
+        const result = await controller.create(dto);
+        expect(result.imageUrl).toBe(DEFAULT_PRODUCT_IMAGE_URL);
+      }
+    });
+
+    it('ném 400 với mảng message tiếng Anh khi dữ liệu không hợp lệ (tên rỗng/quá dài, category sai, giá ngoài 1.000..1.000.000 hoặc không nguyên, link ảnh không phải http/https hoặc quá 500 ký tự)', async () => {
+      const validBase = {
+        name: 'Cà phê muối',
+        category: Category.COFFEE,
+        basePrice: 35000,
+      };
+
+      const invalidPayloads = [
+        { ...validBase, name: '' },
+        { ...validBase, name: '   ' },
+        { ...validBase, name: 'a'.repeat(101) },
+        { ...validBase, category: 'SMOOTHIE' },
+        { ...validBase, basePrice: 999 },
+        { ...validBase, basePrice: 1000001 },
+        { ...validBase, basePrice: 29500.5 },
+        { ...validBase, basePrice: '35000' },
+        { ...validBase, imageUrl: 'ftp://example.com/img.jpg' },
+        { ...validBase, imageUrl: 'not-a-url' },
+        {
+          ...validBase,
+          imageUrl: 'https://example.com/' + 'a'.repeat(490),
+        },
+      ];
+
+      for (const payload of invalidPayloads) {
+        try {
+          await pipe.transform(payload, {
+            type: 'body',
+            metatype: CreateProductDto,
+          });
+          fail(
+            `Expected ValidationPipe to reject payload: ${JSON.stringify(payload)}`,
+          );
+        } catch (err) {
+          expect(err).toBeInstanceOf(BadRequestException);
+          const response = (err as BadRequestException).getResponse() as {
+            message: unknown;
+          };
+          expect(Array.isArray(response.message)).toBe(true);
+        }
+      }
+    });
+  });
+
+  describe('update (PATCH /products/:id)', () => {
+    const pipe = new ValidationPipe({
+      whitelist: true,
+      transform: true,
+      forbidNonWhitelisted: false,
+    });
+    const productId = '11111111-0000-0000-0000-000000000001';
+
+    it('cập nhật ẩn/hiện bằng isVisible và sửa được cả món đang ẩn, không cho sửa stock qua endpoint này', async () => {
+      prisma.product.findUnique.mockResolvedValue({ id: productId });
+      prisma.product.update.mockResolvedValueOnce({
+        ...mockCoffee,
+        isVisible: false,
+      });
+
+      const hideDto = (await pipe.transform(
+        { isVisible: false, stock: 0 },
+        { type: 'body', metatype: UpdateProductDto },
+      )) as UpdateProductDto;
+
+      expect(hideDto).toEqual({ isVisible: false });
+      expect(hideDto).not.toHaveProperty('stock');
+
+      const hiddenResult = await controller.update(productId, hideDto);
+
+      expect(prisma.product.update).toHaveBeenCalledWith({
+        where: { id: productId },
+        data: { isVisible: false },
+        select: {
+          id: true,
+          name: true,
+          category: true,
+          basePrice: true,
+          imageUrl: true,
+          stock: true,
+          isVisible: true,
+        },
+      });
+      expect(hiddenResult.isVisible).toBe(false);
+
+      // Món đang ẩn vẫn sửa tên, giá và bật lại isVisible = true được
+      prisma.product.update.mockResolvedValueOnce({
+        ...mockCoffee,
+        name: 'Cà phê sữa đá đặc biệt',
+        basePrice: 32000,
+        isVisible: true,
+      });
+
+      const showAndEditDto = (await pipe.transform(
+        {
+          name: 'Cà phê sữa đá đặc biệt',
+          basePrice: 32000,
+          isVisible: true,
+        },
+        { type: 'body', metatype: UpdateProductDto },
+      )) as UpdateProductDto;
+
+      const updatedResult = await controller.update(productId, showAndEditDto);
+      expect(prisma.product.update).toHaveBeenLastCalledWith({
+        where: { id: productId },
+        data: {
+          name: 'Cà phê sữa đá đặc biệt',
+          basePrice: 32000,
+          isVisible: true,
+        },
+        select: {
+          id: true,
+          name: true,
+          category: true,
+          basePrice: true,
+          imageUrl: true,
+          stock: true,
+          isVisible: true,
+        },
+      });
+      expect(updatedResult.isVisible).toBe(true);
+      expect(updatedResult.basePrice).toBe(32000);
+    });
+
+    it('gán lại ảnh mặc định khi truyền imageUrl rỗng trong PATCH', async () => {
+      prisma.product.findUnique.mockResolvedValue({ id: productId });
+      prisma.product.update.mockResolvedValue({
+        ...mockCoffee,
+        imageUrl: DEFAULT_PRODUCT_IMAGE_URL,
+        isVisible: true,
+      });
+
+      const dto = (await pipe.transform(
+        { imageUrl: '' },
+        { type: 'body', metatype: UpdateProductDto },
+      )) as UpdateProductDto;
+
+      const result = await controller.update(productId, dto);
+
+      expect(prisma.product.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: productId },
+          data: { imageUrl: DEFAULT_PRODUCT_IMAGE_URL },
+        }),
+      );
+      expect(result.imageUrl).toBe(DEFAULT_PRODUCT_IMAGE_URL);
+    });
+
+    it('ném 400 BadRequestException khi PATCH gửi body rỗng hoặc chỉ gửi trường không hợp lệ (như stock)', async () => {
+      const emptyDto = (await pipe.transform(
+        { stock: 123 },
+        { type: 'body', metatype: UpdateProductDto },
+      )) as UpdateProductDto;
+
+      await expect(controller.update(productId, emptyDto)).rejects.toThrow(
+        BadRequestException,
+      );
+      expect(prisma.product.findUnique).not.toHaveBeenCalled();
+      expect(prisma.product.update).not.toHaveBeenCalled();
+    });
+
+    it('ném 400 khi trường cập nhật sai ràng buộc và ném 404 "Không tìm thấy sản phẩm" khi id không tồn tại', async () => {
+      await expect(
+        pipe.transform(
+          { basePrice: 500 },
+          { type: 'body', metatype: UpdateProductDto },
+        ),
+      ).rejects.toThrow(BadRequestException);
+
+      await expect(
+        controller.update('invalid-uuid', { name: 'Món mới' }),
+      ).rejects.toThrow(new NotFoundException(PRODUCT_NOT_FOUND_MESSAGE));
+
+      prisma.product.findUnique.mockResolvedValue(null);
+      await expect(
+        controller.update('99999999-0000-0000-0000-000000000099', {
+          name: 'Món mới',
+        }),
+      ).rejects.toThrow(new NotFoundException(PRODUCT_NOT_FOUND_MESSAGE));
+    });
+  });
+
+  describe('Guards trên GET /products/manage, PATCH /products/:id/availability, POST /products và PATCH /products/:id', () => {
     let jwtService: { verifyAsync: jest.Mock };
     let jwtGuard: JwtAuthGuard;
     let rolesGuard: RolesGuard;
 
     const createContext = (
-      methodName: 'findAllForManage' | 'updateAvailability',
+      methodName:
+        | 'findAllForManage'
+        | 'updateAvailability'
+        | 'create'
+        | 'update',
       authHeader?: string,
     ): ExecutionContext => {
       const req: Record<string, unknown> = {
@@ -540,6 +823,72 @@ describe('ProductsService', () => {
         );
         expect(await jwtGuard.canActivate(patchCtx)).toBe(true);
         expect(await rolesGuard.canActivate(patchCtx)).toBe(true);
+      }
+    });
+
+    it('POST /products và PATCH /products/:id: chưa đăng nhập 401, STAFF 403, CUSTOMER 403, ADMIN bị khóa 403, chỉ ADMIN đang hoạt động qua được', async () => {
+      for (const method of ['create', 'update'] as const) {
+        // 1. Chưa đăng nhập -> 401
+        const unauthCtx = createContext(method, undefined);
+        await expect(jwtGuard.canActivate(unauthCtx)).rejects.toThrow(
+          new UnauthorizedException(
+            'Chưa đăng nhập hoặc phiên đăng nhập đã hết hạn',
+          ),
+        );
+
+        // 2. CUSTOMER -> 403 sai vai trò
+        jwtService.verifyAsync.mockResolvedValueOnce({
+          sub: '44444444-0000-0000-0000-000000000001',
+          email: 'khach@example.com',
+          role: Role.CUSTOMER,
+        });
+        const customerCtx = createContext(method, 'Bearer customer-token');
+        await jwtGuard.canActivate(customerCtx);
+        await expect(rolesGuard.canActivate(customerCtx)).rejects.toThrow(
+          new ForbiddenException('Bạn không có quyền thực hiện thao tác này'),
+        );
+
+        // 3. STAFF -> 403 sai vai trò
+        jwtService.verifyAsync.mockResolvedValueOnce({
+          sub: '55555555-0000-0000-0000-000000000001',
+          email: 'nhanvien1@example.com',
+          role: Role.STAFF,
+        });
+        const staffCtx = createContext(method, 'Bearer staff-token');
+        await jwtGuard.canActivate(staffCtx);
+        await expect(rolesGuard.canActivate(staffCtx)).rejects.toThrow(
+          new ForbiddenException('Bạn không có quyền thực hiện thao tác này'),
+        );
+
+        // 4. ADMIN bị khóa -> 403 tài khoản bị khóa
+        jwtService.verifyAsync.mockResolvedValueOnce({
+          sub: '66666666-0000-0000-0000-000000000001',
+          email: 'quanly@example.com',
+          role: Role.ADMIN,
+        });
+        prisma.user.findUnique.mockResolvedValueOnce({ isActive: false });
+        const lockedAdminCtx = createContext(
+          method,
+          'Bearer locked-admin-token',
+        );
+        await jwtGuard.canActivate(lockedAdminCtx);
+        await expect(rolesGuard.canActivate(lockedAdminCtx)).rejects.toThrow(
+          new ForbiddenException('Tài khoản đã bị khóa'),
+        );
+
+        // 5. ADMIN đang hoạt động -> qua được
+        jwtService.verifyAsync.mockResolvedValueOnce({
+          sub: '66666666-0000-0000-0000-000000000001',
+          email: 'quanly@example.com',
+          role: Role.ADMIN,
+        });
+        prisma.user.findUnique.mockResolvedValueOnce({ isActive: true });
+        const activeAdminCtx = createContext(
+          method,
+          'Bearer active-admin-token',
+        );
+        expect(await jwtGuard.canActivate(activeAdminCtx)).toBe(true);
+        expect(await rolesGuard.canActivate(activeAdminCtx)).toBe(true);
       }
     });
   });

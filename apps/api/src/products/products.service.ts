@@ -5,8 +5,11 @@ import {
 } from '@nestjs/common';
 import { Category, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { CreateProductDto } from './dto/create-product.dto';
+import { UpdateProductDto } from './dto/update-product.dto';
 import {
   ALLOWED_CATEGORIES,
+  DEFAULT_PRODUCT_IMAGE_URL,
   DRINK_ICE_LEVELS,
   DRINK_SIZES,
   DRINK_SUGAR_LEVELS,
@@ -113,6 +116,84 @@ export class ProductsService {
   async findAllForManage() {
     return this.prisma.product.findMany({
       orderBy: [{ category: 'asc' }, { name: 'asc' }],
+      select: {
+        id: true,
+        name: true,
+        category: true,
+        basePrice: true,
+        imageUrl: true,
+        stock: true,
+        isVisible: true,
+      },
+    });
+  }
+
+  async create(dto: CreateProductDto) {
+    const trimmedImageUrl = dto.imageUrl?.trim();
+    const imageUrl = trimmedImageUrl || DEFAULT_PRODUCT_IMAGE_URL;
+
+    return this.prisma.product.create({
+      data: {
+        name: dto.name.trim(),
+        category: dto.category,
+        basePrice: dto.basePrice,
+        imageUrl,
+        stock: 999,
+        isVisible: true,
+      },
+      select: {
+        id: true,
+        name: true,
+        category: true,
+        basePrice: true,
+        imageUrl: true,
+        stock: true,
+        isVisible: true,
+      },
+    });
+  }
+
+  async update(id: string, dto: UpdateProductDto) {
+    const data: Prisma.ProductUpdateInput = {};
+
+    if (dto.name !== undefined) {
+      data.name = dto.name.trim();
+    }
+    if (dto.category !== undefined) {
+      data.category = dto.category;
+    }
+    if (dto.basePrice !== undefined) {
+      data.basePrice = dto.basePrice;
+    }
+    if (dto.imageUrl !== undefined) {
+      data.imageUrl = dto.imageUrl.trim() || DEFAULT_PRODUCT_IMAGE_URL;
+    }
+    if (dto.isVisible !== undefined) {
+      data.isVisible = dto.isVisible;
+    }
+
+    if (Object.keys(data).length === 0) {
+      throw new BadRequestException([
+        'at least one field must be provided for update',
+      ]);
+    }
+
+    if (!UUID_REGEX.test(id)) {
+      throw new NotFoundException(PRODUCT_NOT_FOUND_MESSAGE);
+    }
+
+    const existing = await this.prisma.product.findUnique({
+      where: { id },
+      select: { id: true },
+    });
+
+    if (!existing) {
+      throw new NotFoundException(PRODUCT_NOT_FOUND_MESSAGE);
+    }
+
+    return this.prisma.product.update({
+      where: { id },
+      data,
       select: {
         id: true,
         name: true,
