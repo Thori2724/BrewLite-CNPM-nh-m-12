@@ -1,7 +1,7 @@
 1. **Bối cảnh dự án**  
 - **Vấn đề nghiệp vụ**
 
-Hiện trạng tại các cửa hàng truyền thống: Trong các giờ cao điểm (điển hình như giờ nghỉ trưa), khách hàng thường phải xếp hàng dài tại quầy để xem menu, chờ để được order và thanh toán. Việc này kéo dài gây ra tình trạng mất thời gian chờ đợi và làm giảm trải nghiệm của khách hàng.  
+Hiện trạng tại các cửa hàng truyền thống: Trong các giờ cao điểm (điển hình như giờ nghỉ trưa), khách hàng thường phải xếp hàng dài tại quầy để xem menu, chờ để được order và thanh toán. Việc này kéo dài gây ra tình trạng mất thời gian chờ đợi và làm giảm đi trải nghiệm của khách hàng.  
 Hạn chế của quy trình truyền thống: Việc nhân viên nhận order bằng cách nhập liệu thủ công dễ dẫn đến sai sót, nhầm lẫn thức uống hoặc đưa nhầm order của khách này qua khách khác. Điều này gây ra thất thoát nguyên liệu và xung đột giữa khách hàng và nhân viên.  
 Vấn đề về phương thức thanh toán: Việc sử dụng tiền mặt đòi hỏi nhân viên phải thối tiền lẻ, dễ xảy ra nhầm lẫn trong quá trình kiểm đếm doanh thu cuối ca hoặc cuối ngày, mất thời gian đối soát và tiềm ẩn rủi ro về an ninh.
 
