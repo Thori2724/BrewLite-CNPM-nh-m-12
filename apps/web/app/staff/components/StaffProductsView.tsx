@@ -15,6 +15,7 @@ import {
   notifyAccountLocked,
 } from '../../../utils/auth';
 import ConfirmDialog from '../../components/ConfirmDialog';
+import StaffProductFormModal from './StaffProductFormModal';
 import {
   fetchStaffProducts,
   formatStaffProductVnd,
@@ -67,6 +68,10 @@ export default function StaffProductsView({
     'availability' | 'hide' | 'show' | null
   >(null);
   const [hideTargetProduct, setHideTargetProduct] = useState<ProductManage | null>(null);
+  const [formState, setFormState] = useState<{
+    mode: 'create' | 'edit';
+    product: ProductManage | null;
+  } | null>(null);
   const [actionFeedback, setActionFeedback] = useState<ActionFeedback | null>(null);
 
   const requestSeqRef = useRef<number>(0);
@@ -311,6 +316,51 @@ export default function StaffProductsView({
     }
   };
 
+  const handleOpenCreateForm = () => {
+    if (onOpenCreateForm) {
+      onOpenCreateForm();
+      return;
+    }
+    if (!isAdmin || actionInFlightRef.current || updatingProductId !== null) return;
+    setActionFeedback(null);
+    setFormState({ mode: 'create', product: null });
+  };
+
+  const handleOpenEditForm = (product: ProductManage) => {
+    if (onOpenEditForm) {
+      onOpenEditForm(product);
+      return;
+    }
+    if (!isAdmin || actionInFlightRef.current || updatingProductId !== null) return;
+    setActionFeedback(null);
+    setFormState({ mode: 'edit', product });
+  };
+
+  const handleCloseForm = () => {
+    setFormState(null);
+  };
+
+  const handleFormSaved = async (savedProduct: ProductManage, mode: 'create' | 'edit') => {
+    setFormState(null);
+    setActionFeedback({
+      type: 'success',
+      message:
+        mode === 'create'
+          ? `Đã thêm món "${savedProduct.name}" thành công.`
+          : `Đã cập nhật món "${savedProduct.name}" thành công.`,
+    });
+    await runReloadProducts({ showFullLoading: false, keepFeedback: true });
+  };
+
+  const handleFormAuthFailure = useCallback((parsed: ParsedStaffProductError): boolean => {
+    if (handleAuthFailureRef.current(parsed)) {
+      setFormState(null);
+      setError(parsed.message);
+      return true;
+    }
+    return false;
+  }, []);
+
   return (
     <section aria-labelledby="staff-products-heading" className="space-y-6">
       {/* Đầu trang & nút thao tác chung */}
@@ -341,7 +391,7 @@ export default function StaffProductsView({
             <button
               type="button"
               disabled={loading || isReloading || updatingProductId !== null}
-              onClick={() => onOpenCreateForm?.()}
+              onClick={handleOpenCreateForm}
               className="min-h-10 inline-flex items-center gap-1.5 rounded-control bg-kombu hover:bg-noir px-4 py-2 text-sm font-semibold text-bone transition shadow-soft disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
             >
               Thêm món
@@ -566,7 +616,7 @@ export default function StaffProductsView({
                             <button
                               type="button"
                               disabled={isAnyUpdating}
-                              onClick={() => onOpenEditForm?.(product)}
+                              onClick={() => handleOpenEditForm(product)}
                               className="px-3 py-1.5 rounded-control border border-tan bg-bone/70 hover:bg-tan/50 text-xs font-semibold text-noir transition disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
                             >
                               Sửa
@@ -627,8 +677,20 @@ export default function StaffProductsView({
         }}
       />
 
-      {/* Chỗ gắn Form Thêm/Sửa món (Dòng 22) */}
-      {formSlot ?? null}
+      {/* Hộp thoại Form Thêm/Sửa món (Dòng 22) */}
+      {formSlot ?? (
+        <StaffProductFormModal
+          isOpen={Boolean(isAdmin && formState)}
+          mode={formState?.mode ?? 'create'}
+          initialProduct={formState?.product ?? null}
+          usingMockFallback={usingShellMockFallback}
+          onClose={handleCloseForm}
+          onSaved={(saved, mode) => {
+            void handleFormSaved(saved, mode);
+          }}
+          onAuthFailure={handleFormAuthFailure}
+        />
+      )}
     </section>
   );
 }

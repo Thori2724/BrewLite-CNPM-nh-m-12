@@ -1,4 +1,9 @@
-import { ProductManage } from '../../../services/api';
+import {
+  CreateProductDto,
+  ProductCategory,
+  ProductManage,
+  UpdateProductDto,
+} from '../../../services/api';
 import { ApiHttpError } from '../../../services/auth-contract';
 
 /**
@@ -169,6 +174,148 @@ export async function updateMockStaffProductVisibility(
   }
 
   target.isVisible = isVisible;
+  return { ...target };
+}
+
+const VALID_PRODUCT_CATEGORIES: ProductCategory[] = ['TEA', 'COFFEE', 'MILK_TEA', 'CAKE'];
+
+function validateMockImageUrl(imageUrl: string): string | null {
+  const trimmed = imageUrl.trim();
+  if (!trimmed) return null;
+  if (!/^https?:\/\//i.test(trimmed)) {
+    return 'imageUrl must start with http:// or https://';
+  }
+  if (trimmed.length > 500) {
+    return 'imageUrl must be shorter than or equal to 500 characters';
+  }
+  return null;
+}
+
+function generateMockStaffProductId(): string {
+  if (typeof globalThis !== 'undefined' && globalThis.crypto?.randomUUID) {
+    return globalThis.crypto.randomUUID();
+  }
+  return `11111111-0000-4000-8000-${String(Date.now()).slice(-12).padStart(12, '0')}`;
+}
+
+export async function createMockStaffProduct(
+  dto: CreateProductDto
+): Promise<ProductManage> {
+  await new Promise((resolve) => setTimeout(resolve, 30));
+
+  const errors: string[] = [];
+  const trimmedName = (dto.name || '').trim();
+  if (trimmedName.length < 1 || trimmedName.length > 100) {
+    errors.push('name must be between 1 and 100 characters');
+  }
+  if (!VALID_PRODUCT_CATEGORIES.includes(dto.category)) {
+    errors.push('category must be one of TEA, COFFEE, MILK_TEA, CAKE');
+  }
+  if (
+    typeof dto.basePrice !== 'number' ||
+    !Number.isInteger(dto.basePrice) ||
+    dto.basePrice < 1000 ||
+    dto.basePrice > 1000000
+  ) {
+    errors.push('basePrice must be an integer between 1000 and 1000000');
+  }
+  if (dto.imageUrl !== undefined) {
+    const imgErr = validateMockImageUrl(dto.imageUrl);
+    if (imgErr) errors.push(imgErr);
+  }
+
+  if (errors.length > 0) {
+    throw new ApiHttpError({
+      statusCode: 400,
+      message: errors,
+      error: 'Bad Request',
+    });
+  }
+
+  const trimmedImage = dto.imageUrl?.trim();
+  const created: ProductManage = {
+    id: generateMockStaffProductId(),
+    name: trimmedName,
+    category: dto.category,
+    basePrice: dto.basePrice,
+    imageUrl: trimmedImage || STAFF_MOCK_DEFAULT_PRODUCT_IMAGE,
+    stock: 999,
+    isVisible: true,
+  };
+
+  mockStaffProductsStore.push(created);
+  return { ...created };
+}
+
+export async function updateMockStaffProduct(
+  productId: string,
+  dto: UpdateProductDto
+): Promise<ProductManage> {
+  await new Promise((resolve) => setTimeout(resolve, 30));
+
+  const target = mockStaffProductsStore.find((item) => item.id === productId);
+  if (!target) {
+    throw new ApiHttpError({
+      statusCode: 404,
+      message: 'Không tìm thấy sản phẩm',
+      error: 'Not Found',
+    });
+  }
+
+  const errors: string[] = [];
+  const hasAnyField =
+    dto.name !== undefined ||
+    dto.category !== undefined ||
+    dto.basePrice !== undefined ||
+    dto.imageUrl !== undefined ||
+    dto.isVisible !== undefined;
+
+  if (!hasAnyField) {
+    errors.push('At least one field must be provided');
+  }
+  if (dto.name !== undefined) {
+    const trimmedName = dto.name.trim();
+    if (trimmedName.length < 1 || trimmedName.length > 100) {
+      errors.push('name must be between 1 and 100 characters');
+    }
+  }
+  if (dto.category !== undefined && !VALID_PRODUCT_CATEGORIES.includes(dto.category)) {
+    errors.push('category must be one of TEA, COFFEE, MILK_TEA, CAKE');
+  }
+  if (
+    dto.basePrice !== undefined &&
+    (typeof dto.basePrice !== 'number' ||
+      !Number.isInteger(dto.basePrice) ||
+      dto.basePrice < 1000 ||
+      dto.basePrice > 1000000)
+  ) {
+    errors.push('basePrice must be an integer between 1000 and 1000000');
+  }
+  if (dto.imageUrl !== undefined) {
+    const imgErr = validateMockImageUrl(dto.imageUrl);
+    if (imgErr) errors.push(imgErr);
+  }
+  if (dto.isVisible !== undefined && typeof dto.isVisible !== 'boolean') {
+    errors.push('isVisible must be a boolean value');
+  }
+
+  if (errors.length > 0) {
+    throw new ApiHttpError({
+      statusCode: 400,
+      message: errors,
+      error: 'Bad Request',
+    });
+  }
+
+  if (dto.name !== undefined) target.name = dto.name.trim();
+  if (dto.category !== undefined) target.category = dto.category;
+  if (dto.basePrice !== undefined) target.basePrice = dto.basePrice;
+  if (dto.imageUrl !== undefined) {
+    const trimmedImage = dto.imageUrl.trim();
+    target.imageUrl = trimmedImage || STAFF_MOCK_DEFAULT_PRODUCT_IMAGE;
+  }
+  if (dto.isVisible !== undefined) target.isVisible = dto.isVisible;
+
   return { ...target };
 }
 
