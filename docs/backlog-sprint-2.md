@@ -1,6 +1,6 @@
 # Backlog & Kế hoạch Thực hiện Sprint 2 – Hệ thống BrewLite
 
-> **Tài liệu nguồn:** `
+> **Tài liệu nguồn:** `phan-cong-ver2.xlsx`, Hợp đồng API (Bản 2), AGENTS (Bản 2)
 > **Chủ sở hữu:** Dev&Ops  
 > **Phiên bản:** 2.0  
 > **Ngày cập nhật:** 15/11/2026  
