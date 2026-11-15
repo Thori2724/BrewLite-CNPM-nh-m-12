@@ -8,7 +8,6 @@ import { AUTH_STORAGE_KEY, saveAuthSession } from '../../../utils/auth';
 import { CART_STORAGE_KEY } from '../../../utils/cart';
 import AppShell from '../../components/AppShell';
 import StaffLayout from '../layout';
-import StaffOrdersPage from '../page';
 import StaffProductsPage from '../products/page';
 import StaffEmployeesPage from '../employees/page';
 
@@ -40,7 +39,9 @@ function setAuthSession(role: UserRole, displayName: string) {
   });
 }
 
-function renderStaffLayout(child: React.ReactNode = <StaffOrdersPage />) {
+function renderStaffLayout(
+  child: React.ReactNode = <div data-testid="staff-shell-placeholder">Nội dung trang nhân viên</div>
+) {
   return render(
     <AuthProvider>
       <StaffLayout>{child}</StaffLayout>
@@ -78,7 +79,7 @@ describe('Dòng 19 - Khung khu /staff', () => {
 
   it('1. Khi đăng nhập vai trò STAFF: hiện Đơn hàng, Món, ẨN Nhân viên; hiện tên + "Nhân viên" + nút Đăng xuất', async () => {
     setAuthSession('STAFF', 'Nhân viên 1');
-    renderStaffLayout(<StaffOrdersPage />);
+    renderStaffLayout();
 
     expect(await screen.findByTestId('staff-user-name')).toHaveTextContent('Nhân viên 1');
     expect(screen.getByTestId('staff-user-role')).toHaveTextContent('Nhân viên');
@@ -143,7 +144,7 @@ describe('Dòng 19 - Khung khu /staff', () => {
     setAuthSession('STAFF', 'Nhân viên 1');
     localStorage.setItem(CART_STORAGE_KEY, cartData);
 
-    renderStaffLayout(<StaffOrdersPage />);
+    renderStaffLayout();
 
     await user.click(await screen.findByRole('button', { name: 'Đăng xuất' }));
 
