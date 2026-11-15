@@ -57,10 +57,14 @@ $ npm run test:e2e
 $ npm run test:cov
 ```
 
-## Endpoints Sản phẩm (Sprint 1 & Việc 5)
+## Endpoints Sản phẩm (Sprint 1, Việc 5 & Việc 6)
 
 - `GET /products`: Lấy danh sách món đang hiển thị (`isVisible = true`), sắp xếp theo `category` rồi `name`. Hỗ trợ query tùy chọn `category` (`TEA`, `COFFEE`, `MILK_TEA`, `CAKE`) và `q` (tìm theo tên không phân biệt hoa/thường, có dấu).
 - `GET /products/:id`: Xem chi tiết một sản phẩm theo UUID kèm cấu hình `sizes`, `sugarLevels`, `iceLevels` và `toppings` (lấy các topping `isVisible = true` từ bảng `Topping`, sắp xếp theo `id` tăng dần; riêng món `CAKE` trả 4 mảng rỗng `[]`).
+- `GET /products/manage` (cần Bearer JWT `STAFF` hoặc `ADMIN`): Trả toàn bộ sản phẩm kể cả món đang ẩn (`isVisible = false`), sắp xếp theo `category` rồi `name`.
+- `PATCH /products/:id/availability` (cần Bearer JWT `STAFF` hoặc `ADMIN`): Bật/tắt trạng thái đang bán (`isAvailable: true` -> `stock = 999`) hoặc tạm hết (`isAvailable: false` -> `stock = 0`).
+- `POST /products` (chỉ `ADMIN`): Thêm món mới (`name` 1–100 ký tự, `category`, `basePrice` nguyên 1.000–1.000.000, `imageUrl` tùy chọn `http://`/`https://` tối đa 500 ký tự; bỏ trống hoặc rỗng sẽ dùng ảnh mặc định `DEFAULT_PRODUCT_IMAGE_URL`). Tự sinh UUID, mặc định `stock = 999`, `isVisible = true`.
+- `PATCH /products/:id` (chỉ `ADMIN`): Cập nhật thông tin hoặc ẩn/hiện món (`name`, `category`, `basePrice`, `imageUrl`, `isVisible`; cần ít nhất 1 trường, không sửa `stock` qua endpoint này).
 - **Dữ liệu mẫu (Seed):** Nạp 12 sản phẩm (`Product`) và 4 topping (`Topping`: Trân châu đen, Thạch dừa, Pudding, Kem cheese) bằng `upsert` theo UUID cố định. Chạy lệnh seed từ thư mục `apps/api`: `npm.cmd run seed`.
 
 ## Logic nghiệp vụ Đơn hàng (`src/orders`, chưa mở endpoint)

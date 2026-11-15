@@ -3,10 +3,40 @@ import * as bcrypt from 'bcrypt';
 
 const prisma = new PrismaClient();
 
-const DEMO_USER_ID = '44444444-0000-0000-0000-000000000001';
-const DEMO_USER_EMAIL = 'khach@example.com';
-const DEMO_USER_DISPLAY_NAME = 'Khách demo';
 const BCRYPT_SALT_ROUNDS = 10;
+
+const demoUsers = [
+  {
+    id: '44444444-0000-0000-0000-000000000001',
+    email: 'khach@example.com',
+    displayName: 'Khách demo',
+    role: Role.CUSTOMER,
+  },
+  {
+    id: '55555555-0000-0000-0000-000000000001',
+    email: 'nhanvien1@example.com',
+    displayName: 'Nhân viên 1',
+    role: Role.STAFF,
+  },
+  {
+    id: '55555555-0000-0000-0000-000000000002',
+    email: 'nhanvien2@example.com',
+    displayName: 'Nhân viên 2',
+    role: Role.STAFF,
+  },
+  {
+    id: '55555555-0000-0000-0000-000000000003',
+    email: 'nhanvien3@example.com',
+    displayName: 'Nhân viên 3',
+    role: Role.STAFF,
+  },
+  {
+    id: '66666666-0000-0000-0000-000000000001',
+    email: 'quanly@example.com',
+    displayName: 'Quản lý',
+    role: Role.ADMIN,
+  },
+];
 
 const products = [
   // COFFEE
@@ -155,7 +185,7 @@ async function main() {
   for (const product of products) {
     await prisma.product.upsert({
       where: { id: product.id },
-      update: product,
+      update: {},
       create: product,
     });
   }
@@ -181,23 +211,25 @@ async function main() {
     );
   } else {
     const passwordHash = await bcrypt.hash(demoPassword, BCRYPT_SALT_ROUNDS);
-    await prisma.user.upsert({
-      where: { id: DEMO_USER_ID },
-      update: {
-        displayName: DEMO_USER_DISPLAY_NAME,
-        role: Role.CUSTOMER,
-        passwordHash,
-      },
-      create: {
-        id: DEMO_USER_ID,
-        email: DEMO_USER_EMAIL,
-        displayName: DEMO_USER_DISPLAY_NAME,
-        role: Role.CUSTOMER,
-        passwordHash,
-      },
-    });
+    for (const demoUser of demoUsers) {
+      await prisma.user.upsert({
+        where: { id: demoUser.id },
+        update: {
+          displayName: demoUser.displayName,
+          role: demoUser.role,
+          passwordHash,
+        },
+        create: {
+          id: demoUser.id,
+          email: demoUser.email,
+          displayName: demoUser.displayName,
+          role: demoUser.role,
+          passwordHash,
+        },
+      });
+    }
     console.log(
-      `Đã nạp thành công tài khoản demo (${DEMO_USER_EMAIL}) vào bảng User.`,
+      `Đã nạp thành công ${demoUsers.length} tài khoản demo vào bảng User.`,
     );
   }
 }
