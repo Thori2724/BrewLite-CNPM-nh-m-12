@@ -1,10 +1,10 @@
 'use client';
 
-import React, { Suspense, useState } from 'react';
+import React, { createContext, Suspense, useContext, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from '../../../context/AuthContext';
-import { ROLE_LABELS } from '../../../services/auth-contract';
+import { ROLE_LABELS, UserRole } from '../../../services/auth-contract';
 import { CoffeeIcon } from '../../components/Icons';
 import {
   getMockStaffShellUser,
@@ -17,6 +17,17 @@ interface StaffNavItem {
   href: string;
   label: string;
   adminOnly?: boolean;
+}
+
+export interface StaffShellContextValue {
+  role: UserRole | null;
+  usingMockFallback: boolean;
+}
+
+const StaffShellContext = createContext<StaffShellContextValue | null>(null);
+
+export function useStaffShellContext(): StaffShellContextValue | null {
+  return useContext(StaffShellContext);
 }
 
 const STAFF_NAV_ITEMS: StaffNavItem[] = [
@@ -197,7 +208,16 @@ function StaffShellInner({ children }: { children: React.ReactNode }) {
         </header>
 
         <main className="flex-1 p-8">
-          <div className="max-w-7xl mx-auto">{children}</div>
+          <div className="max-w-7xl mx-auto">
+            <StaffShellContext.Provider
+              value={{
+                role: activeUser?.role ?? null,
+                usingMockFallback,
+              }}
+            >
+              {children}
+            </StaffShellContext.Provider>
+          </div>
         </main>
       </div>
     </div>
