@@ -328,9 +328,16 @@ function CheckoutContent() {
           return;
         }
         if (err.statusCode === 409) {
-          // Lỗi hết hàng 409
-          setOutOfStockDetails(err.details || []);
-          setCreateOrderError(err.message || ORDER_ERROR_MESSAGES.OUT_OF_STOCK);
+          // Lỗi món tạm hết 409 (chỉ nêu tên món từ message và details[], không hiện số lượng tồn kho)
+          const details = err.details || [];
+          const outOfStockNames = details.map((d) => d.name).filter(Boolean);
+          setOutOfStockDetails(details);
+          setCreateOrderError(
+            err.message ||
+              (outOfStockNames.length > 0
+                ? `Món hiện đã tạm hết: ${outOfStockNames.join(', ')}`
+                : ORDER_ERROR_MESSAGES.OUT_OF_STOCK)
+          );
         } else if (err.statusCode === 404) {
           setIsCreateOrderNotFoundError(true);
           setCreateOrderError(err.message || 'Không tìm thấy sản phẩm hoặc topping trong giỏ hàng');
@@ -436,12 +443,10 @@ function CheckoutContent() {
                 )}
                 {outOfStockDetails.length > 0 && (
                   <div>
-                    <p className="text-xs text-noir/80 mb-1">Món hiện không đủ tồn kho:</p>
+                    <p className="text-xs text-noir/80 mb-1">Món hiện đã tạm hết:</p>
                     <ul className="list-disc list-inside text-xs font-semibold text-noir space-y-0.5">
                       {outOfStockDetails.map((item, idx) => (
-                        <li key={idx}>
-                          {item.name}: còn {item.available ?? 0}
-                        </li>
+                        <li key={item.productId || idx}>{item.name} — Tạm hết</li>
                       ))}
                     </ul>
                     <div className="mt-3">
@@ -665,13 +670,13 @@ function CheckoutContent() {
                         {matchedOutOfStock && (
                           <div className="mt-1.5 flex flex-wrap items-center gap-2">
                             <span className="inline-block px-2 py-0.5 rounded-full bg-error/20 text-error font-semibold text-[11px]">
-                              Thiếu hàng (còn {matchedOutOfStock.available ?? 0})
+                              Tạm hết
                             </span>
                             <Link
                               href="/cart"
                               className="text-[11px] font-semibold text-error underline hover:opacity-80"
                             >
-                              Chỉnh số lượng / Xóa
+                              Xóa khỏi giỏ hàng
                             </Link>
                           </div>
                         )}

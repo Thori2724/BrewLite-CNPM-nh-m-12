@@ -105,8 +105,8 @@ export const MOCK_SEED_MANAGE_PRODUCTS: ProductManage[] = [
     category: 'MILK_TEA',
     basePrice: 42000,
     imageUrl: 'https://images.unsplash.com/photo-1515823064-d6e0c04616a7?w=500',
-    stock: 0, // Tạm hết và đang ẩn
-    isVisible: false,
+    stock: 0, // Tạm hết
+    isVisible: true,
   },
   {
     id: '11111111-0000-0000-0000-000000000012',
@@ -137,6 +137,10 @@ export const MOCK_PRODUCTS: Product[] = MOCK_SEED_MANAGE_PRODUCTS.filter(
 const mockManageProductsDb: ProductManage[] = MOCK_SEED_MANAGE_PRODUCTS.map((item) => ({
   ...item,
 }));
+
+export function findMockProductById(id: string): ProductManage | undefined {
+  return mockManageProductsDb.find((p) => p.id === id);
+}
 
 export function resetMockProductsDatabase(): void {
   mockManageProductsDb.splice(

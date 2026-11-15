@@ -192,16 +192,16 @@ describe('Giao diện và luồng xử lý trang Checkout (/checkout)', () => {
     expect(parsed.idempotencyKey).toBeDefined();
   });
 
-  // 5. Tạo đơn thất bại do hết hàng 409
-  it('5. Hết hàng (409): Hiển thị chi tiết món hết hàng từ details, giữ nguyên giỏ hàng', async () => {
+  // 5. Tạo đơn thất bại do món tạm hết 409
+  it('5. Món tạm hết (409): Hiển thị tên món từ message và details[], không hiện tồn kho, giữ nguyên giỏ hàng và dữ liệu đang nhập', async () => {
     const user = userEvent.setup();
     localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(mockLoggedInUser));
     localStorage.setItem(CART_STORAGE_KEY, JSON.stringify([mockCartItem]));
 
     const outOfStockErr = new ordersService.OrderApiError(
       409,
-      'Một số món trong giỏ hàng hiện đã hết hàng hoặc không đủ số lượng',
-      { details: [{ productId: 'prod-1', name: 'Cà phê muối', available: 0 }] }
+      "Sản phẩm 'Cà phê muối' hiện đã tạm hết",
+      { details: [{ productId: 'prod-1', name: 'Cà phê muối' }] }
     );
     vi.mocked(ordersService.createOrderApi).mockRejectedValueOnce(outOfStockErr);
 
@@ -211,16 +211,31 @@ describe('Giao diện và luồng xử lý trang Checkout (/checkout)', () => {
       expect(screen.getByText('Cà phê muối')).toBeInTheDocument();
     });
 
+    // Nhập ghi chú và chọn Mang đi để kiểm tra không mất dữ liệu đang nhập khi 409
+    const takeAwayRadio = screen.getByRole('radio', { name: /mang đi/i });
+    await user.click(takeAwayRadio);
+    const noteInput = screen.getByLabelText(/ghi chú đơn hàng/i);
+    await user.type(noteInput, 'Ít ngọt giúp mình');
+
     const submitBtn = screen.getByRole('button', { name: /đặt đơn hàng/i });
     await user.click(submitBtn);
 
     await waitFor(() => {
-      expect(screen.getByText(/một số món trong giỏ hàng hiện đã hết hàng/i)).toBeInTheDocument();
-      expect(screen.getByText('Cà phê muối: còn 0')).toBeInTheDocument();
-      expect(screen.getByText('Thiếu hàng (còn 0)')).toBeInTheDocument();
-      expect(screen.getByRole('link', { name: /chỉnh số lượng \/ xóa/i })).toBeInTheDocument();
+      expect(screen.getByText("Sản phẩm 'Cà phê muối' hiện đã tạm hết")).toBeInTheDocument();
+      expect(screen.getByText('Cà phê muối — Tạm hết')).toBeInTheDocument();
+      expect(screen.getByText('Tạm hết')).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: /xóa khỏi giỏ hàng/i })).toBeInTheDocument();
       expect(screen.getAllByRole('link', { name: /quay lại giỏ hàng/i }).length).toBeGreaterThanOrEqual(1);
     });
+
+    // Không hiển thị số lượng tồn kho
+    expect(screen.queryByText(/còn 0/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/tồn kho/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/thiếu hàng/i)).not.toBeInTheDocument();
+
+    // Dữ liệu đang nhập vẫn còn nguyên vẹn
+    expect(takeAwayRadio).toBeChecked();
+    expect(noteInput).toHaveValue('Ít ngọt giúp mình');
 
     // Giỏ hàng vẫn còn nguyên vẹn trong storage
     expect(localStorage.getItem(CART_STORAGE_KEY)).not.toBeNull();

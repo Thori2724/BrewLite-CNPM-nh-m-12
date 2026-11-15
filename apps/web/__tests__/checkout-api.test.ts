@@ -65,7 +65,7 @@ describe('Lớp gọi API Đơn hàng và Thanh toán (services/orders.ts)', () 
       expect((order as unknown as Record<string, unknown>).customerPhone).toBeUndefined();
     });
 
-    it('1.2. Hết hàng (409 Conflict): Server trả về lỗi kèm danh sách details món hết hàng', async () => {
+    it('1.2. Hết hàng (409 Conflict): Server trả về lỗi kèm danh sách details món tạm hết', async () => {
       const outOfStockDto: CreateOrderDto = {
         receiveType: 'TAKE_AWAY',
         items: [
@@ -83,7 +83,7 @@ describe('Lớp gọi API Đơn hàng và Thanh toán (services/orders.ts)', () 
         expect(err).toBeInstanceOf(OrderApiError);
         const orderErr = err as OrderApiError;
         expect(orderErr.statusCode).toBe(409);
-        expect(orderErr.message).toBe(ORDER_ERROR_MESSAGES.OUT_OF_STOCK);
+        expect(orderErr.message).toBe("Sản phẩm 'Trà đào cam sả' hiện đã tạm hết");
         expect(orderErr.details).toBeDefined();
         expect(orderErr.details?.[0]).toEqual({ productId: '3', name: 'Trà đào cam sả' });
       }
@@ -103,6 +103,7 @@ describe('Lớp gọi API Đơn hàng và Thanh toán (services/orders.ts)', () 
         expect(err).toBeInstanceOf(OrderApiError);
         const orderErr = err as OrderApiError;
         expect(orderErr.statusCode).toBe(409);
+        expect(orderErr.message).toBe("Sản phẩm 'Trà đào cam sả' hiện đã tạm hết");
         expect(orderErr.details).toBeDefined();
       }
     });

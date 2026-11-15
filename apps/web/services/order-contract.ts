@@ -301,7 +301,7 @@ export const ORDER_ERROR_MESSAGES = {
   CART_EMPTY: 'Giỏ hàng của bạn đang trống. Vui lòng chọn món trước khi đặt đơn.',
   ACCOUNT_NUMBER_REQUIRED: 'Vui lòng nhập số thẻ hoặc số ví.',
   ACCOUNT_NUMBER_INVALID: 'Số tài khoản không hợp lệ (chỉ gồm 8 đến 19 chữ số).',
-  OUT_OF_STOCK: 'Một số món trong giỏ hàng không đủ số lượng trong kho.',
+  OUT_OF_STOCK: 'Một số món trong giỏ hàng hiện đã tạm hết.',
   PAYMENT_REJECTED: 'Giao dịch bị từ chối (mô phỏng).',
   ORDER_NOT_PAYABLE: 'Đơn hàng không ở trạng thái cho phép thanh toán.',
   IDEMPOTENCY_MISMATCH: 'Yêu cầu thanh toán không khớp với dữ liệu giao dịch trước đó. Vui lòng thử lại.',

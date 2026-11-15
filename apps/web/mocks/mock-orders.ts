@@ -15,7 +15,7 @@ import {
 } from '../services/order-contract';
 import { OrderApiError } from '../services/orders';
 import { isMockOrdersActive } from './mock-config';
-import { MOCK_PRODUCTS, MOCK_TOPPINGS } from './mock-products';
+import { findMockProductById, MOCK_TOPPINGS } from './mock-products';
 
 export { isMockOrdersActive };
 
@@ -482,10 +482,11 @@ export async function mockCreateOrder(dto: CreateOrderDto): Promise<OrderRespons
         name: 'Trà đào cam sả',
       },
     ];
-    throw new OrderApiError(409, ORDER_ERROR_MESSAGES.OUT_OF_STOCK, {
+    const message = "Sản phẩm 'Trà đào cam sả' hiện đã tạm hết";
+    throw new OrderApiError(409, message, {
       details,
       outOfStockItems: ['Trà đào cam sả'],
-      errorData: { statusCode: 409, message: ORDER_ERROR_MESSAGES.OUT_OF_STOCK, details },
+      errorData: { statusCode: 409, message, details },
     });
   }
   if (lowerNote.includes('timeout')) {
@@ -505,8 +506,8 @@ export async function mockCreateOrder(dto: CreateOrderDto): Promise<OrderRespons
       });
       continue;
     }
-    const product = MOCK_PRODUCTS.find((p) => p.id === item.productId);
-    if (product && product.stock <= 0) {
+    const product = findMockProductById(item.productId);
+    if (product && product.isVisible && product.stock <= 0) {
       outOfStockDetails.push({
         productId: product.id,
         name: product.name,
@@ -515,12 +516,13 @@ export async function mockCreateOrder(dto: CreateOrderDto): Promise<OrderRespons
   }
 
   if (outOfStockDetails.length > 0) {
-    throw new OrderApiError(409, ORDER_ERROR_MESSAGES.OUT_OF_STOCK, {
+    const message = `Sản phẩm '${outOfStockDetails[0].name}' hiện đã tạm hết`;
+    throw new OrderApiError(409, message, {
       details: outOfStockDetails,
       outOfStockItems: outOfStockDetails.map((d) => d.name),
       errorData: {
         statusCode: 409,
-        message: ORDER_ERROR_MESSAGES.OUT_OF_STOCK,
+        message,
         details: outOfStockDetails,
       },
     });
@@ -529,11 +531,11 @@ export async function mockCreateOrder(dto: CreateOrderDto): Promise<OrderRespons
   // 2. SERVER TỰ TÍNH TIỀN (tuyệt đối không nhận giá từ client)
   let calculatedTotal = 0;
   const processedItems: OrderItemResponse[] = dto.items.map((item, idx) => {
-    const product = MOCK_PRODUCTS.find(
-      (p) =>
-        p.id === item.productId ||
-        (item.productId === '1' && p.id === '11111111-0000-0000-0000-000000000001')
-    );
+    const product =
+      findMockProductById(item.productId) ||
+      (item.productId === '1'
+        ? findMockProductById('11111111-0000-0000-0000-000000000001')
+        : undefined);
     const isCake = product?.category === 'CAKE';
     const basePrice = product ? product.basePrice : 29000;
     let unitPrice = basePrice;

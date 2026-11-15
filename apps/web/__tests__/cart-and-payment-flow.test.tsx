@@ -466,7 +466,7 @@ describe('Dòng 20 — Kiểm thử Giỏ hàng và Luồng Thanh toán (A1–A1
       });
 
       expect(screen.getByText('Hết hàng')).toBeInTheDocument();
-      const disabledBtn = screen.getByRole('button', { name: /Món tạm hết hàng/i });
+      const disabledBtn = screen.getByRole('button', { name: 'Tạm hết' });
       expect(disabledBtn).toBeDisabled();
 
       fireEvent.click(disabledBtn);
@@ -1181,17 +1181,19 @@ describe('Dòng 20 — Kiểm thử Giỏ hàng và Luồng Thanh toán (A1–A1
       renderCheckoutWithProviders();
       const submitBtn = await screen.findByRole('button', { name: /đặt đơn hàng/i });
 
-      // 1. 409 Hết hàng kèm details
+      const noteInput = screen.getByLabelText(/ghi chú đơn hàng/i);
+      await user.type(noteInput, 'Giữ nguyên ghi chú này');
+
+      // 1. 409 Món tạm hết kèm details (theo hợp đồng bản 2, không có available)
       mockFetch.mockResolvedValueOnce(
         createJsonResponse(409, {
           statusCode: 409,
-          message: "Sản phẩm 'Trà sữa truyền thống' không đủ số lượng trong kho",
+          message: "Sản phẩm 'Trà sữa truyền thống' hiện đã tạm hết",
           error: 'Conflict',
           details: [
             {
               productId: '11111111-0000-0000-0000-000000000007',
               name: 'Trà sữa truyền thống',
-              available: 0,
             },
           ],
         })
@@ -1199,10 +1201,13 @@ describe('Dòng 20 — Kiểm thử Giỏ hàng và Luồng Thanh toán (A1–A1
       await user.click(submitBtn);
       await waitFor(() => {
         expect(
-          screen.getByText("Sản phẩm 'Trà sữa truyền thống' không đủ số lượng trong kho")
+          screen.getByText("Sản phẩm 'Trà sữa truyền thống' hiện đã tạm hết")
         ).toBeInTheDocument();
-        expect(screen.getByText('Trà sữa truyền thống: còn 0')).toBeInTheDocument();
+        expect(screen.getByText('Trà sữa truyền thống — Tạm hết')).toBeInTheDocument();
+        expect(screen.getByText('Tạm hết')).toBeInTheDocument();
       });
+      expect(screen.queryByText(/còn 0/i)).not.toBeInTheDocument();
+      expect(noteInput).toHaveValue('Giữ nguyên ghi chú này');
       expect(loadCartFromStorage()).toHaveLength(1);
 
       // 2. 404 Không tìm thấy sản phẩm / topping

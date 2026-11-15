@@ -114,8 +114,8 @@ describe('Trang chi tiết món (ProductDetailPage)', () => {
     expect(screen.getAllByText(/29\.000/).length).toBeGreaterThan(0);
   });
 
-  // 5. Món hết hàng: hiển thị nhãn "Hết hàng" và vô hiệu hóa nút thêm vào giỏ
-  it('5. Món hết hàng (stock = 0) có nhãn "Hết hàng" và vô hiệu hóa nút thêm vào giỏ', async () => {
+  // 5. Món hết hàng: hiển thị nhãn "Hết hàng", ảnh xám, không hiện tồn kho và nút "Tạm hết" bị vô hiệu hóa
+  it('5. Món hết hàng (stock = 0) có nhãn "Hết hàng", ảnh xám và vô hiệu hóa nút "Tạm hết"', async () => {
     vi.mocked(api.getProductById).mockResolvedValue(mockUnavailableItem);
     render(<ProductDetailPage />);
 
@@ -123,8 +123,12 @@ describe('Trang chi tiết món (ProductDetailPage)', () => {
       expect(screen.getByText('Bạc xỉu')).toBeInTheDocument();
     });
 
+    expect(screen.getByAltText('Bạc xỉu').className).toContain('grayscale');
     expect(screen.getByText('Hết hàng')).toBeInTheDocument();
-    const addButton = screen.getByRole('button', { name: 'Món tạm hết hàng' });
+    expect(screen.queryByText(/tồn kho/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/\bcòn \d+/i)).not.toBeInTheDocument();
+
+    const addButton = screen.getByRole('button', { name: 'Tạm hết' });
     expect(addButton).toBeDisabled();
   });
 
