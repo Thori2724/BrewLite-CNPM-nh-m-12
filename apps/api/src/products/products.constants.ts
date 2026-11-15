@@ -12,6 +12,9 @@ export const INVALID_CATEGORY_MESSAGE =
 
 export const PRODUCT_NOT_FOUND_MESSAGE = 'Không tìm thấy sản phẩm';
 
+export const DEFAULT_PRODUCT_IMAGE_URL =
+  'https://images.unsplash.com/photo-1642647392045-8592bf9b5900?w=500';
+
 export const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 

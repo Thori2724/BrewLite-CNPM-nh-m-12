@@ -118,8 +118,8 @@ describe('Trang Menu (MenuPage)', () => {
     expect(screen.getByRole('button', { name: 'Thử lại' })).toBeInTheDocument();
   });
 
-  // Test 5: Món hết hàng (stock = 0) có nhãn "Hết hàng" và nút "Tạm hết" bị vô hiệu hóa
-  it('5. Món hết hàng (stock = 0) có nhãn "Hết hàng", nút "Tạm hết" bị vô hiệu hóa', async () => {
+  // Test 5: Món hết hàng (stock = 0) có nhãn "Hết hàng", ảnh xám, không hiện tồn kho và nút "Tạm hết" bị vô hiệu hóa
+  it('5. Món hết hàng (stock = 0) có nhãn "Hết hàng", nút "Tạm hết" bị vô hiệu hóa và không hiện số tồn kho', async () => {
     vi.mocked(api.getProducts).mockResolvedValue(mockProducts);
 
     render(<MenuPage />);
@@ -132,10 +132,20 @@ describe('Trang Menu (MenuPage)', () => {
     const outOfStockBadges = screen.getAllByText('Hết hàng');
     expect(outOfStockBadges).toHaveLength(1);
 
+    // Ảnh món tạm hết bị xám
+    const outOfStockImg = screen.getByAltText('Bạc xỉu');
+    expect(outOfStockImg.className).toContain('grayscale');
+
+    // Không hiển thị số lượng tồn kho
+    expect(screen.queryByText(/tồn kho/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/\bcòn \d+/i)).not.toBeInTheDocument();
+
     // Món còn hàng có nút '+ Thêm'
     expect(screen.getAllByRole('button', { name: '+ Thêm' }).length).toBe(4);
-    // Món hết hàng có nút 'Tạm hết' bị vô hiệu hóa
-    expect(screen.getByRole('button', { name: 'Tạm hết' })).toBeDisabled();
+    // Món hết hàng có nút 'Tạm hết' bị vô hiệu hóa và không bọc trong link #
+    const outOfStockBtn = screen.getByRole('button', { name: 'Tạm hết' });
+    expect(outOfStockBtn).toBeDisabled();
+    expect(outOfStockBtn.closest('a')).toBeNull();
   });
 
   // Test 6: Chọn danh mục gọi getProducts với category tương ứng, "Tất cả" không gửi category

@@ -34,9 +34,11 @@ Mở trình duyệt truy cập: [http://localhost:3000](http://localhost:3000)
 - **Trang Chi tiết món ([/menu/:id](http://localhost:3000/menu/11111111-0000-0000-0000-000000000001)):** Render động các tùy chọn từ server (`sizes`, `sugarLevels`, `iceLevels`, `toppings`). Tự động ẩn các phần tùy chọn có mảng rỗng (ví dụ món bánh `CAKE`). Lựa chọn mặc định: Size S, Đường P100, Đá NORMAL. Giới hạn tối đa 3 loại topping không trùng, số lượng 1..10. Món hết hàng (`stock = 0`) khóa nút thêm vào giỏ.
 - **Trang Giỏ hàng ([/cart](http://localhost:3000/cart)):** Quản lý các món đã chọn, tăng/giảm số lượng (tối đa 10 ly/món), xóa từng món hoặc xóa tất cả, tính tổng tiền tạm tính. Giới hạn tối đa 20 dòng món khác nhau.
 - **Trang Đăng nhập / Đăng ký ([/login](http://localhost:3000/login), [/register](http://localhost:3000/register)):** Đăng ký tài khoản khách hàng mới, đăng nhập nhận JWT Token lưu an toàn vào `localStorage`. Trên Header: hiển thị liên kết **"Đơn của tôi"** (`/orders`), tên người dùng và nút "Đăng xuất" khi đã đăng nhập.
-- **Trang Đặt đơn & Thanh toán ([/checkout](http://localhost:3000/checkout)):** Bắt buộc đăng nhập (bảo vệ bởi `useRequireAuth`), chọn hình thức nhận (`AT_COUNTER` / `TAKE_AWAY`), đặt đơn khởi tạo trạng thái `PENDING` và thanh toán qua cổng mô phỏng (`POST /payments`). Khôi phục đơn khi F5, kiểm soát Idempotency chặt chẽ.
-- **Trang Lịch sử đơn hàng ([/orders](http://localhost:3000/orders)):** Bắt buộc đăng nhập (`GET /orders/me`), hiển thị toàn bộ danh sách đơn của người dùng theo đúng thứ tự mới nhất từ server (không phân trang), kèm nút "Tải lại", trạng thái loading / empty / error.
-- **Trang Xác nhận & Theo dõi chi tiết đơn hàng ([/orders/:id](http://localhost:3000/orders/33333333-0000-0000-0000-000000000001)):** Bắt buộc đăng nhập (`GET /orders/:id`), tải dữ liệu **1 lần khi mở trang** và khi bấm nút **"Tải lại"** (không dùng polling tự động). Hiển thị banner theo trạng thái đơn, mã `#orderNumber` nổi bật (không lộ UUID trên giao diện), thanh tiến trình (stepper) cho luồng chính (`PENDING → PAID → PREPARING → READY → COMPLETED`), danh sách món (ẩn hoàn toàn Size/Đường/Đá nếu giá trị là `null` đối với món bánh), tổng tiền từ server, lịch sử giao dịch thanh toán và nút **"Thanh toán" / "Thử lại thanh toán"** (với `Idempotency-Key` mới trên đúng `orderId` hiện tại) khi đơn ở `PENDING` hoặc `PAYMENT_FAILED`.
+- **Trang Đặt đơn & Thanh toán ([/checkout](http://localhost:3000/checkout)):** Bắt buộc đăng nhập (bảo vệ bởi `useRequireAuth`), chọn hình thức nhận (`AT_COUNTER` / `TAKE_AWAY`), chọn ví hiển thị (`ZaloPay` / `MoMo`), đặt đơn khởi tạo trạng thái `PENDING` rồi mở màn thanh toán QR giả đếm ngược 5 giây (tự động thanh toán `SUCCESS` khi hết 5 giây hoặc `FAILED` / `PAYMENT_FAILED` khi khách bấm thoát/đóng QR). Hỗ trợ mở trực tiếp qua `/checkout?orderId=<id>`, khôi phục đơn khi F5 và kiểm soát Idempotency chặt chẽ.
+- **Trang Lịch sử đơn hàng ([/orders](http://localhost:3000/orders)):** Bắt buộc đăng nhập (`GET /orders/me`), hiển thị toàn bộ danh sách đơn của người dùng theo đúng thứ tự mới nhất từ server (không phân trang), kèm nút "Tải lại", nút **"Thanh toán"** và nút **"Hủy đơn"** (có hộp xác nhận, gọi `POST /orders/:id/cancel`, giữ nguyên giỏ hàng) cho các đơn ở `PENDING`, `PAYMENT_FAILED`, `PAID`; đơn `CANCELLED` vẫn nằm trong danh sách và xem chi tiết được; có đủ trạng thái loading / empty / error.
+- **Trang Xác nhận & Theo dõi chi tiết đơn hàng ([/orders/:id](http://localhost:3000/orders/33333333-0000-0000-0000-000000000001)):** Bắt buộc đăng nhập (`GET /orders/:id`), tải dữ liệu **1 lần khi mở trang** và khi bấm nút **"Tải lại"** (không dùng polling tự động). Hiển thị banner theo trạng thái đơn, mã `#orderNumber` nổi bật (không lộ UUID trên giao diện), thanh tiến trình (stepper) cho luồng chính (`PENDING → PAID → PREPARING → READY → COMPLETED`), danh sách món (ẩn hoàn toàn Size/Đường/Đá nếu giá trị là `null` đối với món bánh), tổng tiền từ server, lịch sử giao dịch thanh toán, dòng **"Tiền sẽ được hoàn lại (mô phỏng)"** khi đơn ở trạng thái `CANCELLED` và có giao dịch thanh toán `SUCCESS`, nút **"Thanh toán" / "Thử lại thanh toán"** (với `Idempotency-Key` mới trên đúng `orderId` hiện tại) khi đơn ở `PENDING` hoặc `PAYMENT_FAILED`, và nút **"Hủy đơn"** (có hộp xác nhận, gọi `POST /orders/:id/cancel`, giữ nguyên giỏ hàng) khi đơn ở `PENDING`, `PAYMENT_FAILED` hoặc `PAID`.
+- **Trang Thông tin tài khoản ([/account](http://localhost:3000/account)):** Bắt buộc đăng nhập (mở cho cả `CUSTOMER`, `STAFF`, `ADMIN`), chỉ xem dữ liệu đọc từ phiên đăng nhập đã lưu sẵn (`localStorage`): hiển thị tên hiển thị, email, nhãn vai trò tiếng Việt (`Khách hàng` / `Nhân viên` / `Quản lý`), nút **"Đăng xuất"** và riêng khách hàng (`CUSTOMER`) có thêm liên kết **"Lịch sử đơn"** (`/orders`). Có lối vào trực tiếp khi bấm vào tên người dùng trên thanh header (`AuthNav`).
+- **Trang Quản lý nhân viên ([/staff/employees](http://localhost:3000/staff/employees)):** Chỉ dành cho `ADMIN` (`STAFF` tự chuyển về `/staff`, khách chuyển về `/`). Hiển thị danh sách tài khoản `STAFF` từ `GET /staff` (tên hiển thị, email, vai trò, ngày tạo giờ Việt Nam, trạng thái `Hoạt động` / `Đã khóa`), cho phép **Khóa** (có hộp xác nhận) và **Mở khóa** qua `PATCH /staff/:id/status`; bật/tắt dữ liệu giả bằng `NEXT_PUBLIC_USE_MOCK` (hoặc `NEXT_PUBLIC_USE_MOCK_STAFF_EMPLOYEES`).
 
 ### Bố cục giao diện Desktop-First & Responsive:
 - **Khung trang chung (`app/layout.tsx`):** Bỏ giới hạn `max-w-md` kiểu điện thoại; Header trải toàn chiều rộng màn hình, nội dung chính căn giữa trong container `max-w-6xl` (`px-3 sm:px-6 lg:px-8`). Liên kết chữ `Menu` trên Header tự động ẩn ở màn hình nhỏ (`< 640px`, breakpoint `sm`), giữ khoảng cách nút gọn gàng để không tràn ngang ở màn hình 360px và 390px.
@@ -44,7 +46,7 @@ Mở trình duyệt truy cập: [http://localhost:3000](http://localhost:3000)
 - **Các trang chia bố cục 2 cột trên Desktop:**
   - **Chi tiết món (`/menu/:id`):** Chia 2 cột từ breakpoint `md` (`md:grid-cols-12`): cột trái (`md:col-span-5`, dính `md:sticky`) hiển thị ảnh, tên và giá gốc; cột phải (`md:col-span-7`) hiển thị các tùy chọn, số lượng, giá tạm tính và nút Thêm vào giỏ.
   - **Giỏ hàng (`/cart`):** Chia 2 cột từ breakpoint `lg` (`lg:grid-cols-12`): cột trái (`lg:col-span-8`) là danh sách dòng món; cột phải (`lg:col-span-4`, dính `lg:sticky`) là khung tóm tắt tổng tiền và nút Tiến hành đặt đơn.
-  - **Đặt đơn & Thanh toán (`/checkout`):** Chia 2 cột từ breakpoint `lg` (`lg:grid-cols-12`) ở cả bước Đặt đơn và bước Thanh toán: cột trái (`lg:col-span-7`) là form chọn hình thức/thanh toán; cột phải (`lg:col-span-5`, dính `lg:sticky`) là tóm tắt đơn hàng và nút xác nhận.
+  - **Đặt đơn & Thanh toán (`/checkout`):** Bước 1 chia 2 cột từ breakpoint `lg` (`lg:grid-cols-12`): cột trái (`lg:col-span-7`) là form chọn hình thức nhận, ví QR hiển thị (`ZaloPay` / `MoMo`) và ghi chú; cột phải (`lg:col-span-5`, dính `lg:sticky`) là tóm tắt đơn hàng và nút xác nhận. Bước 2 hiển thị màn thanh toán QR giả (`max-w-2xl`) với mã QR theo mã đơn, đếm ngược 5 giây và nút thoát.
   - **Chi tiết đơn hàng (`/orders/:id`):** Chia 2 cột từ breakpoint `lg` (`lg:grid-cols-12`): cột trái (`lg:col-span-7`) là danh sách món và lịch sử thanh toán; cột phải (`lg:col-span-5`, dính `lg:sticky`) là thông tin đơn, tổng tiền và nút hành động.
 - **Các trang và trạng thái căn giữa gọn (`max-w-md` / `max-w-lg`):** Trang Đăng nhập (`/login`), Đăng ký (`/register`), màn hình Thanh toán thành công, giỏ hàng trống và các trạng thái đang tải / báo lỗi / không tìm thấy món đều đặt trong thẻ căn giữa vừa phải, không bị kéo dãn toàn màn hình.
 - **Chuẩn kiểm tra dữ liệu (Validation) & Định dạng tiền tệ (`utils/validation.ts`):**
@@ -61,56 +63,52 @@ File cấu hình môi trường đặt tại `apps/web/.env.local` (file này kh
 # Địa chỉ máy chủ Backend NestJS (mặc định cổng 3001)
 NEXT_PUBLIC_API_URL=http://localhost:3001
 
-# Công tắc Mock Sản phẩm (true: dùng dữ liệu mẫu trong mocks/; false: gọi GET /products và GET /products/:id)
-NEXT_PUBLIC_USE_MOCK_PRODUCTS=true
-
-# Công tắc Mock Xác thực (true: dùng tài khoản mẫu; false: gọi POST /auth/login, POST /auth/register)
-NEXT_PUBLIC_USE_MOCK_AUTH=true
-
-# Công tắc Mock Đơn hàng & Thanh toán (true: dùng mock orders/payments; false: gọi API thật)
-NEXT_PUBLIC_USE_MOCK_ORDERS=true
+# Công tắc Mock dùng chung (mặc định tắt / false)
+# - true: dùng dữ liệu giả trong mocks/ cho Auth, Products, Orders, Staff
+# - false (hoặc không đặt): gọi API thật tới NEXT_PUBLIC_API_URL
+NEXT_PUBLIC_USE_MOCK=false
 ```
 
-> **Lưu ý:** Khi chuyển công tắc sang `false` (hoặc xóa biến), ứng dụng sẽ tự động chuyển sang gọi trực tiếp API thật tới máy chủ NestJS tại `NEXT_PUBLIC_API_URL`.
+> **Lưu ý:**
+> - `NEXT_PUBLIC_USE_MOCK` là công tắc chính duy nhất (mặc định **tắt**). Khi đặt `NEXT_PUBLIC_USE_MOCK=true`, tất cả nhóm API (Xác thực, Sản phẩm, Đơn hàng/Thanh toán, Nhân viên) đều dùng dữ liệu giả.
+> - Nếu `NEXT_PUBLIC_USE_MOCK` chưa được đặt (hoặc rỗng), ứng dụng giữ tương thích ngược bằng cách đọc các biến cũ (`NEXT_PUBLIC_USE_MOCK_AUTH`, `NEXT_PUBLIC_USE_MOCK_PRODUCTS`, `NEXT_PUBLIC_USE_MOCK_ORDERS`).
+> - Để tắt hoàn toàn mock và gọi API thật, đặt `NEXT_PUBLIC_USE_MOCK=false` (và xóa hoặc đặt `false` các biến cũ nếu có). Khi sửa `.env.local`, nhớ khởi động lại `npm run dev` để Next.js nạp lại biến môi trường.
 
-### Cơ chế kết nối API Xác thực (POST /auth/register & POST /auth/login):
-- Khi `NEXT_PUBLIC_USE_MOCK_AUTH=true`:
-  - Dùng tài khoản mẫu kiểm thử cố định: `khachhang@brewlite.vn` / `password123`.
+### Cơ chế kết nối API Xác thực (`POST /auth/register`, `POST /auth/login`) & Nhân viên (`GET /staff`, `PATCH /staff/:id/status`):
+- Khi bật mock (`NEXT_PUBLIC_USE_MOCK=true`):
+  - Có sẵn tài khoản mẫu `khachhang@brewlite.vn` và 5 tài khoản demo theo Mục 8.3 hợp đồng API (mật khẩu chung `password123`): `khach@example.com` (`CUSTOMER`), `nhanvien1@example.com`, `nhanvien2@example.com`, `nhanvien3@example.com` (`STAFF`, bị khóa `isActive: false` — đăng nhập trả 403), `quanly@example.com` (`ADMIN`).
+  - Mock quản lý nhân viên (`GET /staff`, `PATCH /staff/:id/status`) trả về 3 tài khoản nhân viên (`STAFF`) với 1 người đang bị khóa.
   - Tài khoản đăng ký mới trong mock chỉ sống trong bộ nhớ RAM (sẽ mất khi F5 hoặc mở tab mới).
-- Khi `NEXT_PUBLIC_USE_MOCK_AUTH=false`: gọi API thật qua `apiFetch` tới `NEXT_PUBLIC_API_URL` (`POST /auth/register`, `POST /auth/login`).
+- Khi tắt mock (`NEXT_PUBLIC_USE_MOCK=false`): gọi API thật tới `NEXT_PUBLIC_API_URL` (`POST /auth/register`, `POST /auth/login`, `GET /staff`, `PATCH /staff/:id/status`).
 
-### Cơ chế kết nối API Sản phẩm (GET /products & GET /products/:id):
-- Khi `NEXT_PUBLIC_USE_MOCK_PRODUCTS=false`: gọi API thật qua `fetch` công khai (không qua redirect 401).
+### Cơ chế kết nối API Sản phẩm (`GET /products`, `GET /products/:id`, `GET /products/manage`, `POST /products`, `PATCH /products/:id`, `PATCH /products/:id/availability`):
+- Khi bật mock (`NEXT_PUBLIC_USE_MOCK=true`): danh sách công khai có 5 món (gồm món tạm hết `stock = 0`); danh sách quản lý (`GET /products/manage`) có thêm món ẩn (`isVisible = false`) và hỗ trợ thêm/sửa/gạt trạng thái bán.
+- Khi tắt mock (`NEXT_PUBLIC_USE_MOCK=false`): gọi API thật tới `NEXT_PUBLIC_API_URL`.
 - Tham số truy vấn `GET /products`:
   - `category`: `TEA`, `COFFEE`, `MILK_TEA`, `CAKE`. Khi chọn "Tất cả", ứng dụng không truyền tham số `category`.
   - `q`: chuỗi từ khóa tìm kiếm được debounce 300ms bằng `setTimeout` và mã hóa qua `encodeURIComponent`.
 - Xử lý lỗi: lỗi 400 và 404 hiển thị thông báo lỗi bằng chuỗi tiếng Việt nhận từ server.
 
-### Cơ chế kết nối API Đơn hàng & Thanh toán (`POST /orders`, `POST /payments`, `GET /orders/me`, `GET /orders/:id`):
-- Khi `NEXT_PUBLIC_USE_MOCK_ORDERS=true`:
-  - Tự động nạp sẵn 4 đơn hàng mẫu đúng hình dạng hợp đồng (`MOCK_SEED_ORDERS`) vào `brewlite_mock_orders_db_v2`:
-    1. Đơn `#1001` (`33333333-0000-0000-0000-000000000001`): Trạng thái `PAID`, gồm 2 món (1 món nước có topping + 1 món bánh `Bánh Croissant` có `size/sugarLevel/iceLevel = null`), tổng tiền `136.000đ`.
-    2. Đơn `#1002` (`33333333-0000-0000-0000-000000000002`): Trạng thái `PENDING` (chờ thanh toán, mảng `payments` rỗng).
-    3. Đơn `#1003` (`33333333-0000-0000-0000-000000000003`): Trạng thái `PAYMENT_FAILED` (có giao dịch `FAILED` kèm `failureReason: "Giao dịch bị từ chối (mô phỏng)"`).
-    4. Đơn `#1004` (`33333333-0000-0000-0000-000000000004`): Trạng thái `READY` (kiểm tra giao diện trạng thái chưa có API kích hoạt).
+### Cơ chế kết nối API Đơn hàng & Thanh toán (`POST /orders`, `POST /payments`, `GET /orders/me`, `GET /orders/:id`, `GET /orders`, `PATCH /orders/:id/status`, `POST /orders/:id/cancel`):
+- Khi bật mock (`NEXT_PUBLIC_USE_MOCK=true`):
+  - Tự động nạp sẵn 7 đơn hàng mẫu đúng hình dạng hợp đồng (`MOCK_SEED_ORDERS`) vào `brewlite_mock_orders_db_v2`, phủ đủ cả 7 trạng thái (`PENDING`, `PAID`, `PREPARING`, `READY`, `COMPLETED`, `PAYMENT_FAILED`, `CANCELLED`).
   - Giả lập trạng thái danh sách rỗng (`/orders` empty): đặt `localStorage.setItem('brewlite_mock_orders_empty', 'true')` và tải lại trang; xóa khóa này để quay lại danh sách có dữ liệu.
   - Giả lập trạng thái 404 (`/orders/:id` not found): truy cập `/orders/404` hoặc một UUID bất kỳ không tồn tại.
-  - Tài khoản thử nghiệm thanh toán:
-    * 8..19 chữ số thông thường (ví dụ: `12345678`, `9704123456789012`): Thanh toán THÀNH CÔNG (`status: 'SUCCESS'`).
-    * Số kết thúc `0000` (ví dụ: `12340000`, `9704000000000000`): Thanh toán THẤT BẠI (`status: 'FAILED'`, lý do `"Giao dịch bị từ chối (mô phỏng)"`).
-    * `9999999991`: Giả lập timeout.
-    * `9999999992`: Giả lập lỗi mất mạng.
-    * Ghi chú đơn chứa `hethang`: Giả lập lỗi hết hàng `409 Conflict` (trả về mảng `details`).
-- Khi `NEXT_PUBLIC_USE_MOCK_ORDERS=false`:
+  - Cơ chế giả lập thanh toán QR (màn thanh toán QR luôn gửi `method = "WALLET"`):
+    * Đếm ngược hết 5 giây mà khách không bấm thoát: FE gửi `accountNumber = "0900000001"` → Mock trả về THÀNH CÔNG (`status: 'SUCCESS'`, đơn chuyển `PAID`).
+    * Bấm **"Hủy thanh toán"** hoặc nút đóng trên màn QR: FE gửi `accountNumber = "0900000000"` (kết thúc `0000`) → Mock trả về THẤT BẠI (`status: 'FAILED'`, lý do `"Giao dịch bị từ chối (mô phỏng)"`, đơn thành `PAYMENT_FAILED`).
+    * Ghi chú đơn chứa `hethang`: Giả lập lỗi hết hàng `409 Conflict` (trả về mảng `details` gồm `{ productId, name }`).
+- Khi tắt mock (`NEXT_PUBLIC_USE_MOCK=false`):
   - Gọi fetch thật tới `NEXT_PUBLIC_API_URL` (kèm `Authorization: Bearer <accessToken>`):
     * `POST /orders` với body `{ receiveType, note, items }` (tuyệt đối không gửi giá, không gửi thông tin người nhận).
     * `POST /payments` kèm header `Idempotency-Key` (8..100 ký tự) và body `{ orderId, method, accountNumber }`.
     * `GET /orders/me` lấy danh sách lịch sử đơn hàng của người dùng đang đăng nhập.
     * `GET /orders/:id` tra cứu chi tiết đơn hàng và lịch sử thanh toán.
+    * `GET /orders`, `PATCH /orders/:id/status`, `POST /orders/:id/cancel` cho luồng quản lý và hủy đơn.
 
 ---
 
-## 4. Bảng nhãn hiển thị tiếng Việt (Theo Mục 7 Hợp đồng API)
+## 4. Bảng nhãn hiển thị tiếng Việt (Theo Mục 9.3 Hợp đồng API)
 
 | Nhóm | Mã kỹ thuật (Code) | Nhãn hiển thị trên Web (Vietnamese Label) |
 |---|---|---|
@@ -139,11 +137,16 @@ NEXT_PUBLIC_USE_MOCK_ORDERS=true
 | | `COMPLETED` | Hoàn thành |
 | | `PAYMENT_FAILED` | Thanh toán lỗi |
 | | `CANCELLED` | Đã hủy |
-| **PaymentMethod (Thanh toán)** | `WALLET` | Ví điện tử |
+| **PaymentMethod (Thanh toán)** | `WALLET` | Ví điện tử (ZaloPay/Momo) |
 | | `CARD` | Thẻ ngân hàng |
 | **PaymentStatus (Trạng thái TT)** *(nhãn FE tự đặt)* | `SUCCESS` | Thành công |
 | | `FAILED` | Thất bại |
 | | `PENDING` | Đang xử lý |
+| **Role (Vai trò)** | `CUSTOMER` | Khách hàng |
+| | `STAFF` | Nhân viên |
+| | `ADMIN` | Quản lý |
+| **Trạng thái nhân viên (`isActive`)** | `true` | Hoạt động |
+| | `false` | Đã khóa |
 
 ---
 
@@ -165,14 +168,13 @@ NEXT_PUBLIC_USE_MOCK_ORDERS=true
 - **Quy tắc Idempotency-Key (UUID v4):**
   - Mỗi giao dịch thanh toán sinh một khóa định danh duy nhất (8..100 ký tự) gửi qua header `Idempotency-Key`.
   - **Kết quả chưa rõ ràng** (mất mạng, timeout, lỗi 5xx): BẮT BUỘC **GIỮ NGUYÊN** key cũ và đơn chờ để khách bấm thử lại an toàn, tránh trừ tiền 2 lần.
-  - **Thông tin thanh toán thay đổi** (đổi phương thức Ví/Thẻ, đổi số tài khoản) hoặc **thất bại rõ ràng** (`status: 'FAILED'`): BẮT BUỘC **ĐỔI SANG KEY MỚI** cho lượt thử lại.
+  - **Mỗi lần gọi thanh toán QR mới** (bao gồm cả khi bấm **"Thử lại thanh toán"** sau `FAILED`): BẮT BUỘC **ĐỔI SANG KEY MỚI** cho lượt thử lại; chỉ giữ nguyên key khi gửi lại ĐÚNG request gặp lỗi mạng/timeout/5xx.
   - Phía server/mock:
     * Cùng key + cùng `orderId`: luôn trả lại kết quả giao dịch cũ với mã HTTP 200, bất kể body.
     * Cùng key + khác `orderId`: server từ chối bằng lỗi `409 Conflict`.
-- **Bảo mật thông tin thẻ / ví:**
-  - Ô nhập số thẻ / ví có thuộc tính `autoComplete="off"`.
-  - Số thẻ / ví chỉ tồn tại tạm thời trong state của form khi người dùng đang nhập; xóa sạch khỏi state ngay khi gửi API hoặc khi unmount component.
-  - **Tuyệt đối không bao giờ lưu toàn bộ số thẻ, số ví hay CVV vào `localStorage`, URL hay `console.log`**.
+- **Bảo mật thanh toán QR:**
+  - Giao diện thanh toán QR không có ô nhập thẻ hay số tài khoản; luôn gửi `method = "WALLET"` kèm hằng số nội bộ (`0900000001` / `0900000000`) đặt tại `apps/web/constants/payment.ts`.
+  - **Tuyệt đối không hiển thị hai hằng số nội bộ ra giao diện và không lưu vào `localStorage`, URL hay `console.log`**.
 
 ---
 
@@ -219,5 +221,6 @@ npm.cmd run lint
 
 ### Đóng gói kiểm tra (Build):
 ```powershell
-npm.cmd run build
+npx.cmd next build --webpack
 ```
+*(Nếu chạy `npm.cmd run build` mặc định bị lỗi Turbopack trên Windows, dùng `npx.cmd tsc --noEmit` và `npx.cmd next build --webpack`.)*

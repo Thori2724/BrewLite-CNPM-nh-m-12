@@ -17,7 +17,7 @@ export const RECEIVE_TYPE_LABELS: Record<ReceiveType, string> = {
 export type PaymentMethod = 'WALLET' | 'CARD';
 
 export const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
-  WALLET: 'Ví điện tử',
+  WALLET: 'Ví điện tử (ZaloPay/Momo)',
   CARD: 'Thẻ ngân hàng',
 };
 
@@ -40,6 +40,20 @@ export const ORDER_STATUS_LABELS: Record<OrderStatus, string> = {
   PAYMENT_FAILED: 'Thanh toán lỗi',
   CANCELLED: 'Đã hủy',
 };
+
+export const ORDER_STATUS_BADGE_CLASSES: Record<OrderStatus, string> = {
+  PAID: 'bg-moss text-kombu font-bold',
+  COMPLETED: 'bg-moss text-kombu font-bold',
+  PENDING: 'bg-warning text-noir font-bold',
+  PREPARING: 'bg-warning text-noir font-bold',
+  READY: 'bg-tan/50 text-noir border border-tan font-bold',
+  PAYMENT_FAILED: 'bg-error/15 text-error border border-error/30 font-bold',
+  CANCELLED: 'bg-neutral-200 text-neutral-800 border border-neutral-300 font-bold',
+};
+
+export function getOrderStatusBadgeClass(status: OrderStatus): string {
+  return ORDER_STATUS_BADGE_CLASSES[status] || 'bg-tan/40 text-noir font-semibold';
+}
 
 // 4. Enum Trạng thái thanh toán (PaymentStatus)
 export type PaymentStatus = 'PENDING' | 'SUCCESS' | 'FAILED';
@@ -170,6 +184,7 @@ export interface OrderItemToppingResponse {
   name: string;
   price: number;
 }
+export type OrderItemTopping = OrderItemToppingResponse;
 
 // 8. Dữ liệu chi tiết từng món trong đơn hàng trả về từ server
 export interface OrderItemResponse {
@@ -185,10 +200,12 @@ export interface OrderItemResponse {
   note?: string | null;
   toppings?: OrderItemToppingResponse[];
 }
+export type OrderItem = OrderItemResponse;
 
 // 9. Lịch sử thanh toán kèm theo đơn
 export interface PaymentDetailResponse {
   id: string;
+  orderId?: string;
   method: PaymentMethod;
   accountLast4: string;
   amount?: number;
@@ -196,8 +213,15 @@ export interface PaymentDetailResponse {
   failureReason?: string | null;
   createdAt: string;
 }
+export type Payment = PaymentDetailResponse;
 
-// 10. Dữ liệu đơn hàng chi tiết trả về từ POST /orders, GET /orders/:id, GET /orders/me
+export interface OrderCustomer {
+  id: string;
+  displayName: string;
+  email: string;
+}
+
+// 10. Dữ liệu đơn hàng chi tiết trả về từ POST /orders, GET /orders/:id, GET /orders/me, GET /orders, PATCH /orders/:id/status, POST /orders/:id/cancel
 export interface OrderResponse {
   id: string;
   orderNumber: number; // SỐ NGUYÊN (ví dụ: 1001) -> UI hiển thị `#${orderNumber}`
@@ -208,6 +232,18 @@ export interface OrderResponse {
   createdAt: string;
   items: OrderItemResponse[];
   payments?: PaymentDetailResponse[];
+  customer?: OrderCustomer;
+}
+export type Order = OrderResponse;
+
+export type StaffUpdatableOrderStatus = 'PREPARING' | 'READY' | 'COMPLETED' | 'CANCELLED';
+
+export interface GetOrdersParams {
+  status?: OrderStatus;
+}
+
+export interface UpdateOrderStatusDto {
+  status: StaffUpdatableOrderStatus;
 }
 
 // 11. DTO thanh toán gửi lên POST /payments
@@ -234,11 +270,11 @@ export interface PaymentResponse {
   };
 }
 
-// 13. Chi tiết món thiếu khi lỗi 409 hết hàng
+// 13. Chi tiết món tạm hết khi lỗi 409 (bản 2 chỉ có productId, name; giữ available? tùy chọn để tương thích trang cũ)
 export interface OutOfStockDetail {
   productId: string;
   name: string;
-  available: number;
+  available?: number;
 }
 
 // 14. Định dạng lỗi server trả về
@@ -252,9 +288,12 @@ export interface OrderErrorResponse {
 // 15. Danh sách endpoint API chuẩn theo hợp đồng
 export const ORDER_ENDPOINTS = {
   CREATE: '/orders',
+  LIST: '/orders',
   PAY: '/payments', // POST /payments trực tiếp
-  GET_BY_ID: (orderId: string) => `/orders/${orderId}`,
+  GET_BY_ID: (orderId: string) => `/orders/${encodeURIComponent(orderId)}`,
   MY_ORDERS: '/orders/me',
+  UPDATE_STATUS: (orderId: string) => `/orders/${encodeURIComponent(orderId)}/status`,
+  CANCEL: (orderId: string) => `/orders/${encodeURIComponent(orderId)}/cancel`,
 } as const;
 
 // 16. Danh sách thông báo lỗi tiếng Việt chuẩn hóa
@@ -262,12 +301,15 @@ export const ORDER_ERROR_MESSAGES = {
   CART_EMPTY: 'Giỏ hàng của bạn đang trống. Vui lòng chọn món trước khi đặt đơn.',
   ACCOUNT_NUMBER_REQUIRED: 'Vui lòng nhập số thẻ hoặc số ví.',
   ACCOUNT_NUMBER_INVALID: 'Số tài khoản không hợp lệ (chỉ gồm 8 đến 19 chữ số).',
-  OUT_OF_STOCK: 'Một số món trong giỏ hàng không đủ số lượng trong kho.',
+  OUT_OF_STOCK: 'Một số món trong giỏ hàng hiện đã tạm hết.',
   PAYMENT_REJECTED: 'Giao dịch bị từ chối (mô phỏng).',
   ORDER_NOT_PAYABLE: 'Đơn hàng không ở trạng thái cho phép thanh toán.',
   IDEMPOTENCY_MISMATCH: 'Yêu cầu thanh toán không khớp với dữ liệu giao dịch trước đó. Vui lòng thử lại.',
   NETWORK_TIMEOUT: 'Yêu cầu bị quá thời gian chờ (timeout). Vui lòng thử lại.',
   NETWORK_ERROR: 'Không thể kết nối đến máy chủ. Vui lòng kiểm tra đường truyền và thử lại.',
   UNKNOWN_ERROR: 'Đã có lỗi xảy ra trong quá trình xử lý đơn hàng. Vui lòng thử lại.',
-  ORDER_NOT_FOUND: 'Không tìm thấy đơn hàng.',
+  ORDER_NOT_FOUND: 'Không tìm thấy đơn hàng',
+  ORDER_CANCEL_INVALID: 'Không thể hủy đơn ở trạng thái hiện tại',
+  ORDER_STATUS_CONFLICT: 'Trạng thái đơn đã thay đổi, vui lòng tải lại',
+  INVALID_ORDER_STATUS: 'Trạng thái không hợp lệ',
 } as const;

@@ -22,10 +22,31 @@ import {
   UUID_REGEX,
 } from '../products/products.constants';
 import { CreateOrderDto } from './dto/create-order.dto';
+import {
+  STAFF_ALLOWED_ORDER_STATUSES,
+  UpdateOrderStatusDto,
+} from './dto/update-order-status.dto';
 import { calculateOrderTotal } from './order-pricing';
+import {
+  OrderStatus as TransitionOrderStatus,
+  validateTransition,
+} from './order-status';
 
 export const TOPPING_NOT_FOUND_MESSAGE = 'Không tìm thấy topping';
+export const INVALID_ORDER_STATUS_MESSAGE = 'Trạng thái không hợp lệ';
+export const ORDER_STATUS_CHANGED_MESSAGE =
+  'Trạng thái đơn đã thay đổi, vui lòng tải lại';
 export { ORDER_NOT_FOUND_MESSAGE };
+
+export const ORDER_STATUS_LABELS: Readonly<Record<OrderStatus, string>> = {
+  [OrderStatus.PENDING]: 'Chờ thanh toán',
+  [OrderStatus.PAID]: 'Đã thanh toán',
+  [OrderStatus.PREPARING]: 'Đang pha chế',
+  [OrderStatus.READY]: 'Sẵn sàng nhận',
+  [OrderStatus.COMPLETED]: 'Hoàn thành',
+  [OrderStatus.PAYMENT_FAILED]: 'Thanh toán lỗi',
+  [OrderStatus.CANCELLED]: 'Đã hủy',
+};
 
 interface OrderToppingRecord {
   id?: string;
@@ -59,6 +80,16 @@ interface OrderRecord {
   items: OrderItemRecord[];
 }
 
+interface CustomerRecord {
+  id: string;
+  displayName: string;
+  email: string;
+}
+
+interface OrderWithCustomerRecord extends OrderRecord {
+  user: CustomerRecord;
+}
+
 interface PaymentRecord {
   id: string;
   method: PaymentMethod;
@@ -87,6 +118,7 @@ export class OrdersService {
         name: true,
         category: true,
         basePrice: true,
+        stock: true,
       },
     });
 
@@ -156,6 +188,23 @@ export class OrdersService {
       }
     }
 
+    const outOfStockDetails = uniqueProductIds
+      .map((productId) => productMap.get(productId)!)
+      .filter((product) => product.stock <= 0)
+      .map((product) => ({
+        productId: product.id,
+        name: product.name,
+      }));
+
+    if (outOfStockDetails.length > 0) {
+      throw new ConflictException({
+        statusCode: HttpStatus.CONFLICT,
+        message: `Sản phẩm '${outOfStockDetails[0].name}' hiện đã tạm hết`,
+        error: 'Conflict',
+        details: outOfStockDetails,
+      });
+    }
+
     const normalizedItems = dto.items.map((item) => {
       const product = productMap.get(item.productId)!;
       const isCake = product.category === Category.CAKE;
@@ -183,63 +232,11 @@ export class OrdersService {
       })),
     );
 
-    const requestedByProduct = new Map<string, number>();
-    for (const item of dto.items) {
-      requestedByProduct.set(
-        item.productId,
-        (requestedByProduct.get(item.productId) ?? 0) + item.quantity,
-      );
-    }
-
     const receiveType = dto.receiveType ?? ReceiveType.AT_COUNTER;
     const orderNote = dto.note ?? null;
 
     return this.prisma.$transaction(
       async (tx) => {
-        const failedProductIds: string[] = [];
-
-        for (const [productId, requiredQty] of requestedByProduct.entries()) {
-          const updated = await tx.product.updateMany({
-            where: {
-              id: productId,
-              isVisible: true,
-              stock: { gte: requiredQty },
-            },
-            data: {
-              stock: { decrement: requiredQty },
-            },
-          });
-
-          if (updated.count === 0) {
-            failedProductIds.push(productId);
-          }
-        }
-
-        if (failedProductIds.length > 0) {
-          const currentProducts = await tx.product.findMany({
-            where: { id: { in: failedProductIds } },
-            select: { id: true, name: true, stock: true },
-          });
-          const currentById = new Map(currentProducts.map((p) => [p.id, p]));
-
-          const details = failedProductIds.map((productId) => {
-            const current = currentById.get(productId);
-            const original = productMap.get(productId)!;
-            return {
-              productId,
-              name: current?.name ?? original.name,
-              available: current?.stock ?? 0,
-            };
-          });
-
-          throw new ConflictException({
-            statusCode: HttpStatus.CONFLICT,
-            message: `Sản phẩm '${details[0].name}' không đủ số lượng trong kho`,
-            error: 'Conflict',
-            details,
-          });
-        }
-
         const createdOrder = await tx.order.create({
           data: {
             userId,
@@ -364,6 +361,117 @@ export class OrdersService {
         failureReason: payment.failureReason ?? null,
         createdAt: payment.createdAt,
       })),
+    };
+  }
+
+  async findAllForStaff(status?: string) {
+    if (status !== undefined) {
+      const validStatuses = Object.values(OrderStatus) as string[];
+      if (!validStatuses.includes(status)) {
+        throw new BadRequestException(INVALID_ORDER_STATUS_MESSAGE);
+      }
+    }
+
+    const orders = await this.prisma.order.findMany({
+      where: status !== undefined ? { status: status as OrderStatus } : {},
+      orderBy: [{ createdAt: 'desc' }, { orderNumber: 'desc' }],
+      include: {
+        items: {
+          include: {
+            toppings: true,
+          },
+        },
+        user: {
+          select: {
+            id: true,
+            displayName: true,
+            email: true,
+          },
+        },
+      },
+    });
+
+    return orders.map((order) => this.formatOrderWithCustomerResponse(order));
+  }
+
+  async updateStatus(id: string, dto: UpdateOrderStatusDto) {
+    if (
+      !dto?.status ||
+      !(STAFF_ALLOWED_ORDER_STATUSES as readonly string[]).includes(dto.status)
+    ) {
+      throw new BadRequestException([
+        `status must be one of the following values: ${STAFF_ALLOWED_ORDER_STATUSES.join(', ')}`,
+      ]);
+    }
+
+    if (!UUID_REGEX.test(id)) {
+      throw new NotFoundException(ORDER_NOT_FOUND_MESSAGE);
+    }
+
+    const order = await this.prisma.order.findFirst({
+      where: { id },
+      include: {
+        items: {
+          include: {
+            toppings: true,
+          },
+        },
+        user: {
+          select: {
+            id: true,
+            displayName: true,
+            email: true,
+          },
+        },
+      },
+    });
+
+    if (!order) {
+      throw new NotFoundException(ORDER_NOT_FOUND_MESSAGE);
+    }
+
+    try {
+      validateTransition(
+        order.status as unknown as TransitionOrderStatus,
+        dto.status as unknown as TransitionOrderStatus,
+      );
+    } catch (error) {
+      if (error instanceof ConflictException) {
+        throw new ConflictException(
+          `Không thể chuyển đơn từ trạng thái '${ORDER_STATUS_LABELS[order.status]}' sang '${ORDER_STATUS_LABELS[dto.status]}'`,
+        );
+      }
+      throw error;
+    }
+
+    const updated = await this.prisma.order.updateMany({
+      where: {
+        id,
+        status: order.status,
+      },
+      data: {
+        status: dto.status,
+      },
+    });
+
+    if (updated.count === 0) {
+      throw new ConflictException(ORDER_STATUS_CHANGED_MESSAGE);
+    }
+
+    return this.formatOrderWithCustomerResponse({
+      ...order,
+      status: dto.status,
+    });
+  }
+
+  private formatOrderWithCustomerResponse(order: OrderWithCustomerRecord) {
+    return {
+      ...this.formatOrderResponse(order),
+      customer: {
+        id: order.user.id,
+        displayName: order.user.displayName,
+        email: order.user.email,
+      },
     };
   }
 

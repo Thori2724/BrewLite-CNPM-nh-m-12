@@ -86,6 +86,7 @@ model User {
   passwordHash String
   displayName  String
   role         Role      @default(CUSTOMER)
+  isActive     Boolean   @default(true)
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
   orders       Order[]
