@@ -109,4 +109,50 @@ export class ProductsService {
       toppings,
     };
   }
+
+  async findAllForManage() {
+    return this.prisma.product.findMany({
+      orderBy: [{ category: 'asc' }, { name: 'asc' }],
+      select: {
+        id: true,
+        name: true,
+        category: true,
+        basePrice: true,
+        imageUrl: true,
+        stock: true,
+        isVisible: true,
+      },
+    });
+  }
+
+  async updateAvailability(id: string, isAvailable: boolean) {
+    if (!UUID_REGEX.test(id)) {
+      throw new NotFoundException(PRODUCT_NOT_FOUND_MESSAGE);
+    }
+
+    const existing = await this.prisma.product.findUnique({
+      where: { id },
+      select: { id: true },
+    });
+
+    if (!existing) {
+      throw new NotFoundException(PRODUCT_NOT_FOUND_MESSAGE);
+    }
+
+    return this.prisma.product.update({
+      where: { id },
+      data: {
+        stock: isAvailable ? 999 : 0,
+      },
+      select: {
+        id: true,
+        name: true,
+        category: true,
+        basePrice: true,
+        imageUrl: true,
+        stock: true,
+        isVisible: true,
+      },
+    });
+  }
 }
