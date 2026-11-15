@@ -2,6 +2,8 @@ import {
   Body,
   Controller,
   Get,
+  HttpCode,
+  HttpStatus,
   Param,
   Patch,
   Post,
@@ -63,6 +65,18 @@ export class OrdersController {
       );
     }
     return this.ordersService.findOneForUser(req.user.id, id);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post(':id/cancel')
+  @HttpCode(HttpStatus.OK)
+  cancel(@Req() req: AuthenticatedRequest, @Param('id') id: string) {
+    if (!req.user?.id) {
+      throw new UnauthorizedException(
+        'Chưa đăng nhập hoặc phiên đăng nhập đã hết hạn',
+      );
+    }
+    return this.ordersService.cancelForUser(req.user.id, id);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)

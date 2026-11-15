@@ -34,6 +34,8 @@ import {
 
 export const TOPPING_NOT_FOUND_MESSAGE = 'Không tìm thấy topping';
 export const INVALID_ORDER_STATUS_MESSAGE = 'Trạng thái không hợp lệ';
+export const ORDER_CANNOT_CANCEL_MESSAGE =
+  'Không thể hủy đơn ở trạng thái hiện tại';
 export const ORDER_STATUS_CHANGED_MESSAGE =
   'Trạng thái đơn đã thay đổi, vui lòng tải lại';
 export { ORDER_NOT_FOUND_MESSAGE };
@@ -362,6 +364,61 @@ export class OrdersService {
         createdAt: payment.createdAt,
       })),
     };
+  }
+
+  async cancelForUser(userId: string, id: string) {
+    if (!UUID_REGEX.test(id)) {
+      throw new NotFoundException(ORDER_NOT_FOUND_MESSAGE);
+    }
+
+    const order = await this.prisma.order.findFirst({
+      where: {
+        id,
+        userId,
+      },
+      include: {
+        items: {
+          include: {
+            toppings: true,
+          },
+        },
+      },
+    });
+
+    if (!order) {
+      throw new NotFoundException(ORDER_NOT_FOUND_MESSAGE);
+    }
+
+    try {
+      validateTransition(
+        order.status as unknown as TransitionOrderStatus,
+        TransitionOrderStatus.CANCELLED,
+      );
+    } catch (error) {
+      if (error instanceof ConflictException) {
+        throw new ConflictException(ORDER_CANNOT_CANCEL_MESSAGE);
+      }
+      throw error;
+    }
+
+    const updated = await this.prisma.order.updateMany({
+      where: {
+        id,
+        status: order.status,
+      },
+      data: {
+        status: OrderStatus.CANCELLED,
+      },
+    });
+
+    if (updated.count === 0) {
+      throw new ConflictException(ORDER_STATUS_CHANGED_MESSAGE);
+    }
+
+    return this.formatOrderResponse({
+      ...order,
+      status: OrderStatus.CANCELLED,
+    });
   }
 
   async findAllForStaff(status?: string) {
