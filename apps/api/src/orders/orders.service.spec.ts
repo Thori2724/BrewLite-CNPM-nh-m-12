@@ -63,6 +63,7 @@ describe('Orders (OrdersService & CreateOrderDto)', () => {
     name: 'Trà sữa truyền thống',
     category: Category.MILK_TEA,
     basePrice: 35000,
+    stock: 50,
   };
 
   const mockCake = {
@@ -70,6 +71,7 @@ describe('Orders (OrdersService & CreateOrderDto)', () => {
     name: 'Bánh Croissant',
     category: Category.CAKE,
     basePrice: 30000,
+    stock: 20,
   };
 
   const mockPearlTopping = {
@@ -505,11 +507,11 @@ describe('Orders (OrdersService & CreateOrderDto)', () => {
     });
   });
 
-  describe('6 & 7. Kho cộng gộp và rollback giao dịch khi thiếu kho (409 Conflict)', () => {
-    it('cộng gộp số lượng cùng một món ở 2 dòng và trừ đúng tổng quantity khi đủ kho', async () => {
+  describe('6 & 7. Kiểm tra món đang bán / tạm hết (stock > 0 vs stock = 0, 409 Conflict)', () => {
+    it('món đang bán (stock > 0) thì tạo đơn thành công và stock KHÔNG đổi', async () => {
       prisma.product.findMany.mockResolvedValue([mockMilkTea]);
 
-      await service.create(USER_ID, {
+      const result = await service.create(USER_ID, {
         items: [
           {
             productId: mockMilkTea.id,
@@ -524,77 +526,22 @@ describe('Orders (OrdersService & CreateOrderDto)', () => {
         ],
       });
 
-      expect(txMock.product.updateMany).toHaveBeenCalledTimes(1);
-      expect(txMock.product.updateMany).toHaveBeenCalledWith({
-        where: {
-          id: mockMilkTea.id,
-          isVisible: true,
-          stock: { gte: 5 },
-        },
-        data: {
-          stock: { decrement: 5 },
-        },
-      });
+      expect(result.id).toBe('33333333-0000-0000-0000-000000000001');
+      expect(result.status).toBe(OrderStatus.PENDING);
+      expect(txMock.order.create).toHaveBeenCalledTimes(1);
+      expect(txMock.orderItem.create).toHaveBeenCalledTimes(2);
+      expect(txMock.product.updateMany).not.toHaveBeenCalled();
     });
 
-    it('ném 409 kèm details đúng khi cùng 1 món ở 2 dòng có tổng vượt stock', async () => {
-      prisma.product.findMany.mockResolvedValue([mockCake]);
-      txMock.product.updateMany.mockResolvedValue({ count: 0 });
-      txMock.product.findMany.mockResolvedValue([
-        {
-          id: mockCake.id,
-          name: mockCake.name,
-          stock: 4,
-        },
-      ]);
-
-      let caughtError: unknown;
-      try {
-        await service.create(USER_ID, {
-          items: [
-            { productId: mockCake.id, quantity: 3 },
-            { productId: mockCake.id, quantity: 2 },
-          ],
-        });
-      } catch (err) {
-        caughtError = err;
-      }
-
-      expect(caughtError).toBeInstanceOf(ConflictException);
-      expect((caughtError as ConflictException).getResponse()).toEqual({
-        statusCode: 409,
-        message: "Sản phẩm 'Bánh Croissant' không đủ số lượng trong kho",
-        error: 'Conflict',
-        details: [
-          {
-            productId: mockCake.id,
-            name: 'Bánh Croissant',
-            available: 4,
-          },
-        ],
-      });
-      expect(txMock.order.create).not.toHaveBeenCalled();
-    });
-
-    it('từ chối cả đơn (ném 409 bên trong transaction) khi có 1 món đủ kho nhưng 1 món thiếu kho', async () => {
+    it('từ chối cả đơn với 409 kèm details (không có available) và không tạo đơn khi có 1 món tạm hết (stock = 0)', async () => {
       const mockOutOfStock = {
         id: '11111111-0000-0000-0000-000000000003',
         name: 'Bạc xỉu',
         category: Category.COFFEE,
         basePrice: 32000,
+        stock: 0,
       };
       prisma.product.findMany.mockResolvedValue([mockMilkTea, mockOutOfStock]);
-
-      txMock.product.updateMany
-        .mockResolvedValueOnce({ count: 1 })
-        .mockResolvedValueOnce({ count: 0 });
-      txMock.product.findMany.mockResolvedValue([
-        {
-          id: mockOutOfStock.id,
-          name: mockOutOfStock.name,
-          stock: 0,
-        },
-      ]);
 
       let caughtError: unknown;
       try {
@@ -608,17 +555,70 @@ describe('Orders (OrdersService & CreateOrderDto)', () => {
         caughtError = err;
       }
 
-      expect(prisma.$transaction).toHaveBeenCalledTimes(1);
       expect(caughtError).toBeInstanceOf(ConflictException);
       expect((caughtError as ConflictException).getResponse()).toEqual({
         statusCode: 409,
-        message: "Sản phẩm 'Bạc xỉu' không đủ số lượng trong kho",
+        message: "Sản phẩm 'Bạc xỉu' hiện đã tạm hết",
         error: 'Conflict',
         details: [
           {
             productId: mockOutOfStock.id,
             name: 'Bạc xỉu',
-            available: 0,
+          },
+        ],
+      });
+      expect(txMock.order.create).not.toHaveBeenCalled();
+      expect(txMock.orderItem.create).not.toHaveBeenCalled();
+      expect(txMock.product.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('liệt kê đủ các món tạm hết trong details khi đơn có nhiều món tạm hết (stock = 0) và không tạo đơn nào', async () => {
+      const mockBacXiu = {
+        id: '11111111-0000-0000-0000-000000000003',
+        name: 'Bạc xỉu',
+        category: Category.COFFEE,
+        basePrice: 32000,
+        stock: 0,
+      };
+      const mockMatcha = {
+        id: '11111111-0000-0000-0000-000000000008',
+        name: 'Trà sữa matcha',
+        category: Category.MILK_TEA,
+        basePrice: 39000,
+        stock: 0,
+      };
+      prisma.product.findMany.mockResolvedValue([
+        mockMilkTea,
+        mockBacXiu,
+        mockMatcha,
+      ]);
+
+      let caughtError: unknown;
+      try {
+        await service.create(USER_ID, {
+          items: [
+            { productId: mockBacXiu.id, quantity: 1 },
+            { productId: mockMilkTea.id, quantity: 2 },
+            { productId: mockMatcha.id, quantity: 1 },
+          ],
+        });
+      } catch (err) {
+        caughtError = err;
+      }
+
+      expect(caughtError).toBeInstanceOf(ConflictException);
+      expect((caughtError as ConflictException).getResponse()).toEqual({
+        statusCode: 409,
+        message: "Sản phẩm 'Bạc xỉu' hiện đã tạm hết",
+        error: 'Conflict',
+        details: [
+          {
+            productId: mockBacXiu.id,
+            name: 'Bạc xỉu',
+          },
+          {
+            productId: mockMatcha.id,
+            name: 'Trà sữa matcha',
           },
         ],
       });

@@ -87,6 +87,7 @@ export class OrdersService {
         name: true,
         category: true,
         basePrice: true,
+        stock: true,
       },
     });
 
@@ -156,6 +157,23 @@ export class OrdersService {
       }
     }
 
+    const outOfStockDetails = uniqueProductIds
+      .map((productId) => productMap.get(productId)!)
+      .filter((product) => product.stock <= 0)
+      .map((product) => ({
+        productId: product.id,
+        name: product.name,
+      }));
+
+    if (outOfStockDetails.length > 0) {
+      throw new ConflictException({
+        statusCode: HttpStatus.CONFLICT,
+        message: `Sản phẩm '${outOfStockDetails[0].name}' hiện đã tạm hết`,
+        error: 'Conflict',
+        details: outOfStockDetails,
+      });
+    }
+
     const normalizedItems = dto.items.map((item) => {
       const product = productMap.get(item.productId)!;
       const isCake = product.category === Category.CAKE;
@@ -183,63 +201,11 @@ export class OrdersService {
       })),
     );
 
-    const requestedByProduct = new Map<string, number>();
-    for (const item of dto.items) {
-      requestedByProduct.set(
-        item.productId,
-        (requestedByProduct.get(item.productId) ?? 0) + item.quantity,
-      );
-    }
-
     const receiveType = dto.receiveType ?? ReceiveType.AT_COUNTER;
     const orderNote = dto.note ?? null;
 
     return this.prisma.$transaction(
       async (tx) => {
-        const failedProductIds: string[] = [];
-
-        for (const [productId, requiredQty] of requestedByProduct.entries()) {
-          const updated = await tx.product.updateMany({
-            where: {
-              id: productId,
-              isVisible: true,
-              stock: { gte: requiredQty },
-            },
-            data: {
-              stock: { decrement: requiredQty },
-            },
-          });
-
-          if (updated.count === 0) {
-            failedProductIds.push(productId);
-          }
-        }
-
-        if (failedProductIds.length > 0) {
-          const currentProducts = await tx.product.findMany({
-            where: { id: { in: failedProductIds } },
-            select: { id: true, name: true, stock: true },
-          });
-          const currentById = new Map(currentProducts.map((p) => [p.id, p]));
-
-          const details = failedProductIds.map((productId) => {
-            const current = currentById.get(productId);
-            const original = productMap.get(productId)!;
-            return {
-              productId,
-              name: current?.name ?? original.name,
-              available: current?.stock ?? 0,
-            };
-          });
-
-          throw new ConflictException({
-            statusCode: HttpStatus.CONFLICT,
-            message: `Sản phẩm '${details[0].name}' không đủ số lượng trong kho`,
-            error: 'Conflict',
-            details,
-          });
-        }
-
         const createdOrder = await tx.order.create({
           data: {
             userId,
