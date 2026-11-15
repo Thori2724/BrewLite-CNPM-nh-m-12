@@ -9,7 +9,7 @@ import { UserIcon } from './Icons';
  * Phần xác thực trên header:
  * - Đang kiểm tra (chưa đọc xong localStorage): hiện khung skeleton mờ, tránh nhấp nháy sai nội dung.
  * - Chưa đăng nhập: liên kết "Đăng nhập" và "Đăng ký".
- * - Đã đăng nhập: tên hiển thị người dùng (displayName) và nút "Đăng xuất".
+ * - Đã đăng nhập: tên hiển thị người dùng (liên kết tới /account) và nút "Đăng xuất".
  */
 export default function AuthNav() {
   const { user, isAuthenticated, isHydrated, logout } = useAuth();
@@ -50,18 +50,19 @@ export default function AuthNav() {
         >
           Đơn của tôi
         </Link>
-        <div className="flex items-center gap-1.5 px-2 py-1 rounded-control bg-moss/25 border border-moss/35 min-w-0">
+        <Link
+          href="/account"
+          aria-label={`Thông tin tài khoản: ${user.displayName}`}
+          title={`${user.displayName} - Xem thông tin tài khoản`}
+          className="flex items-center gap-1.5 px-2 py-1 rounded-control bg-moss/25 border border-moss/35 hover:bg-moss/40 hover:border-tan/50 transition min-w-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-moss"
+        >
           <span className="grid size-6 shrink-0 place-items-center rounded-full bg-bone text-[11px] font-bold text-kombu">
             {initials}
           </span>
-          <span
-            className="text-xs sm:text-sm font-medium text-bone truncate max-w-[5.5rem] sm:max-w-[8rem]"
-            title={user.displayName}
-          >
-            <span className="sr-only">Đang đăng nhập với tên </span>
+          <span className="text-xs sm:text-sm font-medium text-bone truncate max-w-[5.5rem] sm:max-w-[8rem]">
             {user.displayName}
           </span>
-        </div>
+        </Link>
         <button
           type="button"
           onClick={handleLogout}

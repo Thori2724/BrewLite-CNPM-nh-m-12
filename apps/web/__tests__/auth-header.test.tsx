@@ -64,11 +64,15 @@ describe('Header xác thực (AuthNav)', () => {
     expect(screen.queryByRole('button', { name: 'Đăng xuất khỏi tài khoản' })).not.toBeInTheDocument();
   });
 
-  it('3. Đã đăng nhập: hiện tên người dùng và nút "Đăng xuất", ẩn liên kết đăng nhập/đăng ký', async () => {
+  it('3. Đã đăng nhập: hiện tên người dùng (liên kết tới /account) và nút "Đăng xuất", ẩn liên kết đăng nhập/đăng ký', async () => {
     localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(loggedInSession));
     renderHeader();
 
     expect(await screen.findByText('Nguyễn Văn An')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Thông tin tài khoản: Nguyễn Văn An' })).toHaveAttribute(
+      'href',
+      '/account'
+    );
     expect(screen.getByRole('button', { name: 'Đăng xuất khỏi tài khoản' })).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Đăng nhập tài khoản' })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Đăng ký tài khoản mới' })).not.toBeInTheDocument();
