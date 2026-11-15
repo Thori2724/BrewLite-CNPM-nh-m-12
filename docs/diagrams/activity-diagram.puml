@@ -1,0 +1,39 @@
+@startuml activity-checkout
+title Activity Diagram - Đặt và thanh toán đơn hàng (UC-01)
+
+|#E3F2FD|Khách hàng|
+start
+:Xem giỏ hàng, bấm "Tiến hành đặt đơn";
+
+|#E8F5E9|Hệ thống BrewLite|
+:Hiển thị trang checkout;
+
+|Khách hàng|
+:Chọn hình thức nhận hàng ("Tại quầy" hoặc\n"Mang đi") và chọn đặt đơn hàng.;
+
+|Hệ thống BrewLite|
+:Hiển thị trang thanh toán\n(Ví điện tử ZaloPay / MoMo);
+
+|Khách hàng|
+:Xác nhận thanh toán;
+
+repeat
+  |Hệ thống BrewLite|
+  :Hiển thị mã QR thanh toán;
+
+  |Khách hàng|
+  :Thực hiện thanh toán;
+
+  |#FFF3E0|Cổng thanh toán mô phỏng|
+  :Xử lý thanh toán, trả kết quả;
+
+  |Hệ thống BrewLite|
+  :Nhận kết quả thanh toán;
+
+backward :Thông báo thanh toán thất bại,\ngiữ nguyên giỏ hàng;
+repeat while (Kết quả?) is (No) not (Yes)
+
+:Thông báo thanh toán thành công,\nhiển thị mã đơn và trạng thái đơn;
+stop
+
+@enduml

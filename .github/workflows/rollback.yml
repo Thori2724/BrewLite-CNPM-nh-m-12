@@ -1,0 +1,82 @@
+name: Rollback Deployment
+
+on:
+  workflow_dispatch:
+    inputs:
+      service:
+        description: 'Dịch vụ cần rollback'
+        type: choice
+        options:
+          - all
+          - api
+          - web
+        default: 'all'
+        required: true
+      reason:
+        description: 'Lý do rollback (bắt buộc ghi nhận sự cố)'
+        type: string
+        required: true
+      rollback_commit_sha:
+        description: 'Mã commit SHA trước đó cần deploy lại (tùy chọn)'
+        type: string
+        required: false
+
+jobs:
+  rollback-execute:
+    name: Thực thi Rollback
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ghi nhận thông tin Rollback
+        run: |
+          echo "=================================================="
+          echo "🚨 KÍCH HOẠT QUY TRÌNH ROLLBACK HỆ THỐNG"
+          echo "Người thực hiện : ${{ github.actor }}"
+          echo "Dịch vụ mục tiêu: ${{ github.event.inputs.service }}"
+          echo "Lý do rollback  : ${{ github.event.inputs.reason }}"
+          echo "Mã Commit đích  : ${{ github.event.inputs.rollback_commit_sha || 'Bản deploy ổn định gần nhất trên Render' }}"
+          echo "Thời điểm       : $(date -u)"
+          echo "=================================================="
+
+      - name: Hướng dẫn và Kích hoạt hoàn nguyên trên Render
+        env:
+          SERVICE_TARGET: ${{ github.event.inputs.service }}
+          ROLLBACK_COMMIT: ${{ github.event.inputs.rollback_commit_sha }}
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+        run: |
+          echo "Bước 1: Cơ chế hoàn nguyên ứng dụng trên Render PaaS"
+          echo "--------------------------------------------------"
+          echo "1. Đăng nhập vào Render Dashboard (https://dashboard.render.com)"
+          if [ "$SERVICE_TARGET" = "api" ] || [ "$SERVICE_TARGET" = "all" ]; then
+            echo "- Chọn service: brewlite-api"
+            echo "  Vào tab 'Deploys' -> Tìm bản deploy thành công trước đó -> Nhấn nút '...' -> Chọn 'Rollback to this deploy' hoặc 'Re-deploy'."
+          fi
+          if [ "$SERVICE_TARGET" = "web" ] || [ "$SERVICE_TARGET" = "all" ]; then
+            echo "- Chọn service: brewlite-web"
+            echo "  Vào tab 'Deploys' -> Tìm bản deploy thành công trước đó -> Nhấn nút '...' -> Chọn 'Rollback to this deploy' hoặc 'Re-deploy'."
+          fi
+          echo "--------------------------------------------------"
+
+          echo "Bước 2: Xử lý Database Migration (nếu có sự cố schema)"
+          echo "--------------------------------------------------"
+          echo "Nếu migration gần nhất gây lỗi dữ liệu hoặc schema:"
+          echo "1. Chạy trên máy dev bằng kết nối External Database URL:"
+          echo "   DATABASE_URL=\"<RENDER_EXTERNAL_DATABASE_URL>\" npx prisma migrate resolve --rolled-back <tên_migration_lỗi>"
+          echo "2. Hoặc tạo migration mới sửa lỗi tương thích ngược (expand and contract pattern)."
+          echo "--------------------------------------------------"
+
+      - name: Kiểm tra lại dịch vụ sau khi Rollback (Post-Rollback Smoke Test)
+        env:
+          API_URL: ${{ secrets.PRODUCTION_API_URL || 'https://brewlite-api.onrender.com' }}
+        run: |
+          echo "Chờ 10 giây trước khi kiểm tra trạng thái dịch vụ..."
+          sleep 10
+          echo "Kiểm tra API Health: $API_URL/health"
+          HTTP_STATUS=$(curl -s -o /tmp/rb_health.json -w "%{http_code}" "$API_URL/health" || true)
+          echo "HTTP Status: $HTTP_STATUS"
+          if [ "$HTTP_STATUS" -eq 200 ]; then
+            echo "API Health Check: PHỤC HỒI THÀNH CÔNG!"
+            cat /tmp/rb_health.json
+          else
+            echo "::warning::API chưa phản hồi 200 (mã: $HTTP_STATUS). Hãy theo dõi log trên Render Dashboard."
+          fi
+

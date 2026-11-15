@@ -1,0 +1,167 @@
+<p align="center">
+  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
+</p>
+
+[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
+[circleci-url]: https://circleci.com/gh/nestjs/nest
+
+  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
+    <p align="center">
+<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
+<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
+<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
+<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
+<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
+<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
+<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
+  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
+    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
+  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
+</p>
+  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
+  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+
+## Description
+
+[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+
+## Project setup
+
+```bash
+$ npm install
+```
+
+## Compile and run the project
+
+```bash
+# development
+$ npm run start
+
+# watch mode
+$ npm run start:dev
+
+# production mode
+$ npm run start:prod
+```
+
+## Run tests
+
+```bash
+# unit tests
+$ npm run test
+
+# e2e tests
+$ npm run test:e2e
+
+# test coverage
+$ npm run test:cov
+```
+
+## Endpoints Sản phẩm (Sprint 1 & Việc 5)
+
+- `GET /products`: Lấy danh sách món đang hiển thị (`isVisible = true`), sắp xếp theo `category` rồi `name`. Hỗ trợ query tùy chọn `category` (`TEA`, `COFFEE`, `MILK_TEA`, `CAKE`) và `q` (tìm theo tên không phân biệt hoa/thường, có dấu).
+- `GET /products/:id`: Xem chi tiết một sản phẩm theo UUID kèm cấu hình `sizes`, `sugarLevels`, `iceLevels` và `toppings` (lấy các topping `isVisible = true` từ bảng `Topping`, sắp xếp theo `id` tăng dần; riêng món `CAKE` trả 4 mảng rỗng `[]`).
+- **Dữ liệu mẫu (Seed):** Nạp 12 sản phẩm (`Product`) và 4 topping (`Topping`: Trân châu đen, Thạch dừa, Pudding, Kem cheese) bằng `upsert` theo UUID cố định. Chạy lệnh seed từ thư mục `apps/api`: `npm.cmd run seed`.
+
+## Logic nghiệp vụ Đơn hàng (`src/orders`, chưa mở endpoint)
+
+- `validateTransition(from, to)` (`order-status.ts`): Kiểm tra chuyển đổi trạng thái đơn hàng theo máy trạng thái hợp đồng; ném `409 Conflict` nếu chuyển không hợp lệ.
+- `calculateOrderTotal(items)` (`order-pricing.ts`): Tính `unitPrice`, `lineTotal` từng dòng và `totalAmount` toàn đơn (dùng hằng số phụ thu size từ `products.constants.ts`).
+
+Chạy unit test trên PowerShell (từ thư mục `apps/api`):
+```powershell
+npm.cmd run test
+```
+
+## Database Migration (Prisma)
+
+- Chạy migration ở môi trường dev (từ `apps/api`): `npm.cmd run prisma -- migrate dev` (hoặc `npx.cmd prisma migrate dev` / `npx.cmd prisma migrate deploy` nếu đã cấu hình biến `DATABASE_URL` trong `apps/api/.env`).
+- **Lưu ý khi pull code mới về:** Bắt buộc chạy `npm.cmd run prisma -- migrate dev` (hoặc `npx.cmd prisma migrate deploy`) và `npx.cmd prisma generate` trong thư mục `apps/api` để cập nhật 6 bảng mới (`User`, `Topping`, `Order`, `OrderItem`, `OrderItemTopping`, `Payment`) vào database.
+
+## Dựng lại database từ đầu
+
+Khi khởi tạo database mới trên máy local (sau khi đã bật PostgreSQL bằng `docker compose up -d` và cấu hình `.env` ở thư mục gốc), chạy theo đúng thứ tự từ thư mục `apps/api`:
+```powershell
+cd apps/api
+npm.cmd run prisma -- migrate deploy
+npm.cmd run prisma -- generate
+npm.cmd run seed
+```
+- **Tài khoản khách hàng demo:** Nếu biến môi trường `DEMO_USER_PASSWORD` trong `.env` được đặt (tối thiểu 6 ký tự), lệnh `npm.cmd run seed` sẽ tạo/cập nhật tài khoản demo với email `khach@example.com` (`role: CUSTOMER`, `displayName: "Khách demo"`). Nếu biến này để trống hoặc ngắn hơn 6 ký tự, seed sẽ tự động bỏ qua bước tạo tài khoản demo.
+
+## Endpoints Xác thực (Sprint 2 - Việc 4b)
+
+- Biến môi trường bắt buộc trong `.env`: `JWT_SECRET=<chuỗi-bí-mật>` (nếu thiếu ứng dụng sẽ báo lỗi ngay khi khởi động).
+- `POST /auth/register`: Đăng ký tài khoản khách hàng (`CUSTOMER`), băm mật khẩu bcrypt (10 vòng), chuẩn hóa email chữ thường. Trả `201 Created` gồm `{ id, email, displayName, role }`; trùng email trả `409 Conflict` (`"Email này đã được sử dụng"`).
+- `POST /auth/login`: Đăng nhập bằng `email` và `password`. Trả `200 OK` gồm `{ accessToken, user: { id, email, displayName, role } }` (JWT có hạn 24 giờ); sai email hoặc mật khẩu trả `401 Unauthorized` (`"Email hoặc mật khẩu không chính xác"`).
+
+## Endpoints Đơn hàng & Thanh toán (Sprint 2 - Việc 6, 7, 8)
+
+- `POST /orders` (cần Bearer JWT): Khởi tạo đơn hàng từ giỏ, server tự tính tiền và kiểm tra/trừ tồn kho cộng gộp theo món trong một transaction.
+- `POST /payments` (cần Bearer JWT và header `Idempotency-Key` 8–100 ký tự): Thanh toán đơn hàng qua cổng mô phỏng (đuôi `0000` thất bại `FAILED`, còn lại `SUCCESS`; chỉ lưu 4 số cuối `accountLast4`).
+- `GET /orders/me` (cần Bearer JWT): Lấy danh sách đơn hàng của người dùng đang đăng nhập, sắp xếp `createdAt` giảm dần rồi `orderNumber` giảm dần, kèm `items[]` và `toppings[]` (không bao gồm `payments`).
+- `GET /orders/:id` (cần Bearer JWT): Xem chi tiết một đơn hàng của chính người dùng kèm lịch sử `payments[]` (sắp xếp `createdAt` giảm dần, có `failureReason: null` hoặc lý do lỗi). Đơn không tồn tại, của người khác hoặc `id` không phải UUID đều trả `404 Not Found` (`"Không tìm thấy đơn hàng"`).
+
+## Chạy Integration Test (Database PostgreSQL thật - Việc 9a)
+
+Integration test kết nối tới database PostgreSQL riêng biệt thông qua biến môi trường `TEST_DATABASE_URL`. Để bảo vệ dữ liệu dev, khóa an toàn bắt buộc tên database trong `TEST_DATABASE_URL` phải kết thúc bằng hậu tố `_test` (nếu thiếu biến hoặc tên database không kết thúc bằng `_test`, bộ test sẽ từ chối chạy ngay).
+
+Các bước chuẩn bị và chạy trên Windows PowerShell (khi container `brewlite-postgres` của Docker Compose đang chạy):
+
+```powershell
+# 1. Tạo database test riêng (chỉ cần chạy 1 lần; nếu đã có sẽ báo already exists, có thể bỏ qua)
+docker exec brewlite-postgres psql -U brewlite -d postgres -c "CREATE DATABASE brewlite_test;"
+
+# 2. Di chuyển vào thư mục apps/api
+cd apps/api
+
+# 3. Đặt biến TEST_DATABASE_URL và tạm trỏ DATABASE_URL sang database test trong cửa sổ PowerShell hiện tại để chạy migration
+$env:TEST_DATABASE_URL = "postgresql://brewlite:brewlite@127.0.0.1:5432/brewlite_test?schema=public"
+$env:DATABASE_URL = $env:TEST_DATABASE_URL
+
+# 4. Chạy migration lên database test
+./node_modules/.bin/prisma.cmd migrate deploy
+
+# 5. Chạy integration test tuần tự (--runInBand) cho POST /orders và POST /payments
+npm.cmd run test:integration
+```
+
+## Deployment
+
+When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
+
+If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+
+```bash
+$ npm install -g @nestjs/mau
+$ mau deploy
+```
+
+With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+
+## Resources
+
+Check out a few resources that may come in handy when working with NestJS:
+
+- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
+- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
+- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
+- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
+- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
+- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
+- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
+- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
+
+## Support
+
+Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
+
+## Stay in touch
+
+- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
+- Website - [https://nestjs.com](https://nestjs.com/)
+- Twitter - [@nestframework](https://twitter.com/nestframework)
+
+## License
+
+Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
