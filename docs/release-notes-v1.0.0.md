@@ -16,10 +16,16 @@ Bản phát hành `v1.0.0` đánh dấu sự hoàn thiện trọn vẹn của h�
 
 ---
 
-## 2. Thông tin Môi trường Production (Render Cloud)
-- **Frontend Web Application (HTTPS):** [https://brewlite-web.onrender.com](https://brewlite-web.onrender.com)
-- **Backend REST API (HTTPS):** [https://brewlite-api.onrender.com](https://brewlite-api.onrender.com)
-- **API Health Check Endpoint:** [https://brewlite-api.onrender.com/health](https://brewlite-api.onrender.com/health)
+## 2. Video Demo Nghiệm thu Hệ thống
+- **Link Video Demo (Google Drive):** [https://drive.google.com/file/d/1ee_Dqq-_FKyyMiGw4DBG6gHpICcD7xKM/view?usp=sharing](https://drive.google.com/file/d/1ee_Dqq-_FKyyMiGw4DBG6gHpICcD7xKM/view?usp=sharing)
+- **Minh họa đầy đủ:** Luồng Khách hàng (đặt món, quét QR thanh toán), Quầy Barista (xử lý đơn hàng, đổi trạng thái, hủy đơn, gạt món tạm hết), và Quản trị viên (quản lý món, khóa tài khoản nhân viên).
+
+---
+
+## 3. Thông tin Môi trường Production (Render Cloud)
+- **Frontend Web Application (HTTPS):** [https://brewlite-web-6sml.onrender.com](https://brewlite-web-6sml.onrender.com)
+- **Backend REST API (HTTPS):** [https://brewlite-api-aj31.onrender.com](https://brewlite-api-aj31.onrender.com)
+- **API Health Check Endpoint:** [https://brewlite-api-aj31.onrender.com/health](https://brewlite-api-aj31.onrender.com/health)
 - **Cơ sở dữ liệu:** PostgreSQL 16 (Render Managed Database, mạng riêng nội bộ, persistent storage).
 
 ---
@@ -49,11 +55,19 @@ Bản phát hành `v1.0.0` đánh dấu sự hoàn thiện trọn vẹn của h�
 ---
 
 ## 5. Hướng dẫn Nghiệm thu Nhanh (Quick Verification)
+
+### Danh sách Tài khoản Demo trên Production:
+Mật khẩu cho tất cả tài khoản demo là: **`demo123@`** *(cấu hình qua biến môi trường `DEMO_USER_PASSWORD`)*:
+- **Quản lý (Admin):** `quanly@example.com` / `demo123@` (Toàn quyền quản lý món, khóa nhân viên)
+- **Nhân viên (Staff):** `nhanvien1@example.com` / `demo123@` (Quản lý đơn quầy Barista)
+- **Nhân viên 3 (Staff - Bị khóa):** `nhanvien3@example.com` / `demo123@` (Kiểm thử chức năng khóa tài khoản)
+- **Khách hàng (Customer):** `khach@example.com` / `demo123@` (Đặt hàng và thanh toán)
+
 Người kiểm thử độc lập có thể kiểm tra toàn bộ luồng hoạt động qua 2 cách:
-1. **Trực tiếp trên web:** Truy cập [https://brewlite-web.onrender.com](https://brewlite-web.onrender.com) để đặt món và thanh toán trực tiếp.
+1. **Trực tiếp trên web:** Truy cập [https://brewlite-web-6sml.onrender.com](https://brewlite-web-6sml.onrender.com) để đặt món và thanh toán trực tiếp.
 2. **Chạy kịch bản tự động:** Mở PowerShell tại thư mục gốc và chạy:
    ```powershell
-   .\tests\smoke-test.ps1
-   .\tests\run-e2e.ps1 -ApiUrl https://brewlite-api.onrender.com
+   powershell -ExecutionPolicy Bypass -File .\tests\smoke-test.ps1
+   powershell -ExecutionPolicy Bypass -File .\tests\run-e2e.ps1 -ApiUrl https://brewlite-api-aj31.onrender.com
    ```
 

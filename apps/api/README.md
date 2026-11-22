@@ -91,7 +91,13 @@ npm.cmd run prisma -- migrate deploy
 npm.cmd run prisma -- generate
 npm.cmd run seed
 ```
-- **Tài khoản khách hàng demo:** Nếu biến môi trường `DEMO_USER_PASSWORD` trong `.env` được đặt (tối thiểu 6 ký tự), lệnh `npm.cmd run seed` sẽ tạo/cập nhật tài khoản demo với email `khach@example.com` (`role: CUSTOMER`, `displayName: "Khách demo"`). Nếu biến này để trống hoặc ngắn hơn 6 ký tự, seed sẽ tự động bỏ qua bước tạo tài khoản demo.
+- **Tài khoản demo (5 tài khoản chuẩn theo Hợp đồng API Mục 8.3):** Khi biến môi trường `DEMO_USER_PASSWORD` trong `.env` được đặt (mặc định `demo123@`), lệnh `npm.cmd run seed` sẽ tạo/cập nhật 5 tài khoản demo:
+  - `quanly@example.com` (`role: ADMIN`, `displayName: "Quản lý"`)
+  - `nhanvien1@example.com` (`role: STAFF`, `displayName: "Nhân viên 1"`)
+  - `nhanvien2@example.com` (`role: STAFF`, `displayName: "Nhân viên 2"`)
+  - `nhanvien3@example.com` (`role: STAFF`, `displayName: "Nhân viên 3"`, phục vụ kiểm thử Khóa/Mở khóa trên `/staff/employees`)
+  - `khach@example.com` (`role: CUSTOMER`, `displayName: "Khách demo"`)
+  Nếu biến này để trống hoặc ngắn hơn 6 ký tự, seed sẽ tự động bỏ qua bước tạo tài khoản demo.
 
 ## Endpoints Xác thực (Sprint 2 - Việc 4b)
 

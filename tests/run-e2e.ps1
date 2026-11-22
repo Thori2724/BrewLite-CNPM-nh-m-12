@@ -1,5 +1,5 @@
-param (
-    [string]$ApiUrl = "http://localhost:3001"
+﻿param (
+    [string]$ApiUrl = "https://brewlite-api-aj31.onrender.com"
 )
 
 Write-Host "==========================================================" -ForegroundColor Cyan
@@ -26,7 +26,7 @@ try {
     Write-Host "   npm.cmd run start:dev" -ForegroundColor Gray
     Write-Host ""
     Write-Host "2. Nếu kiểm thử trên production (Render):" -ForegroundColor White
-    Write-Host "   .\tests\run-e2e.ps1 -ApiUrl https://brewlite-api.onrender.com" -ForegroundColor Gray
+    Write-Host "   .\tests\run-e2e.ps1 -ApiUrl https://brewlite-api-aj31.onrender.com" -ForegroundColor Gray
     Write-Host ""
     exit 1
 }

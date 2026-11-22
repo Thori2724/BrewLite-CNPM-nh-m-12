@@ -12,7 +12,7 @@ Tài liệu này ghi lại các bước thiết lập và triển khai thực t�
   - `brewlite-api`: Web Service chạy Docker từ `apps/api/Dockerfile`, cấu hình cổng rõ ràng `PORT: "10000"`, khởi động bằng lệnh `node dist/main` (ghi đè CMD migrate/seed của local để giữ đúng nguyên tắc tách migration khỏi lúc khởi động).
   - `brewlite-web`: Web Service chạy Docker từ `apps/web/Dockerfile`, cấu hình cổng rõ ràng `PORT: "10000"`, nhận `NEXT_PUBLIC_API_URL` lúc build.
 - **Tên miền & Mạng:**
-  - Web và API sở hữu 2 subdomain riêng có HTTPS tự động (dạng `https://brewlite-web.onrender.com` và `https://brewlite-api.onrender.com`).
+  - Web và API sở hữu 2 subdomain riêng có HTTPS tự động (dạng `https://brewlite-web-6sml.onrender.com` và `https://brewlite-api-aj31.onrender.com`).
   - Web gọi API trực tiếp qua domain của API; API cấu hình `CORS_ORIGIN` trỏ về domain của Web.
 - **Rủi ro và đặc điểm gói Miễn phí (Free Tier):**
   - Web services tự động chuyển sang chế độ "ngủ" (spin down) sau 15 phút không có request; lần truy cập đầu tiên cần khoảng 50 giây để khởi động lại (cold start).
@@ -32,13 +32,13 @@ Tài liệu này ghi lại các bước thiết lập và triển khai thực t�
 
 ### Bước 2: Lấy URL của API
 1. Chờ dịch vụ `brewlite-api` tạo xong.
-2. Sao chép địa chỉ URL công khai của API (ví dụ: `https://brewlite-api.onrender.com`).
+2. Sao chép địa chỉ URL công khai của API (ví dụ: `https://brewlite-api-aj31.onrender.com`).
 
 ### Bước 3: Cấu hình và tạo dịch vụ Web
 1. Tại dịch vụ `brewlite-web` trên Render Dashboard, truy cập mục **Environment**.
 2. Điền giá trị `NEXT_PUBLIC_API_URL` bằng URL của API đã lấy ở Bước 2.
 3. Kích hoạt build và deploy `brewlite-web` (vì biến này cần được đưa vào mã nguồn lúc `npm run build`).
-4. Sau khi Web deploy thành công, sao chép địa chỉ URL của Web (ví dụ: `https://brewlite-web.onrender.com`).
+4. Sau khi Web deploy thành công, sao chép địa chỉ URL của Web (ví dụ: `https://brewlite-web-6sml.onrender.com`).
 
 ### Bước 4: Cập nhật CORS cho API
 1. Truy cập dịch vụ `brewlite-api` trên Render Dashboard > mục **Environment**.
@@ -54,7 +54,8 @@ Vì sử dụng gói Free không có Shell, chúng ta chạy migration và nạp
    $env:DATABASE_URL="<External_Database_URL_cua_Render>"
    npx prisma migrate deploy
 
-   # 2. Nạp dữ liệu menu (seed 12 món, không có tài khoản demo)
+   # 2. Nạp dữ liệu menu 12 món và 5 tài khoản demo (mật khẩu demo123@):
+   $env:DEMO_USER_PASSWORD="demo123@"
    node -r ts-node/register prisma/seed.ts
    ```
 
@@ -69,7 +70,7 @@ Vì sử dụng gói Free không có Shell, chúng ta chạy migration và nạp
 .\tests\smoke-test.ps1
 
 # Hoặc truyền URL tùy biến của nhóm
-.\tests\smoke-test.ps1 -ApiUrl "https://brewlite-api.onrender.com" -WebUrl "https://brewlite-web.onrender.com"
+.\tests\smoke-test.ps1 -ApiUrl "https://brewlite-api-aj31.onrender.com" -WebUrl "https://brewlite-web-6sml.onrender.com"
 ```
 
 Script sẽ tự động:
@@ -98,11 +99,12 @@ Script sẽ tự động:
 ### 3.3 Checklist Nghiệm thu Bản Cuối (Task 5.4 Delivery Checklist)
 | Hạng mục kiểm tra | Yêu cầu Task 5.4 | Trạng thái / Cách kiểm chứng |
 |---|---|---|
-| **Frontend Production** | URL truy cập được qua HTTPS | `https://brewlite-web.onrender.com` (Render cấp SSL tự động) |
-| **API Backend** | URL API hoạt động có HTTPS và health check | `https://brewlite-api.onrender.com/health` phản hồi `{"status":"ok"}` |
+| **Frontend Production** | URL truy cập được qua HTTPS | `https://brewlite-web-6sml.onrender.com` (Render cấp SSL tự động) |
+| **API Backend** | URL API hoạt động có HTTPS và health check | `https://brewlite-api-aj31.onrender.com/health` phản hồi `{"status":"ok"}` |
 | **Database An toàn** | Không mở cổng PostgreSQL 5432 ra Internet | `brewlite-db` chỉ cho phép kết nối nội bộ trong mạng Render; migration dùng External SSL URL |
 | **Bảo mật Secret** | Secret không vào repo hoặc log CI | Dùng GitHub Actions Secrets và Render Environment Variables |
 | **Kiểm thử E2E Production** | Xác minh toàn bộ luồng nghiệp vụ trên Production | Chạy `.\tests\run-e2e.ps1 -ApiUrl <API_URL>` vượt qua toàn bộ 16 kịch bản |
+| **Video Demo Hệ thống** | Minh họa nghiệm thu trọn vẹn luồng thực tế 3 vai trò | [Xem trên Google Drive](https://drive.google.com/file/d/1ee_Dqq-_FKyyMiGw4DBG6gHpICcD7xKM/view?usp=sharing) |
 
 ---
 
@@ -116,15 +118,15 @@ Quy trình CD tự động hóa đầy đủ 5 bước theo tiêu chí Task 5.3:
 2. **Giai đoạn 2 (Docker Registry GHCR):** Đóng gói Docker image cho API và Web, gắn tag commit SHA (`sha-<commit>`) và `latest`, sau đó đẩy lên GitHub Container Registry (`ghcr.io/thori2724/brewlite-api` và `brewlite-web`) bằng quyền `packages: write` của `GITHUB_TOKEN`.
 3. **Giai đoạn 3 (Database Migration):** Chạy lệnh `npx prisma migrate deploy` từ môi trường CI kết nối an toàn tới Render PostgreSQL qua secret `RENDER_EXTERNAL_DATABASE_URL`. Nếu migration lỗi, dừng pipeline, không deploy mã nguồn mới.
 4. **Giai đoạn 4 (Deploy Render):** Gọi Deploy Hook URL qua cURL để kích hoạt Render triển khai image/commit mới cho `brewlite-api` và `brewlite-web`.
-5. **Giai đoạn 5 (Smoke Test):** Tự động gửi request kiểm tra `GET https://brewlite-api.onrender.com/health` (có retry 10 lần, chờ 15s giữa các lần do Render cold start) và kiểm tra trang chủ Web. Nếu không đạt 200 OK, pipeline báo lỗi để kích hoạt rollback.
+5. **Giai đoạn 5 (Smoke Test):** Tự động gửi request kiểm tra `GET https://brewlite-api-aj31.onrender.com/health` (có retry 10 lần, chờ 15s giữa các lần do Render cold start) và kiểm tra trang chủ Web. Nếu không đạt 200 OK, pipeline báo lỗi để kích hoạt rollback.
 
 ### 4.2 Danh sách GitHub Secrets cần thiết lập
 Truy cập GitHub Repo > **Settings** > **Secrets and variables** > **Actions**:
 - `RENDER_EXTERNAL_DATABASE_URL`: External Database URL của `brewlite-db` trên Render.
 - `RENDER_API_DEPLOY_HOOK`: Deploy Hook URL của `brewlite-api` (Render Dashboard > Settings > Deploy Hook).
 - `RENDER_WEB_DEPLOY_HOOK`: Deploy Hook URL của `brewlite-web` (Render Dashboard > Settings > Deploy Hook).
-- `PRODUCTION_API_URL`: Domain công khai của API (ví dụ: `https://brewlite-api.onrender.com`).
-- `PRODUCTION_WEB_URL`: Domain công khai của Web (ví dụ: `https://brewlite-web.onrender.com`).
+- `PRODUCTION_API_URL`: Domain công khai của API (ví dụ: `https://brewlite-api-aj31.onrender.com`).
+- `PRODUCTION_WEB_URL`: Domain công khai của Web (ví dụ: `https://brewlite-web-6sml.onrender.com`).
 
 ### 4.3 Quy trình Rollback (Hoàn nguyên sự cố)
 1. **Rollback 1-click trên Render Dashboard:**
