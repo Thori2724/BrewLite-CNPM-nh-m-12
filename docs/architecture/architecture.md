@@ -51,8 +51,8 @@ flowchart LR
     U["Khách hàng<br/>(Trình duyệt Web máy tính / Di động)"]
 
     subgraph RENDER["Nền tảng Cloud Render (PaaS)"]
-        WEB["brewlite-web<br/>Next.js 16 (cổng 10000)<br/>https://brewlite-web.onrender.com"]
-        API["brewlite-api<br/>NestJS 11 (cổng 10000)<br/>https://brewlite-api.onrender.com"]
+        WEB["brewlite-web<br/>Next.js 16 (cổng 10000)<br/>https://brewlite-web-6sml.onrender.com"]
+        API["brewlite-api<br/>NestJS 11 (cổng 10000)<br/>https://brewlite-api-aj31.onrender.com"]
         DB[("brewlite-db<br/>Managed PostgreSQL 16<br/>(Mạng nội bộ Render)")]
     end
 
@@ -77,7 +77,7 @@ flowchart LR
 | `GHCR` | GitHub Container Registry (`ghcr.io`) | Lưu trữ Docker image được gắn nhãn commit SHA phục vụ truy vết | `.github/workflows/cd.yml` |
 
 > **Cấu hình Tên miền và CORS:**
-> Frontend và API sở hữu hai tên miền riêng biệt do Render cấp phát tự động có sẵn HTTPS (`brewlite-web.onrender.com` và `brewlite-api.onrender.com`).
+> Frontend và API sở hữu hai tên miền riêng biệt do Render cấp phát tự động có sẵn HTTPS (`brewlite-web-6sml.onrender.com` và `brewlite-api-aj31.onrender.com`).
 > - Web gọi API trực tiếp qua domain của API thông qua biến môi trường `NEXT_PUBLIC_API_URL` được nung vào lúc build.
 > - API cấu hình bật CORS qua biến môi trường `CORS_ORIGIN` trỏ chính xác về domain của Web để đảm bảo an toàn truy cập chéo nguồn.
 > - Bỏ hoàn toàn tiền tố `/api` (API gọi thẳng các endpoint gốc: `/products`, `/orders`, `/payments`, `/auth/login`, `/health`).

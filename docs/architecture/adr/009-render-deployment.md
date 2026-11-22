@@ -19,7 +19,7 @@ Yêu cầu production cần đạt được:
    - `brewlite-api`: Web Service chạy Docker từ thư mục `apps/api` (`Dockerfile` giữ nguyên cấu hình local), cấu hình cổng rõ ràng `PORT: "10000"`.
    - `brewlite-web`: Web Service chạy Docker từ thư mục `apps/web` (`Dockerfile` giữ nguyên cấu hình local), cấu hình cổng rõ ràng `PORT: "10000"`.
 3. **Tên miền và Định tuyến:** 
-   - Web và API sử dụng **hai subdomain riêng biệt** do Render cấp phát tự động có sẵn HTTPS (dạng `https://brewlite-web.onrender.com` và `https://brewlite-api.onrender.com`).
+   - Web và API sử dụng **hai subdomain riêng biệt** do Render cấp phát tự động có sẵn HTTPS (dạng `https://brewlite-web-6sml.onrender.com` và `https://brewlite-api-aj31.onrender.com`).
    - Bỏ reverse proxy Nginx và quy tắc định tuyến không tiền tố của AWS.
    - Web gọi trực tiếp tới domain của API; API bật CORS cho phép nguồn từ domain của Web (`CORS_ORIGIN`).
 4. **Loại bỏ các thành phần AWS:** Hoàn toàn không sử dụng Nginx, CloudFront, EC2, ECR, SSM, Caddy.
