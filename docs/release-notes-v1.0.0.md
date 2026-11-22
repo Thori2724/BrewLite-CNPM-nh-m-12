@@ -17,7 +17,7 @@ Bản phát hành `v1.0.0` đánh dấu sự hoàn thiện trọn vẹn của h�
 ---
 
 ## 2. Video Demo Nghiệm thu Hệ thống
-- **Link Video Demo (Google Drive):** [https://drive.google.com/file/d/17HaH8VHT4rH6OmWxWzHisA4-CNNHbEUS/view?usp=sharing](https://drive.google.com/file/d/17HaH8VHT4rH6OmWxWzHisA4-CNNHbEUS/view?usp=sharing)
+- **Link Video Demo (Google Drive):** [https://drive.google.com/file/d/1ee_Dqq-_FKyyMiGw4DBG6gHpICcD7xKM/view?usp=sharing](https://drive.google.com/file/d/1ee_Dqq-_FKyyMiGw4DBG6gHpICcD7xKM/view?usp=sharing)
 - **Minh họa đầy đủ:** Luồng Khách hàng (đặt món, quét QR thanh toán), Quầy Barista (xử lý đơn hàng, đổi trạng thái, hủy đơn, gạt món tạm hết), và Quản trị viên (quản lý món, khóa tài khoản nhân viên).
 
 ---

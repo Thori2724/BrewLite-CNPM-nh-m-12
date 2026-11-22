@@ -104,7 +104,7 @@ Script sẽ tự động:
 | **Database An toàn** | Không mở cổng PostgreSQL 5432 ra Internet | `brewlite-db` chỉ cho phép kết nối nội bộ trong mạng Render; migration dùng External SSL URL |
 | **Bảo mật Secret** | Secret không vào repo hoặc log CI | Dùng GitHub Actions Secrets và Render Environment Variables |
 | **Kiểm thử E2E Production** | Xác minh toàn bộ luồng nghiệp vụ trên Production | Chạy `.\tests\run-e2e.ps1 -ApiUrl <API_URL>` vượt qua toàn bộ 16 kịch bản |
-| **Video Demo Hệ thống** | Minh họa nghiệm thu trọn vẹn luồng thực tế 3 vai trò | [Xem trên Google Drive](https://drive.google.com/file/d/17HaH8VHT4rH6OmWxWzHisA4-CNNHbEUS/view?usp=sharing) |
+| **Video Demo Hệ thống** | Minh họa nghiệm thu trọn vẹn luồng thực tế 3 vai trò | [Xem trên Google Drive](https://drive.google.com/file/d/1ee_Dqq-_FKyyMiGw4DBG6gHpICcD7xKM/view?usp=sharing) |
 
 ---
 

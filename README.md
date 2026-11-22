@@ -7,7 +7,7 @@ Giao diện ưu tiên màn hình máy tính, vẫn xem được trên điện th
 ---
 
 ## 📺 Video Demo Hệ thống (Nghiệm thu Đồ án)
-- **Link Video Demo (Google Drive):** [https://drive.google.com/file/d/17HaH8VHT4rH6OmWxWzHisA4-CNNHbEUS/view?usp=sharing](https://drive.google.com/file/d/17HaH8VHT4rH6OmWxWzHisA4-CNNHbEUS/view?usp=sharing)
+- **Link Video Demo (Google Drive):** [https://drive.google.com/file/d/1ee_Dqq-_FKyyMiGw4DBG6gHpICcD7xKM/view?usp=sharing](https://drive.google.com/file/d/1ee_Dqq-_FKyyMiGw4DBG6gHpICcD7xKM/view?usp=sharing)
 - **Nội dung trình diễn trọn vẹn 3 vai trò:**
   - **Khách hàng (Customer):** Xem menu, lọc/tìm kiếm, tùy chọn size/đường/đá/topping, giỏ hàng, đặt hàng, quét mã QR thanh toán mô phỏng (ZaloPay/MoMo với countdown 5s tự động thành công) và xem lịch sử / khách tự hủy đơn.
   - **Nhân viên quầy (Staff):** Bảng điều khiển Barista (`/staff`) nhận đơn thời gian thực, chuyển đổi các mốc trạng thái (`PAID → PREPARING → READY → COMPLETED`) và hủy đơn tại quầy khi thiếu món.
@@ -247,7 +247,7 @@ Hệ thống được triển khai thực tế trên nền tảng **Render** the
 
 ## Hướng dẫn dành cho Người Kiểm thử Độc lập (Independent Evaluation)
 
-Để phục vụ tiêu chí nghiệm thu của **Task 5.4** (*người không thuộc nhóm có thể clone repo và nghiệm thu dễ dàng*), bạn có thể tham khảo [Video Demo tại đây](https://drive.google.com/file/d/17HaH8VHT4rH6OmWxWzHisA4-CNNHbEUS/view?usp=sharing) hoặc chọn một trong hai cách nghiệm thu sau:
+Để phục vụ tiêu chí nghiệm thu của **Task 5.4** (*người không thuộc nhóm có thể clone repo và nghiệm thu dễ dàng*), bạn có thể tham khảo [Video Demo tại đây](https://drive.google.com/file/d/1ee_Dqq-_FKyyMiGw4DBG6gHpICcD7xKM/view?usp=sharing) hoặc chọn một trong hai cách nghiệm thu sau:
 
 ### Danh sách tài khoản Demo có sẵn
 Mật khẩu chung cho tất cả 5 tài khoản demo trên môi trường Production là: **`demo123@`** *(cấu hình qua biến môi trường `DEMO_USER_PASSWORD` theo Hợp đồng API Mục 8.3 và `seed.ts`)*:
