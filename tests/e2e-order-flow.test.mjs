@@ -16,6 +16,7 @@ describe('BrewLite - End-to-End (E2E) Order Flow Test Suite', () => {
   let customerUser = null;
   let drinkProduct = null;
   let cakeProduct = null;
+  let outOfStockProduct = null;
   let toppingsList = [];
   let createdOrder = null;
   let lastPaymentKey = '';
@@ -61,6 +62,9 @@ describe('BrewLite - End-to-End (E2E) Order Flow Test Suite', () => {
     // Tìm một món bánh để kiểm tra ràng buộc không topping/size
     cakeProduct = products.find((p) => p.category === 'CAKE' && p.stock > 0);
     assert.ok(cakeProduct, 'Phải có ít nhất 1 món bánh còn hàng trong menu');
+
+    // Tìm một món tạm hết hàng (stock <= 0) để kiểm thử từ chối đặt đơn 409
+    outOfStockProduct = products.find((p) => p.stock <= 0);
   });
 
   test('2.2 Lọc sản phẩm theo danh mục TEA (GET /products?category=TEA)', async () => {
@@ -220,6 +224,8 @@ describe('BrewLite - End-to-End (E2E) Order Flow Test Suite', () => {
   });
 
   test('5.2 Kiểm tra từ chối tạo đơn khi không đủ tồn kho (409 Conflict)', async () => {
+    // Sử dụng món có tồn kho <= 0 (tạm hết) hoặc mã món mẫu
+    const targetProductId = outOfStockProduct ? outOfStockProduct.id : '11111111-0000-0000-0000-000000000003';
     const res = await fetch(`${BASE_URL}/orders`, {
       method: 'POST',
       headers: {
@@ -230,14 +236,14 @@ describe('BrewLite - End-to-End (E2E) Order Flow Test Suite', () => {
         receiveType: 'AT_COUNTER',
         items: [
           {
-            productId: drinkProduct.id,
-            quantity: 99999, // Vượt quá kho
+            productId: targetProductId,
+            quantity: 1, // Số lượng hợp lệ (1..10) nhưng món tạm hết
           },
         ],
       }),
     });
 
-    assert.equal(res.status, 409, 'Đặt số lượng vượt quá tồn kho phải trả về HTTP 409 Conflict');
+    assert.equal(res.status, 409, 'Đặt món tạm hết (stock <= 0) phải trả về HTTP 409 Conflict');
     const errorBody = await res.json();
     assert.ok(errorBody.message, 'Phải có thông báo lỗi hết hàng');
   });

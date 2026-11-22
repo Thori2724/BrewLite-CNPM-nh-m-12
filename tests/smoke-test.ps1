@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Kịch bản Smoke Test tự động trên môi trường Production (Render) hoặc Local - BrewLite.
     Đáp ứng yêu cầu nghiệm thu của Task 5.4 (Assignment 2).
@@ -12,13 +12,13 @@
 
 .EXAMPLE
     .\tests\smoke-test.ps1
-    .\tests\smoke-test.ps1 -ApiUrl "https://brewlite-api.onrender.com" -WebUrl "https://brewlite-web.onrender.com"
+    .\tests\smoke-test.ps1 -ApiUrl "https://brewlite-api-aj31.onrender.com" -WebUrl "https://brewlite-web-6sml.onrender.com"
     .\tests\smoke-test.ps1 -ApiUrl "http://localhost:3001" -WebUrl "http://localhost:3000"
 #>
 
 param (
-    [string]$ApiUrl = "https://brewlite-api.onrender.com",
-    [string]$WebUrl = "https://brewlite-web.onrender.com",
+    [string]$ApiUrl = "https://brewlite-api-aj31.onrender.com",
+    [string]$WebUrl = "https://brewlite-web-6sml.onrender.com",
     [int]$MaxRetries = 10,
     [int]$RetryDelaySec = 10
 )

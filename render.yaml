@@ -20,7 +20,7 @@ services:
       - key: JWT_SECRET
         generateValue: true
       - key: CORS_ORIGIN
-        # Điền thủ công URL của brewlite-web sau khi tạo xong (ví dụ: https://brewlite-web.onrender.com)
+        # Điền thủ công URL của brewlite-web sau khi tạo xong (ví dụ: https://brewlite-web-6sml.onrender.com)
         sync: false
 
   # --- Frontend Web Service ---
@@ -35,7 +35,7 @@ services:
       - key: PORT
         value: "10000"
       - key: NEXT_PUBLIC_API_URL
-        # Điền thủ công URL của brewlite-api sau khi tạo xong (ví dụ: https://brewlite-api.onrender.com)
+        # Điền thủ công URL của brewlite-api sau khi tạo xong (ví dụ: https://brewlite-api-aj31.onrender.com)
         # Biến này được Render truyền tự động làm Docker build arg (NEXT_PUBLIC_API_URL) khi build web.
         sync: false
 

@@ -91,7 +91,7 @@ jobs:
       - name: Run build
         run: npm run build
         env:
-          NEXT_PUBLIC_API_URL: ${{ secrets.PRODUCTION_API_URL || 'https://brewlite-api.onrender.com' }}
+          NEXT_PUBLIC_API_URL: ${{ secrets.PRODUCTION_API_URL || 'https://brewlite-api-aj31.onrender.com' }}
 
   # ==========================================
   # 2. Build & Push Docker Images to GHCR
@@ -157,7 +157,7 @@ jobs:
           context: ./apps/web
           file: ./apps/web/Dockerfile
           build-args: |
-            NEXT_PUBLIC_API_URL=${{ secrets.PRODUCTION_API_URL || 'https://brewlite-api.onrender.com' }}
+            NEXT_PUBLIC_API_URL=${{ secrets.PRODUCTION_API_URL || 'https://brewlite-api-aj31.onrender.com' }}
           push: true
           tags: ${{ steps.meta-web.outputs.tags }}
           labels: ${{ steps.meta-web.outputs.labels }}
@@ -262,8 +262,8 @@ jobs:
     steps:
       - name: Wait for service deployment & Run Smoke Test
         env:
-          API_URL: ${{ secrets.PRODUCTION_API_URL || 'https://brewlite-api.onrender.com' }}
-          WEB_URL: ${{ secrets.PRODUCTION_WEB_URL || 'https://brewlite-web.onrender.com' }}
+          API_URL: ${{ secrets.PRODUCTION_API_URL || 'https://brewlite-api-aj31.onrender.com' }}
+          WEB_URL: ${{ secrets.PRODUCTION_WEB_URL || 'https://brewlite-web-6sml.onrender.com' }}
         run: |
           echo "=========================================="
           echo "Bắt đầu Smoke Test hệ thống Production"

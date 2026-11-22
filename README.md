@@ -1,8 +1,19 @@
 # BrewLite
 
-Website đặt và thanh toán đồ uống tại quán. Hiện đã có API (NestJS) và cơ sở dữ liệu PostgreSQL chạy bằng Docker; giao diện web đang phát triển.
+Website đặt và thanh toán đồ uống tại quán. Hiện đã có API (NestJS) và cơ sở dữ liệu PostgreSQL chạy bằng Docker; giao diện web Next.js hoàn chỉnh.
 
-Giao diện sẽ ưu tiên màn hình máy tính, vẫn xem được trên điện thoại. Web và API là hai ứng dụng độc lập trong `apps/web` và `apps/api`.
+Giao diện ưu tiên màn hình máy tính, vẫn xem được trên điện thoại. Web và API là hai ứng dụng độc lập trong `apps/web` và `apps/api`.
+
+---
+
+## 📺 Video Demo Hệ thống (Nghiệm thu Đồ án)
+- **Link Video Demo (Google Drive):** [https://drive.google.com/file/d/17HaH8VHT4rH6OmWxWzHisA4-CNNHbEUS/view?usp=sharing](https://drive.google.com/file/d/17HaH8VHT4rH6OmWxWzHisA4-CNNHbEUS/view?usp=sharing)
+- **Nội dung trình diễn trọn vẹn 3 vai trò:**
+  - **Khách hàng (Customer):** Xem menu, lọc/tìm kiếm, tùy chọn size/đường/đá/topping, giỏ hàng, đặt hàng, quét mã QR thanh toán mô phỏng (ZaloPay/MoMo với countdown 5s tự động thành công) và xem lịch sử / khách tự hủy đơn.
+  - **Nhân viên quầy (Staff):** Bảng điều khiển Barista (`/staff`) nhận đơn thời gian thực, chuyển đổi các mốc trạng thái (`PAID → PREPARING → READY → COMPLETED`) và hủy đơn tại quầy khi thiếu món.
+  - **Quản trị viên (Admin):** Màn hình `/staff/products` quản lý sản phẩm, gạt trạng thái "Đang bán / Tạm hết"; màn hình `/staff/employees` quản lý nhân viên và bật/tắt khóa tài khoản (chặn quyền 403).
+
+---
 
 ## Cần cài trước
 
@@ -204,47 +215,59 @@ Dự án có đầy đủ bộ kiểm thử tự động đáp ứng yêu cầu 
 ### 1. Kiểm tra nhanh Production (Smoke Test - Task 5.4)
 Kiểm tra tự động 4 chỉ số cốt lõi: API Healthcheck, kết nối Database & Menu 12 món, Web Frontend và cấu hình CORS:
 ```powershell
-# Chạy với tên miền Production mặc định
-.\tests\smoke-test.ps1
+# Chạy với tên miền Production mặc định (dùng -ExecutionPolicy Bypass để tránh lỗi bảo mật Windows)
+powershell -ExecutionPolicy Bypass -File .\tests\smoke-test.ps1
 
 # Hoặc kiểm tra với server local
-.\tests\smoke-test.ps1 -ApiUrl http://localhost:3001 -WebUrl http://localhost:3000
+powershell -ExecutionPolicy Bypass -File .\tests\smoke-test.ps1 -ApiUrl http://localhost:3001 -WebUrl http://localhost:3000
 ```
+> **Mẹo trên Windows:** Nếu PowerShell báo lỗi `running scripts is disabled on this system`, luôn chạy kèm tiền tố `powershell -ExecutionPolicy Bypass -File ...` như hướng dẫn trên để chạy script an toàn mà không cần thay đổi chính sách máy chủ.
 
 ### 2. Kiểm thử toàn diện End-to-End (E2E Test - Task 5.2)
 Kiểm thử trọn vẹn 16 kịch bản từ Menu -> Chi tiết món -> Đăng nhập -> Đặt đơn (trừ kho ACID) -> Thanh toán Idempotency -> Lịch sử đơn:
 
 ```powershell
 # Chạy với API local (khi API cổng 3001 đang chạy)
-.\tests\run-e2e.ps1
+powershell -ExecutionPolicy Bypass -File .\tests\run-e2e.ps1
 
 # Hoặc chạy kiểm thử trực tiếp trên môi trường production Render
-.\tests\run-e2e.ps1 -ApiUrl https://brewlite-api.onrender.com
+powershell -ExecutionPolicy Bypass -File .\tests\run-e2e.ps1 -ApiUrl https://brewlite-api-aj31.onrender.com
 ```
 Chi tiết về 16 kịch bản kiểm thử xem tại [`tests/README.md`](file:///tests/README.md).
 
 ## Thông tin Môi trường Production (Render Cloud)
 
 Hệ thống được triển khai thực tế trên nền tảng **Render** theo kiến trúc [ADR-009](docs/architecture/adr/009-render-deployment.md):
-- **Web Frontend (HTTPS):** [https://brewlite-web.onrender.com](https://brewlite-web.onrender.com)
-- **Backend API (HTTPS):** [https://brewlite-api.onrender.com](https://brewlite-api.onrender.com)
-- **API Health Check:** [https://brewlite-api.onrender.com/health](https://brewlite-api.onrender.com/health)
+- **Web Frontend (HTTPS):** [https://brewlite-web-6sml.onrender.com](https://brewlite-web-6sml.onrender.com)
+- **Backend API (HTTPS):** [https://brewlite-api-aj31.onrender.com](https://brewlite-api-aj31.onrender.com)
+- **API Health Check:** [https://brewlite-api-aj31.onrender.com/health](https://brewlite-api-aj31.onrender.com/health)
 - **Cơ sở dữ liệu:** PostgreSQL 16 (Render Managed Database, nội bộ an toàn).
 
 *(Lưu ý: Render Free Tier sẽ tự động tạm dừng dịch vụ sau 15 phút không có truy cập. Lần gọi đầu tiên sẽ mất khoảng 40-50 giây để dịch vụ khởi động lại - cold start).*
 
 ## Hướng dẫn dành cho Người Kiểm thử Độc lập (Independent Evaluation)
 
-Để phục vụ tiêu chí nghiệm thu của **Task 5.4** (*người không thuộc nhóm có thể clone repo và nghiệm thu dễ dàng*), bạn có thể chọn một trong hai cách sau:
+Để phục vụ tiêu chí nghiệm thu của **Task 5.4** (*người không thuộc nhóm có thể clone repo và nghiệm thu dễ dàng*), bạn có thể tham khảo [Video Demo tại đây](https://drive.google.com/file/d/17HaH8VHT4rH6OmWxWzHisA4-CNNHbEUS/view?usp=sharing) hoặc chọn một trong hai cách nghiệm thu sau:
+
+### Danh sách tài khoản Demo có sẵn
+Mật khẩu chung cho tất cả 5 tài khoản demo trên môi trường Production là: **`demo123@`** *(cấu hình qua biến môi trường `DEMO_USER_PASSWORD` theo Hợp đồng API Mục 8.3 và `seed.ts`)*:
+
+| Vai trò | Email | Mật khẩu | Quyền hạn & Chức năng kiểm thử |
+|---|---|---|---|
+| **Quản trị viên (Admin)** | `quanly@example.com` | `demo123@` | Toàn quyền: Quản lý sản phẩm (`/staff/products`), Thêm/Sửa/Ẩn món, Quản lý & Khóa nhân viên (`/staff/employees`), Quản lý đơn quầy (`/staff`) |
+| **Nhân viên quầy (Staff - Barista)** | `nhanvien1@example.com` | `demo123@` | Quản lý đơn quầy (`/staff`), chuyển mốc pha chế (`PAID → PREPARING → READY → COMPLETED`), hủy đơn khi thiếu món, gạt món tạm hết |
+| **Nhân viên 2 (Staff)** | `nhanvien2@example.com` | `demo123@` | Tài khoản nhân viên dự phòng kiểm thử |
+| **Nhân viên 3 (Staff - Bị khóa)** | `nhanvien3@example.com` | `demo123@` | Tài khoản nhân viên phục vụ kiểm thử tính năng Khóa / Mở khóa nhân viên trên trang `/staff/employees` |
+| **Khách hàng (Customer)** | `khach@example.com` | `demo123@` | Đặt hàng, giỏ hàng, quét QR thanh toán mô phỏng, xem và hủy đơn cá nhân |
 
 ### Cách A: Trải nghiệm trực tiếp trên bản Production (Nhanh nhất)
-1. Mở trình duyệt truy cập: [https://brewlite-web.onrender.com](https://brewlite-web.onrender.com)
+1. Mở trình duyệt truy cập: [https://brewlite-web-6sml.onrender.com](https://brewlite-web-6sml.onrender.com)
 2. Bấm **Đăng ký** tài khoản mới và đăng nhập.
 3. Chọn đồ uống, chọn size, mức đường/đá, topping và bấm **Thêm vào giỏ**.
 4. Vào Giỏ hàng > bấm **Đặt hàng**.
 5. Nhập số tài khoản thanh toán bất kỳ (nhập đuôi `0000` để thử nghiệm trường hợp thanh toán thất bại; nhập số khác để thành công).
 6. Sau khi thanh toán thành công, xem trạng thái đơn và lịch sử đơn hàng.
-7. Chạy kịch bản kiểm tra tự động: `.\tests\smoke-test.ps1`.
+7. Chạy kịch bản kiểm tra tự động: `powershell -ExecutionPolicy Bypass -File .\tests\smoke-test.ps1`.
 
 ### Cách B: Chạy toàn bộ hệ thống từ mã nguồn ở Local
 1. Clone repo: `git clone https://github.com/Thori2724/BrewLite-CNPM-nh-m-12.git` và chuyển vào thư mục dự án.
@@ -288,17 +311,17 @@ Dự án áp dụng quy trình tự động hóa đầy đủ bằng **GitHub Ac
 - `RENDER_EXTERNAL_DATABASE_URL`: Chuỗi kết nối bên ngoài của cơ sở dữ liệu Render PostgreSQL (dùng chạy migration an toàn từ xa).
 - `RENDER_API_DEPLOY_HOOK`: URL Deploy Hook của service `brewlite-api` trên Render Dashboard (Settings → Deploy Hook).
 - `RENDER_WEB_DEPLOY_HOOK`: URL Deploy Hook của service `brewlite-web` trên Render Dashboard.
-- `PRODUCTION_API_URL`: Domain công khai của API (ví dụ: `https://brewlite-api.onrender.com`).
-- `PRODUCTION_WEB_URL`: Domain công khai của Web (ví dụ: `https://brewlite-web.onrender.com`).
+- `PRODUCTION_API_URL`: Domain công khai của API (ví dụ: `https://brewlite-api-aj31.onrender.com`).
+- `PRODUCTION_WEB_URL`: Domain công khai của Web (ví dụ: `https://brewlite-web-6sml.onrender.com`).
 
 ### 4. Kiểm tra Smoke Test thủ công
 Sau khi deploy, bạn có thể kiểm tra trạng thái hoạt động trên môi trường thật bằng lệnh:
 ```bash
 # Kiểm tra API Health Check (kết quả mong đợi: {"status":"ok"})
-curl https://brewlite-api.onrender.com/health
+curl https://brewlite-api-aj31.onrender.com/health
 
 # Kiểm tra Web Frontend (kết quả mong đợi: mã HTTP 200)
-curl -I https://brewlite-web.onrender.com
+curl -I https://brewlite-web-6sml.onrender.com
 ```
 
 ### 5. Quy trình Rollback (Hoàn nguyên khi có sự cố)
