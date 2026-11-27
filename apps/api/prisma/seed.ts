@@ -1,9 +1,19 @@
-import { PrismaClient, Category, Role } from '@prisma/client';
+import {
+  PrismaClient,
+  Category,
+  Role,
+  PromotionType,
+  LoyaltyType,
+  Prisma,
+} from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 
 const prisma = new PrismaClient();
 
 const BCRYPT_SALT_ROUNDS = 10;
+const WELCOME_LOYALTY_TX_ID = '99999999-0000-0000-0000-000000000001';
+const WELCOME_LOYALTY_POINTS = 50;
+const DEMO_CUSTOMER_EMAIL = 'khach@example.com';
 
 const demoUsers = [
   {
@@ -180,17 +190,39 @@ const toppings = [
   },
 ];
 
+const promotions = [
+  {
+    id: '77777777-0000-0000-0000-000000000001',
+    code: 'BREW10',
+    type: PromotionType.PERCENT,
+    value: 10,
+    maxDiscount: 15000,
+    isActive: true,
+  },
+  {
+    id: '77777777-0000-0000-0000-000000000002',
+    code: 'GIAM20K',
+    type: PromotionType.FIXED,
+    value: 20000,
+    maxDiscount: null,
+    isActive: true,
+  },
+  {
+    id: '77777777-0000-0000-0000-000000000003',
+    code: 'TAMNGUNG',
+    type: PromotionType.PERCENT,
+    value: 15,
+    maxDiscount: 20000,
+    isActive: false,
+  },
+];
+
 async function main() {
   console.log('Đang khởi tạo dữ liệu mẫu cho menu (seed)...');
   for (const product of products) {
     await prisma.product.upsert({
       where: { id: product.id },
-      update: {
-        name: product.name,
-        category: product.category,
-        basePrice: product.basePrice,
-        imageUrl: product.imageUrl,
-      },
+      update: {},
       create: product,
     });
   }
@@ -208,6 +240,17 @@ async function main() {
     });
   }
   console.log(`Đã nạp thành công ${toppings.length} topping vào bảng Topping.`);
+
+  for (const promotion of promotions) {
+    await prisma.promotion.upsert({
+      where: { id: promotion.id },
+      update: {},
+      create: promotion,
+    });
+  }
+  console.log(
+    `Đã nạp thành công ${promotions.length} mã giảm giá vào bảng Promotion.`,
+  );
 
   const demoPassword = process.env.DEMO_USER_PASSWORD;
   if (!demoPassword || demoPassword.length < 6) {
@@ -236,6 +279,59 @@ async function main() {
     console.log(
       `Đã nạp thành công ${demoUsers.length} tài khoản demo vào bảng User.`,
     );
+  }
+
+  try {
+    await prisma.$transaction(async (tx) => {
+      const customer = await tx.user.findUnique({
+        where: { email: DEMO_CUSTOMER_EMAIL },
+      });
+      if (!customer) {
+        console.log(
+          `Bỏ qua tặng điểm chào mừng: không tìm thấy tài khoản ${DEMO_CUSTOMER_EMAIL}.`,
+        );
+        return;
+      }
+
+      const existingWelcomeTx = await tx.loyaltyTransaction.findUnique({
+        where: { id: WELCOME_LOYALTY_TX_ID },
+      });
+      if (existingWelcomeTx) {
+        return;
+      }
+
+      await tx.loyaltyTransaction.create({
+        data: {
+          id: WELCOME_LOYALTY_TX_ID,
+          userId: customer.id,
+          orderId: null,
+          type: LoyaltyType.EARN,
+          points: WELCOME_LOYALTY_POINTS,
+        },
+      });
+
+      await tx.user.update({
+        where: { id: customer.id },
+        data: {
+          loyaltyPoints: {
+            increment: WELCOME_LOYALTY_POINTS,
+          },
+        },
+      });
+
+      console.log(
+        `Đã tặng ${WELCOME_LOYALTY_POINTS} điểm chào mừng cho ${DEMO_CUSTOMER_EMAIL}.`,
+      );
+    });
+  } catch (err) {
+    if (
+      err instanceof Prisma.PrismaClientKnownRequestError &&
+      err.code === 'P2002'
+    ) {
+      // Giao dịch chào mừng đã được tạo bởi tiến trình seed chạy song song
+      return;
+    }
+    throw err;
   }
 }
 
