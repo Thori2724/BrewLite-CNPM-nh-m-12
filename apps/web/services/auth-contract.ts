@@ -85,7 +85,7 @@ export interface RegisterResponse {
 export interface ApiErrorDetail {
   productId: string;
   name: string;
-  available?: number;
+  available: number;
 }
 
 export interface AuthErrorResponse {

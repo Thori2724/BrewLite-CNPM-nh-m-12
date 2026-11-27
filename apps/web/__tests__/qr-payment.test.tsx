@@ -72,6 +72,11 @@ function makeOrder(overrides: Partial<OrderResponse> = {}): OrderResponse {
     orderNumber: 2045,
     status: 'PENDING',
     receiveType: 'AT_COUNTER',
+    subtotalAmount: 90000,
+    discountAmount: 0,
+    promotionCode: null,
+    pointsUsed: 0,
+    pointsEarned: 0,
     totalAmount: 90000,
     createdAt: '2026-11-15T00:00:00.000Z',
     items: [
@@ -188,7 +193,7 @@ describe('Task 12 - Màn thanh toán QR giả (ZaloPay / MoMo)', () => {
       accountLast4: '0001',
       status: 'SUCCESS',
       createdAt: '2026-11-15T00:00:05.000Z',
-      order: { id: created.id, orderNumber: 3001, status: 'PAID' },
+      order: { id: created.id, orderNumber: 3001, status: 'PAID', pointsEarned: 9 },
     });
 
     render(
@@ -269,7 +274,12 @@ describe('Task 12 - Màn thanh toán QR giả (ZaloPay / MoMo)', () => {
         status: 'FAILED',
         failureReason: 'Số tài khoản bị từ chối bởi hệ thống thanh toán mô phỏng',
         createdAt: '2026-11-15T00:00:02.000Z',
-        order: { id: created.id, orderNumber: 3002, status: 'PAYMENT_FAILED' },
+        order: {
+          id: created.id,
+          orderNumber: 3002,
+          status: 'PAYMENT_FAILED',
+          pointsEarned: 0,
+        },
       })
       .mockResolvedValueOnce({
         id: 'pay-qr-success-2',
@@ -279,7 +289,7 @@ describe('Task 12 - Màn thanh toán QR giả (ZaloPay / MoMo)', () => {
         accountLast4: '0001',
         status: 'SUCCESS',
         createdAt: '2026-11-15T00:00:10.000Z',
-        order: { id: created.id, orderNumber: 3002, status: 'PAID' },
+        order: { id: created.id, orderNumber: 3002, status: 'PAID', pointsEarned: 9 },
       });
 
     render(
@@ -366,7 +376,12 @@ describe('Task 12 - Màn thanh toán QR giả (ZaloPay / MoMo)', () => {
         accountLast4: '0001',
         status: 'SUCCESS' as const,
         createdAt: '2026-11-15T00:00:05.000Z',
-        order: { id: 'order-qr-001', orderNumber: 2045, status: 'PAID' as const },
+        order: {
+          id: 'order-qr-001',
+          orderNumber: 2045,
+          status: 'PAID' as const,
+          pointsEarned: 9,
+        },
       };
     }
 
@@ -497,7 +512,7 @@ describe('Task 12 - Màn thanh toán QR giả (ZaloPay / MoMo)', () => {
       accountLast4: '0001',
       status: 'SUCCESS',
       createdAt: '2026-11-15T00:00:05.000Z',
-      order: { id: 'ord-direct-a', orderNumber: 4001, status: 'PAID' },
+      order: { id: 'ord-direct-a', orderNumber: 4001, status: 'PAID', pointsEarned: 9 },
     });
 
     await act(async () => {
@@ -553,7 +568,7 @@ describe('Task 12 - Màn thanh toán QR giả (ZaloPay / MoMo)', () => {
         accountLast4: '0001',
         status: 'SUCCESS',
         createdAt: '2026-11-15T00:00:08.000Z',
-        order: { id: 'order-qr-001', orderNumber: 2045, status: 'PAID' },
+        order: { id: 'order-qr-001', orderNumber: 2045, status: 'PAID', pointsEarned: 9 },
       });
 
     savePendingOrder({

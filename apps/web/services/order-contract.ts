@@ -18,7 +18,7 @@ export type PaymentMethod = 'WALLET' | 'CARD';
 
 export const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
   WALLET: 'Ví điện tử (ZaloPay/Momo)',
-  CARD: 'Thẻ ngân hàng',
+  CARD: 'Chuyển khoản ngân hàng',
 };
 
 // 3. Enum Trạng thái đơn hàng (OrderStatus)
@@ -176,6 +176,8 @@ export interface CreateOrderDto {
   receiveType?: ReceiveType; // Mặc định: AT_COUNTER
   note?: string; // Tối đa 200 ký tự
   items: CreateOrderItemDto[]; // 1..20 dòng món
+  promotionCode?: string; // 1..30 ký tự (bản 3)
+  usePoints?: boolean; // Mặc định: false (bản 3)
 }
 
 // 7. Dữ liệu chi tiết topping trong đơn hàng
@@ -228,7 +230,12 @@ export interface OrderResponse {
   status: OrderStatus;
   receiveType: ReceiveType;
   note?: string | null;
-  totalAmount: number;
+  subtotalAmount: number;
+  discountAmount: number;
+  promotionCode: string | null;
+  pointsUsed: number;
+  pointsEarned: number;
+  totalAmount: number; // Số tiền khách phải trả sau giảm
   createdAt: string;
   items: OrderItemResponse[];
   payments?: PaymentDetailResponse[];
@@ -267,14 +274,15 @@ export interface PaymentResponse {
     id: string;
     orderNumber: number;
     status: OrderStatus;
+    pointsEarned: number;
   };
 }
 
-// 13. Chi tiết món tạm hết khi lỗi 409 (bản 2 chỉ có productId, name; giữ available? tùy chọn để tương thích trang cũ)
+// 13. Chi tiết món thiếu hàng khi lỗi 409 (bản 3 gồm productId, name, available)
 export interface OutOfStockDetail {
   productId: string;
   name: string;
-  available?: number;
+  available: number;
 }
 
 // 14. Định dạng lỗi server trả về
@@ -312,4 +320,7 @@ export const ORDER_ERROR_MESSAGES = {
   ORDER_CANCEL_INVALID: 'Không thể hủy đơn ở trạng thái hiện tại',
   ORDER_STATUS_CONFLICT: 'Trạng thái đơn đã thay đổi, vui lòng tải lại',
   INVALID_ORDER_STATUS: 'Trạng thái không hợp lệ',
+  PROMOTION_NOT_FOUND: 'Mã giảm giá không tồn tại',
+  PROMOTION_INACTIVE: 'Mã giảm giá đã ngừng áp dụng',
+  POINTS_NOT_ENOUGH: 'Số điểm không đủ, vui lòng thử lại',
 } as const;

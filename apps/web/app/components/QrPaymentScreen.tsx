@@ -344,6 +344,7 @@ export default function QrPaymentScreen({
                     id: latest.id,
                     orderNumber: latest.orderNumber,
                     status: 'PAID',
+                    pointsEarned: latest.pointsEarned ?? 0,
                   },
                 });
                 setSubView('success');
