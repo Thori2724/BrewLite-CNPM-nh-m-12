@@ -1,27 +1,38 @@
 'use client';
 
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { QRCodeSVG } from 'qrcode.react';
 import {
+  DEFAULT_PAYMENT_METHOD,
+  DEFAULT_QR_BANK,
   DEFAULT_QR_WALLET,
   QR_PAYMENT_COUNTDOWN_SECONDS,
   QR_PAYMENT_FAILURE_ACCOUNT,
-  QR_PAYMENT_METHOD,
   QR_PAYMENT_SUCCESS_ACCOUNT,
-  QR_WALLET_CONFIGS,
-  QR_WALLET_OPTIONS,
+  QrBankProvider,
+  QrProviderConfig,
   QrWalletProvider,
   buildQrPayload,
+  generateQrRandomToken,
+  getQrProviderConfig,
 } from '../../constants/payment';
+import { AUTH_ERROR_MESSAGES } from '../../services/auth-contract';
 import {
   ORDER_STATUS_LABELS,
   OrderResponse,
+  PAYMENT_METHOD_LABELS,
+  PaymentMethod,
   PaymentResponse,
   RECEIVE_TYPE_LABELS,
 } from '../../services/order-contract';
 import { OrderApiError, getOrderByIdApi, payOrderApi } from '../../services/orders';
+import {
+  clearAuthSession,
+  isAccountLockedError,
+  notifyAccountLocked,
+} from '../../utils/auth';
 import {
   clearPendingOrder,
   generateIdempotencyKey,
@@ -29,11 +40,14 @@ import {
   savePendingOrder,
 } from '../../utils/checkout';
 import { formatVnd } from '../../utils/validation';
+import PaymentMethodSelector from './PaymentMethodSelector';
 
 export interface QrPaymentScreenProps {
   orderId: string;
   initialOrder?: OrderResponse | null;
+  initialMethod?: PaymentMethod;
   initialWallet?: QrWalletProvider;
+  initialBank?: QrBankProvider;
   autoStartQr?: boolean;
   createdFromCart?: boolean;
   onClearCart?: () => void;
@@ -42,12 +56,12 @@ export interface QrPaymentScreenProps {
 type QrSubView = 'select' | 'qr' | 'failed' | 'success';
 
 interface UncertainPaymentRequest {
+  method: PaymentMethod;
   accountNumber: string;
   idempotencyKey: string;
 }
 
-function WalletBadge({ wallet }: { wallet: QrWalletProvider }) {
-  const config = QR_WALLET_CONFIGS[wallet];
+function ProviderBadge({ config }: { config: QrProviderConfig }) {
   return (
     <span
       className={`inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-xs font-extrabold tracking-tight shadow-sm ${config.badgeBgClass}`}
@@ -77,7 +91,9 @@ function getOrderStatusBadgeClass(status: OrderResponse['status']): string {
 export default function QrPaymentScreen({
   orderId,
   initialOrder = null,
+  initialMethod,
   initialWallet = DEFAULT_QR_WALLET,
+  initialBank = DEFAULT_QR_BANK,
   autoStartQr = false,
   createdFromCart,
   onClearCart,
@@ -93,9 +109,19 @@ export default function QrPaymentScreen({
   );
   const [loadOrderError, setLoadOrderError] = useState<string | null>(null);
 
+  const [selectedMethod, setSelectedMethod] = useState<PaymentMethod>(() => {
+    if (initialMethod) return initialMethod;
+    const storedPending = loadPendingOrder();
+    if (storedPending && storedPending.orderId === normalizedOrderId && storedPending.method) {
+      return storedPending.method;
+    }
+    return DEFAULT_PAYMENT_METHOD;
+  });
   const [selectedWallet, setSelectedWallet] = useState<QrWalletProvider>(initialWallet);
+  const [selectedBank, setSelectedBank] = useState<QrBankProvider>(initialBank);
   const [subView, setSubView] = useState<QrSubView>(autoStartQr ? 'qr' : 'select');
   const [qrAttemptId, setQrAttemptId] = useState<number>(autoStartQr ? 1 : 0);
+  const [qrRandomToken, setQrRandomToken] = useState<string>(() => generateQrRandomToken());
   const [secondsLeft, setSecondsLeft] = useState<number>(QR_PAYMENT_COUNTDOWN_SECONDS);
 
   const [isSubmittingPayment, setIsSubmittingPayment] = useState<boolean>(false);
@@ -104,6 +130,7 @@ export default function QrPaymentScreen({
   const [paymentSuccessData, setPaymentSuccessData] = useState<PaymentResponse | null>(null);
 
   const isMountedRef = useRef<boolean>(true);
+  const isSubmittingRef = useRef<boolean>(false);
   const routerRef = useRef(router);
   const onClearCartRef = useRef(onClearCart);
   const qrAttemptIdRef = useRef<number>(autoStartQr ? 1 : 0);
@@ -143,12 +170,18 @@ export default function QrPaymentScreen({
   );
 
   const redirectToLogin = useCallback((targetOrderId: string) => {
+    clearAuthSession();
     const redirectTarget = targetOrderId
       ? `/checkout?orderId=${encodeURIComponent(targetOrderId)}`
       : '/checkout';
     routerRef.current.replace(
       `/login?redirect=${encodeURIComponent(redirectTarget)}&expired=true`
     );
+  }, []);
+
+  const handleLockedAccount = useCallback(() => {
+    notifyAccountLocked(AUTH_ERROR_MESSAGES.ACCOUNT_LOCKED);
+    clearAuthSession();
   }, []);
 
   const handleOrderLoaded = useCallback(
@@ -179,6 +212,12 @@ export default function QrPaymentScreen({
         return;
       }
 
+      if (isAccountLockedError(err)) {
+        handleLockedAccount();
+        setLoadOrderError(AUTH_ERROR_MESSAGES.ACCOUNT_LOCKED);
+        return;
+      }
+
       if (err instanceof OrderApiError && err.statusCode === 404) {
         setLoadOrderError('Không tìm thấy đơn hàng hoặc bạn không có quyền truy cập.');
         return;
@@ -190,7 +229,7 @@ export default function QrPaymentScreen({
           : 'Không thể tải thông tin đơn hàng. Vui lòng thử lại.'
       );
     },
-    [normalizedOrderId, redirectToLogin]
+    [handleLockedAccount, normalizedOrderId, redirectToLogin]
   );
 
   const fetchOrder = useCallback(async () => {
@@ -237,12 +276,13 @@ export default function QrPaymentScreen({
   }, [handleOrderLoadError, handleOrderLoaded, initialOrder, normalizedOrderId]);
 
   const startNewQrAttempt = useCallback(() => {
-    if (isSubmittingPayment) return;
+    if (isSubmittingPayment || isSubmittingRef.current) return;
     const nextAttemptId = qrAttemptIdRef.current + 1;
     qrAttemptIdRef.current = nextAttemptId;
     triggeredAttemptRef.current = null;
     activeIdempotencyKeyRef.current = generateIdempotencyKey();
 
+    setQrRandomToken(generateQrRandomToken());
     setPaymentError(null);
     setUncertainRequest(null);
     setSecondsLeft(QR_PAYMENT_COUNTDOWN_SECONDS);
@@ -252,11 +292,16 @@ export default function QrPaymentScreen({
 
   const executePayment = useCallback(
     async (params: {
+      method: PaymentMethod;
       accountNumber: string;
       idempotencyKey: string;
     }) => {
-      if (!order) return;
+      if (!order) {
+        isSubmittingRef.current = false;
+        return;
+      }
 
+      isSubmittingRef.current = true;
       setIsSubmittingPayment(true);
       setPaymentError(null);
 
@@ -264,12 +309,13 @@ export default function QrPaymentScreen({
         const payment = await payOrderApi(
           {
             orderId: order.id,
-            method: QR_PAYMENT_METHOD,
+            method: params.method,
             accountNumber: params.accountNumber,
           },
           params.idempotencyKey
         );
 
+        isSubmittingRef.current = false;
         if (!isMountedRef.current) return;
         setIsSubmittingPayment(false);
 
@@ -282,7 +328,9 @@ export default function QrPaymentScreen({
 
           setUncertainRequest(null);
           setPaymentSuccessData(payment);
-          setOrder((prev) => (prev ? { ...prev, status: 'PAID' } : prev));
+          setOrder((prev) =>
+            prev ? { ...prev, status: payment.order?.status || 'PAID' } : prev
+          );
           setSubView('success');
           return;
         }
@@ -295,7 +343,7 @@ export default function QrPaymentScreen({
           totalAmount: order.totalAmount,
           receiveType: order.receiveType,
           idempotencyKey: generateIdempotencyKey(),
-          method: QR_PAYMENT_METHOD,
+          method: params.method,
           createdAt: new Date().toISOString(),
           itemCount: order.items.length,
           createdFromCart: shouldKeepCartFlag,
@@ -310,12 +358,25 @@ export default function QrPaymentScreen({
         );
         setSubView('failed');
       } catch (err: unknown) {
+        isSubmittingRef.current = false;
         if (!isMountedRef.current) return;
         setIsSubmittingPayment(false);
 
         if (err instanceof OrderApiError) {
           if (err.statusCode === 401) {
             redirectToLogin(order.id);
+            return;
+          }
+
+          if (err.statusCode === 403 || isAccountLockedError(err)) {
+            setUncertainRequest(null);
+            if (isAccountLockedError(err)) {
+              handleLockedAccount();
+              setPaymentError(AUTH_ERROR_MESSAGES.ACCOUNT_LOCKED);
+            } else {
+              setPaymentError(err.message || AUTH_ERROR_MESSAGES.FORBIDDEN);
+            }
+            setSubView('failed');
             return;
           }
 
@@ -336,7 +397,7 @@ export default function QrPaymentScreen({
                   id: `paid-${latest.id}`,
                   orderId: latest.id,
                   amount: latest.totalAmount,
-                  method: QR_PAYMENT_METHOD,
+                  method: params.method,
                   accountLast4: '0001',
                   status: 'SUCCESS',
                   createdAt: latest.createdAt,
@@ -354,8 +415,15 @@ export default function QrPaymentScreen({
                 clearPendingOrder();
                 return;
               }
-            } catch {
-              // Giữ lại thông báo 409 vừa nhận nếu không tải lại được đơn
+            } catch (followUpErr: unknown) {
+              if (followUpErr instanceof OrderApiError && followUpErr.statusCode === 401) {
+                redirectToLogin(order.id);
+                return;
+              }
+              if (isAccountLockedError(followUpErr)) {
+                handleLockedAccount();
+                setPaymentError(AUTH_ERROR_MESSAGES.ACCOUNT_LOCKED);
+              }
             }
             setSubView('failed');
             return;
@@ -380,7 +448,7 @@ export default function QrPaymentScreen({
             return;
           }
 
-          // Lỗi 5xx hoặc lỗi mạng không rõ kết quả -> giữ nguyên key và accountNumber để thử lại đúng request đó
+          // Lỗi 5xx hoặc lỗi mạng không rõ kết quả -> giữ nguyên key, method và accountNumber để thử lại đúng request đó
           const shouldKeepCartFlag = isOrderCreatedFromCart(order.id);
           savePendingOrder({
             orderId: order.id,
@@ -388,12 +456,13 @@ export default function QrPaymentScreen({
             totalAmount: order.totalAmount,
             receiveType: order.receiveType,
             idempotencyKey: params.idempotencyKey,
-            method: QR_PAYMENT_METHOD,
+            method: params.method,
             createdAt: order.createdAt,
             itemCount: order.items.length,
             createdFromCart: shouldKeepCartFlag,
           });
           setUncertainRequest({
+            method: params.method,
             accountNumber: params.accountNumber,
             idempotencyKey: params.idempotencyKey,
           });
@@ -415,12 +484,13 @@ export default function QrPaymentScreen({
           totalAmount: order.totalAmount,
           receiveType: order.receiveType,
           idempotencyKey: params.idempotencyKey,
-          method: QR_PAYMENT_METHOD,
+          method: params.method,
           createdAt: order.createdAt,
           itemCount: order.items.length,
           createdFromCart: shouldKeepCartFlag,
         });
         setUncertainRequest({
+          method: params.method,
           accountNumber: params.accountNumber,
           idempotencyKey: params.idempotencyKey,
         });
@@ -428,7 +498,7 @@ export default function QrPaymentScreen({
         setSubView('failed');
       }
     },
-    [isOrderCreatedFromCart, order, redirectToLogin]
+    [handleLockedAccount, isOrderCreatedFromCart, order, redirectToLogin]
   );
 
   // Bộ đếm ngược 5 giây trên màn QR (dọn timer khi unmount, tuyệt đối không gọi API khi unmount/F5)
@@ -462,7 +532,8 @@ export default function QrPaymentScreen({
       !order ||
       !isPayableOrder ||
       secondsLeft > 0 ||
-      isSubmittingPayment
+      isSubmittingPayment ||
+      isSubmittingRef.current
     ) {
       return;
     }
@@ -472,11 +543,13 @@ export default function QrPaymentScreen({
     }
 
     triggeredAttemptRef.current = qrAttemptId;
+    isSubmittingRef.current = true;
     const idempotencyKey =
       activeIdempotencyKeyRef.current || generateIdempotencyKey();
     activeIdempotencyKeyRef.current = idempotencyKey;
 
     void executePayment({
+      method: selectedMethod,
       accountNumber: QR_PAYMENT_SUCCESS_ACCOUNT,
       idempotencyKey,
     });
@@ -487,6 +560,7 @@ export default function QrPaymentScreen({
     order,
     qrAttemptId,
     secondsLeft,
+    selectedMethod,
     subView,
   ]);
 
@@ -496,29 +570,43 @@ export default function QrPaymentScreen({
       !order ||
       !isPayableOrder ||
       isSubmittingPayment ||
+      isSubmittingRef.current ||
       triggeredAttemptRef.current === qrAttemptId
     ) {
       return;
     }
 
     triggeredAttemptRef.current = qrAttemptId;
+    isSubmittingRef.current = true;
     const idempotencyKey =
       activeIdempotencyKeyRef.current || generateIdempotencyKey();
     activeIdempotencyKeyRef.current = idempotencyKey;
 
     void executePayment({
+      method: selectedMethod,
       accountNumber: QR_PAYMENT_FAILURE_ACCOUNT,
       idempotencyKey,
     });
   };
 
   const handleRetryUncertainPayment = () => {
-    if (!uncertainRequest || isSubmittingPayment) return;
+    if (!uncertainRequest || isSubmittingPayment || isSubmittingRef.current) return;
+    isSubmittingRef.current = true;
     void executePayment({
+      method: uncertainRequest.method,
       accountNumber: uncertainRequest.accountNumber,
       idempotencyKey: uncertainRequest.idempotencyKey,
     });
   };
+
+  const qrPayload = useMemo(() => {
+    if (!order) return '';
+    return buildQrPayload({
+      orderNumber: order.orderNumber,
+      totalAmount: order.totalAmount,
+      randomToken: qrRandomToken,
+    });
+  }, [order, qrRandomToken]);
 
   // Trạng thái trống khi thiếu orderId
   if (!normalizedOrderId) {
@@ -581,7 +669,7 @@ export default function QrPaymentScreen({
           <button
             type="button"
             onClick={() => void fetchOrder()}
-            className="rounded-control bg-kombu px-6 py-2.5 text-sm font-semibold text-bone hover:bg-moss transition-colors"
+            className="rounded-control bg-kombu px-6 py-2.5 text-sm font-semibold text-bone hover:bg-moss transition-colors cursor-pointer"
           >
             Thử lại
           </button>
@@ -596,10 +684,13 @@ export default function QrPaymentScreen({
     );
   }
 
-  const walletConfig = QR_WALLET_CONFIGS[selectedWallet];
+  const providerConfig = getQrProviderConfig(selectedMethod, selectedWallet, selectedBank);
 
-  // Màn xác nhận thành công
+  // Màn xác nhận thành công (KHÔNG hiển thị "+N điểm" — thuộc Dòng 22)
   if (subView === 'success' && paymentSuccessData) {
+    const confirmedMethod = paymentSuccessData.method || selectedMethod;
+    const confirmedProvider = getQrProviderConfig(confirmedMethod, selectedWallet, selectedBank);
+
     return (
       <div className="rounded-card border border-moss/25 bg-cream p-8 text-center shadow-soft max-w-2xl mx-auto">
         <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-moss/15 text-moss text-3xl font-bold">
@@ -609,7 +700,7 @@ export default function QrPaymentScreen({
           Thanh toán thành công!
         </h2>
         <p className="mt-2 text-sm text-noir/75">
-          Đơn hàng <strong className="text-noir">#{order.orderNumber}</strong> đã được ghi nhận thành công qua ví {walletConfig.name}.
+          Đơn hàng <strong className="text-noir">#{order.orderNumber}</strong> đã được ghi nhận thành công ({confirmedProvider.displayLabel}).
         </p>
 
         <div className="mt-6 rounded-xl border border-noir/10 bg-white/75 p-5 text-left text-sm space-y-2.5">
@@ -630,8 +721,10 @@ export default function QrPaymentScreen({
             </span>
           </div>
           <div className="flex justify-between items-center">
-            <span className="text-noir/65">Ví thanh toán:</span>
-            <span className="font-medium text-noir">{walletConfig.displayLabel}</span>
+            <span className="text-noir/65">Phương thức thanh toán:</span>
+            <span className="font-medium text-noir">
+              {PAYMENT_METHOD_LABELS[confirmedMethod]} • {confirmedProvider.name}
+            </span>
           </div>
           <div className="flex justify-between items-center border-t border-noir/10 pt-2.5">
             <span className="text-noir/65">Tổng tiền đã thanh toán:</span>
@@ -768,32 +861,17 @@ export default function QrPaymentScreen({
         {!uncertainRequest && (
           <div>
             <p className="mb-2.5 text-sm font-semibold text-noir">
-              Chọn ví hiển thị khi thử lại
+              Chọn cách thanh toán khi thử lại
             </p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {QR_WALLET_OPTIONS.map((wallet) => {
-                const isSelected = selectedWallet === wallet.id;
-                return (
-                  <button
-                    key={wallet.id}
-                    type="button"
-                    onClick={() => setSelectedWallet(wallet.id)}
-                    aria-pressed={isSelected}
-                    className={`flex items-center gap-3 rounded-control border p-3.5 text-left transition-all cursor-pointer ${
-                      isSelected
-                        ? wallet.cardActiveClass
-                        : 'border-noir/15 bg-white hover:border-noir/30'
-                    }`}
-                  >
-                    <WalletBadge wallet={wallet.id} />
-                    <div>
-                      <p className="text-sm font-bold text-noir">{wallet.name}</p>
-                      <p className="text-xs text-noir/60">{wallet.subtitle}</p>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
+            <PaymentMethodSelector
+              selectedMethod={selectedMethod}
+              selectedWallet={selectedWallet}
+              selectedBank={selectedBank}
+              onMethodChange={setSelectedMethod}
+              onWalletChange={setSelectedWallet}
+              onBankChange={setSelectedBank}
+              disabled={isSubmittingPayment}
+            />
           </div>
         )}
 
@@ -828,7 +906,7 @@ export default function QrPaymentScreen({
     );
   }
 
-  // Cách A khi mở trực tiếp bằng ?orderId=: bước chọn ví + nút "Thanh toán bằng QR"
+  // Cách A khi mở trực tiếp bằng ?orderId=: bước chọn cách thanh toán + nút "Thanh toán bằng QR"
   if (subView === 'select') {
     const latestFailureReason =
       order.payments?.find((p) => p.status === 'FAILED')?.failureReason || null;
@@ -886,32 +964,17 @@ export default function QrPaymentScreen({
 
         <div>
           <p className="mb-3 text-sm font-semibold text-noir">
-            Chọn ví điện tử hiển thị mã QR
+            Chọn cách thức thanh toán
           </p>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {QR_WALLET_OPTIONS.map((wallet) => {
-              const isSelected = selectedWallet === wallet.id;
-              return (
-                <button
-                  key={wallet.id}
-                  type="button"
-                  onClick={() => setSelectedWallet(wallet.id)}
-                  aria-pressed={isSelected}
-                  className={`flex items-center gap-3 rounded-control border p-4 text-left transition-all cursor-pointer ${
-                    isSelected
-                      ? wallet.cardActiveClass
-                      : 'border-noir/15 bg-white hover:border-noir/30'
-                  }`}
-                >
-                  <WalletBadge wallet={wallet.id} />
-                  <div>
-                    <p className="text-sm font-bold text-noir">{wallet.name}</p>
-                    <p className="text-xs text-noir/60">{wallet.subtitle}</p>
-                  </div>
-                </button>
-              );
-            })}
-          </div>
+          <PaymentMethodSelector
+            selectedMethod={selectedMethod}
+            selectedWallet={selectedWallet}
+            selectedBank={selectedBank}
+            onMethodChange={setSelectedMethod}
+            onWalletChange={setSelectedWallet}
+            onBankChange={setSelectedBank}
+            disabled={isSubmittingPayment}
+          />
         </div>
 
         <div className="flex flex-col sm:flex-row gap-3 pt-2">
@@ -935,25 +998,26 @@ export default function QrPaymentScreen({
   }
 
   // Màn hiển thị QR và đếm ngược 5 giây
-  const qrPayload = buildQrPayload({
-    orderId: order.id,
-    orderNumber: order.orderNumber,
-    wallet: selectedWallet,
-  });
+  const qrHeaderTitle =
+    selectedMethod === 'CARD'
+      ? `${PAYMENT_METHOD_LABELS.CARD} • ${providerConfig.name}`
+      : `Ví điện tử ${providerConfig.name}`;
 
   return (
     <div
       className="rounded-card border border-noir/10 bg-cream p-6 sm:p-8 shadow-soft max-w-2xl mx-auto space-y-6"
-      data-wallet={selectedWallet}
+      data-method={selectedMethod}
+      data-provider={providerConfig.id}
+      data-qr-payload={qrPayload}
     >
       <div
-        className={`flex items-center justify-between gap-4 rounded-xl border p-4 ${walletConfig.headerBgClass}`}
+        className={`flex items-center justify-between gap-4 rounded-xl border p-4 ${providerConfig.headerBgClass}`}
       >
         <div className="flex items-center gap-3">
-          <WalletBadge wallet={selectedWallet} />
+          <ProviderBadge config={providerConfig} />
           <div>
-            <p className={`text-sm font-bold ${walletConfig.accentTextClass}`}>
-              Ví điện tử {walletConfig.name}
+            <p className={`text-sm font-bold ${providerConfig.accentTextClass}`}>
+              {qrHeaderTitle}
             </p>
             <p className="text-xs text-noir/70">
               Mã đơn <span className="font-semibold">#{order.orderNumber}</span> •{' '}
@@ -974,7 +1038,7 @@ export default function QrPaymentScreen({
 
       <div className="grid grid-cols-1 md:grid-cols-[auto_1fr] gap-6 items-center">
         <div
-          className={`mx-auto flex flex-col items-center justify-center rounded-2xl border-2 p-5 ${walletConfig.qrBorderClass}`}
+          className={`mx-auto flex flex-col items-center justify-center rounded-2xl border-2 p-5 ${providerConfig.qrBorderClass}`}
         >
           <div className="rounded-xl bg-white p-3 shadow-sm">
             <QRCodeSVG
@@ -984,13 +1048,13 @@ export default function QrPaymentScreen({
               bgColor="#FFFFFF"
               fgColor="#1A1A1A"
               role="img"
-              aria-label={`Mã QR ${walletConfig.name} cho đơn hàng #${order.orderNumber}`}
+              aria-label={`Mã QR ${providerConfig.name} cho đơn hàng #${order.orderNumber}`}
             />
           </div>
           <span
-            className={`mt-3 inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${walletConfig.pillClass}`}
+            className={`mt-3 inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${providerConfig.pillClass}`}
           >
-            {walletConfig.name} • #{order.orderNumber}
+            {providerConfig.name} • #{order.orderNumber}
           </span>
         </div>
 
@@ -1019,7 +1083,7 @@ export default function QrPaymentScreen({
                 <p className="text-sm font-semibold text-noir">
                   Tự động xác nhận thanh toán sau{' '}
                   <span
-                    className={`inline-block font-extrabold tabular-nums ${walletConfig.accentTextClass}`}
+                    className={`inline-block font-extrabold tabular-nums ${providerConfig.accentTextClass}`}
                     data-testid="qr-countdown"
                   >
                     {secondsLeft}
@@ -1027,7 +1091,7 @@ export default function QrPaymentScreen({
                   giây
                 </p>
                 <p className="text-xs text-noir/65">
-                  Vui lòng giữ nguyên màn hình để hoàn tất giao dịch qua {walletConfig.name}, hoặc bấm Hủy thanh toán nếu muốn dừng lại.
+                  Vui lòng giữ nguyên màn hình để hoàn tất giao dịch qua {providerConfig.name}, hoặc bấm Hủy thanh toán nếu muốn dừng lại.
                 </p>
               </>
             )}

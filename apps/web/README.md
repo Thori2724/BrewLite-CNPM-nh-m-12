@@ -34,7 +34,7 @@ Mở trình duyệt truy cập: [http://localhost:3000](http://localhost:3000)
 - **Trang Chi tiết món ([/menu/:id](http://localhost:3000/menu/11111111-0000-0000-0000-000000000001)):** Render động các tùy chọn từ server (`sizes`, `sugarLevels`, `iceLevels`, `toppings`). Tự động ẩn các phần tùy chọn có mảng rỗng (ví dụ món bánh `CAKE`). Lựa chọn mặc định: Size S, Đường P100, Đá NORMAL. Giới hạn tối đa 3 loại topping không trùng, số lượng 1..10. Món hết hàng (`stock = 0`) khóa nút thêm vào giỏ.
 - **Trang Giỏ hàng ([/cart](http://localhost:3000/cart)):** Quản lý các món đã chọn, tăng/giảm số lượng (tối đa 10 ly/món), xóa từng món hoặc xóa tất cả, tính tổng tiền tạm tính. Giới hạn tối đa 20 dòng món khác nhau.
 - **Trang Đăng nhập / Đăng ký ([/login](http://localhost:3000/login), [/register](http://localhost:3000/register)):** Đăng ký tài khoản khách hàng mới, đăng nhập nhận JWT Token lưu an toàn vào `localStorage`. Trên Header: hiển thị liên kết **"Đơn của tôi"** (`/orders`), tên người dùng và nút "Đăng xuất" khi đã đăng nhập.
-- **Trang Đặt đơn & Thanh toán ([/checkout](http://localhost:3000/checkout)):** Bắt buộc đăng nhập (bảo vệ bởi `useRequireAuth`), chọn hình thức nhận (`AT_COUNTER` / `TAKE_AWAY`), chọn ví hiển thị (`ZaloPay` / `MoMo`), đặt đơn khởi tạo trạng thái `PENDING` rồi mở màn thanh toán QR giả đếm ngược 5 giây (tự động thanh toán `SUCCESS` khi hết 5 giây hoặc `FAILED` / `PAYMENT_FAILED` khi khách bấm thoát/đóng QR). Hỗ trợ mở trực tiếp qua `/checkout?orderId=<id>`, khôi phục đơn khi F5 và kiểm soát Idempotency chặt chẽ.
+- **Trang Đặt đơn & Thanh toán ([/checkout](http://localhost:3000/checkout)):** Bắt buộc đăng nhập (bảo vệ bởi `useRequireAuth`), chọn hình thức nhận (`AT_COUNTER` / `TAKE_AWAY`), chọn cách thanh toán (`Ví điện tử (ZaloPay/Momo)` → `WALLET` hoặc `Chuyển khoản ngân hàng` → `CARD` với danh sách ngân hàng cố định), đặt đơn khởi tạo trạng thái `PENDING` rồi mở màn thanh toán QR giả (`BREWLITE|<orderNumber>|<totalAmount>|<uuid>`) đếm ngược 5 giây (tự động thanh toán `SUCCESS` khi hết 5 giây hoặc `FAILED` / `PAYMENT_FAILED` khi khách bấm thoát/đóng QR). Hỗ trợ mở trực tiếp qua `/checkout?orderId=<id>`, khôi phục đơn khi F5 và kiểm soát Idempotency chặt chẽ.
 - **Trang Lịch sử đơn hàng ([/orders](http://localhost:3000/orders)):** Bắt buộc đăng nhập (`GET /orders/me`), hiển thị toàn bộ danh sách đơn của người dùng theo đúng thứ tự mới nhất từ server (không phân trang), kèm nút "Tải lại", nút **"Thanh toán"** và nút **"Hủy đơn"** (có hộp xác nhận, gọi `POST /orders/:id/cancel`, giữ nguyên giỏ hàng) cho các đơn ở `PENDING`, `PAYMENT_FAILED`, `PAID`; đơn `CANCELLED` vẫn nằm trong danh sách và xem chi tiết được; có đủ trạng thái loading / empty / error.
 - **Trang Xác nhận & Theo dõi chi tiết đơn hàng ([/orders/:id](http://localhost:3000/orders/33333333-0000-0000-0000-000000000001)):** Bắt buộc đăng nhập (`GET /orders/:id`), tải dữ liệu **1 lần khi mở trang** và khi bấm nút **"Tải lại"** (không dùng polling tự động). Hiển thị banner theo trạng thái đơn, mã `#orderNumber` nổi bật (không lộ UUID trên giao diện), thanh tiến trình (stepper) cho luồng chính (`PENDING → PAID → PREPARING → READY → COMPLETED`), danh sách món (ẩn hoàn toàn Size/Đường/Đá nếu giá trị là `null` đối với món bánh), tổng tiền từ server, lịch sử giao dịch thanh toán, dòng **"Tiền sẽ được hoàn lại (mô phỏng)"** khi đơn ở trạng thái `CANCELLED` và có giao dịch thanh toán `SUCCESS`, nút **"Thanh toán" / "Thử lại thanh toán"** (với `Idempotency-Key` mới trên đúng `orderId` hiện tại) khi đơn ở `PENDING` hoặc `PAYMENT_FAILED`, và nút **"Hủy đơn"** (có hộp xác nhận, gọi `POST /orders/:id/cancel`, giữ nguyên giỏ hàng) khi đơn ở `PENDING`, `PAYMENT_FAILED` hoặc `PAID`.
 - **Trang Thông tin tài khoản ([/account](http://localhost:3000/account)):** Bắt buộc đăng nhập (mở cho cả `CUSTOMER`, `STAFF`, `ADMIN`), chỉ xem dữ liệu đọc từ phiên đăng nhập đã lưu sẵn (`localStorage`): hiển thị tên hiển thị, email, nhãn vai trò tiếng Việt (`Khách hàng` / `Nhân viên` / `Quản lý`), nút **"Đăng xuất"** và riêng khách hàng (`CUSTOMER`) có thêm liên kết **"Lịch sử đơn"** (`/orders`). Có lối vào trực tiếp khi bấm vào tên người dùng trên thanh header (`AuthNav`).
@@ -46,7 +46,7 @@ Mở trình duyệt truy cập: [http://localhost:3000](http://localhost:3000)
 - **Các trang chia bố cục 2 cột trên Desktop:**
   - **Chi tiết món (`/menu/:id`):** Chia 2 cột từ breakpoint `md` (`md:grid-cols-12`): cột trái (`md:col-span-5`, dính `md:sticky`) hiển thị ảnh, tên và giá gốc; cột phải (`md:col-span-7`) hiển thị các tùy chọn, số lượng, giá tạm tính và nút Thêm vào giỏ.
   - **Giỏ hàng (`/cart`):** Chia 2 cột từ breakpoint `lg` (`lg:grid-cols-12`): cột trái (`lg:col-span-8`) là danh sách dòng món; cột phải (`lg:col-span-4`, dính `lg:sticky`) là khung tóm tắt tổng tiền và nút Tiến hành đặt đơn.
-  - **Đặt đơn & Thanh toán (`/checkout`):** Bước 1 chia 2 cột từ breakpoint `lg` (`lg:grid-cols-12`): cột trái (`lg:col-span-7`) là form chọn hình thức nhận, ví QR hiển thị (`ZaloPay` / `MoMo`) và ghi chú; cột phải (`lg:col-span-5`, dính `lg:sticky`) là tóm tắt đơn hàng và nút xác nhận. Bước 2 hiển thị màn thanh toán QR giả (`max-w-2xl`) với mã QR theo mã đơn, đếm ngược 5 giây và nút thoát.
+  - **Đặt đơn & Thanh toán (`/checkout`):** Bước 1 chia 2 cột từ breakpoint `lg` (`lg:grid-cols-12`): cột trái (`lg:col-span-7`) là form chọn hình thức nhận, cách thanh toán QR (`Ví điện tử (ZaloPay/Momo)` hoặc `Chuyển khoản ngân hàng`) và ghi chú; cột phải (`lg:col-span-5`, dính `lg:sticky`) là tóm tắt đơn hàng và nút xác nhận. Bước 2 hiển thị màn thanh toán QR giả (`max-w-2xl`) với mã QR theo mã đơn, đếm ngược 5 giây và nút thoát.
   - **Chi tiết đơn hàng (`/orders/:id`):** Chia 2 cột từ breakpoint `lg` (`lg:grid-cols-12`): cột trái (`lg:col-span-7`) là danh sách món và lịch sử thanh toán; cột phải (`lg:col-span-5`, dính `lg:sticky`) là thông tin đơn, tổng tiền và nút hành động.
 - **Các trang và trạng thái căn giữa gọn (`max-w-md` / `max-w-lg`):** Trang Đăng nhập (`/login`), Đăng ký (`/register`), màn hình Thanh toán thành công, giỏ hàng trống và các trạng thái đang tải / báo lỗi / không tìm thấy món đều đặt trong thẻ căn giữa vừa phải, không bị kéo dãn toàn màn hình.
 - **Chuẩn kiểm tra dữ liệu (Validation) & Định dạng tiền tệ (`utils/validation.ts`):**
@@ -94,7 +94,7 @@ NEXT_PUBLIC_USE_MOCK=false
   - Tự động nạp sẵn 7 đơn hàng mẫu đúng hình dạng hợp đồng (`MOCK_SEED_ORDERS`) vào `brewlite_mock_orders_db_v2`, phủ đủ cả 7 trạng thái (`PENDING`, `PAID`, `PREPARING`, `READY`, `COMPLETED`, `PAYMENT_FAILED`, `CANCELLED`).
   - Giả lập trạng thái danh sách rỗng (`/orders` empty): đặt `localStorage.setItem('brewlite_mock_orders_empty', 'true')` và tải lại trang; xóa khóa này để quay lại danh sách có dữ liệu.
   - Giả lập trạng thái 404 (`/orders/:id` not found): truy cập `/orders/404` hoặc một UUID bất kỳ không tồn tại.
-  - Cơ chế giả lập thanh toán QR (màn thanh toán QR luôn gửi `method = "WALLET"`):
+  - Cơ chế giả lập thanh toán QR (gửi `method = "WALLET"` cho Ví điện tử hoặc `method = "CARD"` cho Chuyển khoản ngân hàng):
     * Đếm ngược hết 5 giây mà khách không bấm thoát: FE gửi `accountNumber = "0900000001"` → Mock trả về THÀNH CÔNG (`status: 'SUCCESS'`, đơn chuyển `PAID`).
     * Bấm **"Hủy thanh toán"** hoặc nút đóng trên màn QR: FE gửi `accountNumber = "0900000000"` (kết thúc `0000`) → Mock trả về THẤT BẠI (`status: 'FAILED'`, lý do `"Giao dịch bị từ chối (mô phỏng)"`, đơn thành `PAYMENT_FAILED`).
     * Ghi chú đơn chứa `hethang`: Giả lập lỗi hết hàng `409 Conflict` (trả về mảng `details` gồm `{ productId, name }`).
@@ -138,7 +138,7 @@ NEXT_PUBLIC_USE_MOCK=false
 | | `PAYMENT_FAILED` | Thanh toán lỗi |
 | | `CANCELLED` | Đã hủy |
 | **PaymentMethod (Thanh toán)** | `WALLET` | Ví điện tử (ZaloPay/Momo) |
-| | `CARD` | Thẻ ngân hàng |
+| | `CARD` | Chuyển khoản ngân hàng |
 | **PaymentStatus (Trạng thái TT)** *(nhãn FE tự đặt)* | `SUCCESS` | Thành công |
 | | `FAILED` | Thất bại |
 | | `PENDING` | Đang xử lý |
@@ -173,7 +173,7 @@ NEXT_PUBLIC_USE_MOCK=false
     * Cùng key + cùng `orderId`: luôn trả lại kết quả giao dịch cũ với mã HTTP 200, bất kể body.
     * Cùng key + khác `orderId`: server từ chối bằng lỗi `409 Conflict`.
 - **Bảo mật thanh toán QR:**
-  - Giao diện thanh toán QR không có ô nhập thẻ hay số tài khoản; luôn gửi `method = "WALLET"` kèm hằng số nội bộ (`0900000001` / `0900000000`) đặt tại `apps/web/constants/payment.ts`.
+  - Giao diện thanh toán QR không có ô nhập thẻ hay số tài khoản; gửi `method = "WALLET"` (Ví điện tử) hoặc `method = "CARD"` (Chuyển khoản ngân hàng) kèm hằng số nội bộ (`0900000001` / `0900000000`) đặt tại `apps/web/constants/payment.ts`.
   - **Tuyệt đối không hiển thị hai hằng số nội bộ ra giao diện và không lưu vào `localStorage`, URL hay `console.log`**.
 
 ---

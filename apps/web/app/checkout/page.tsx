@@ -8,6 +8,7 @@ import { useCart } from '../../context/CartContext';
 import {
   ReceiveType,
   OrderResponse,
+  PaymentMethod,
   RECEIVE_TYPE_LABELS,
   OutOfStockDetail,
   ORDER_ERROR_MESSAGES,
@@ -40,10 +41,12 @@ import {
 } from '../../utils/validation';
 import { getLineTotal } from '../../utils/cart';
 import QrPaymentScreen from '../components/QrPaymentScreen';
+import PaymentMethodSelector from '../components/PaymentMethodSelector';
 import {
+  DEFAULT_PAYMENT_METHOD,
+  DEFAULT_QR_BANK,
   DEFAULT_QR_WALLET,
-  QR_PAYMENT_METHOD,
-  QR_WALLET_OPTIONS,
+  QrBankProvider,
   QrWalletProvider,
 } from '../../constants/payment';
 
@@ -82,8 +85,10 @@ function CheckoutContent() {
   );
   const [note, setNote] = useState<string>('');
 
-  // Ví hiển thị trên màn QR (chỉ dùng cho giao diện QR, không gửi lên server)
+  // Cách thanh toán hiển thị trên màn QR (WALLET: ZaloPay/MoMo, CARD: Chuyển khoản ngân hàng; tên ví/ngân hàng không gửi lên server)
+  const [selectedMethod, setSelectedMethod] = useState<PaymentMethod>(DEFAULT_PAYMENT_METHOD);
   const [selectedWallet, setSelectedWallet] = useState<QrWalletProvider>(DEFAULT_QR_WALLET);
+  const [selectedBank, setSelectedBank] = useState<QrBankProvider>(DEFAULT_QR_BANK);
   const [qrAutoStart, setQrAutoStart] = useState<boolean>(false);
 
   // Trạng thái đặt đơn hàng
@@ -233,7 +238,7 @@ function CheckoutContent() {
             totalAmount: order.totalAmount,
             receiveType: order.receiveType,
             idempotencyKey: effectiveKey,
-            method: matchedStored?.method || QR_PAYMENT_METHOD,
+            method: matchedStored?.method || DEFAULT_PAYMENT_METHOD,
             createdAt: order.createdAt,
             itemCount: order.items?.length || matchedStored?.itemCount || 1,
             ...(matchedStored?.createdFromCart ? { createdFromCart: true } : {}),
@@ -349,7 +354,7 @@ function CheckoutContent() {
         totalAmount: order.totalAmount,
         receiveType: order.receiveType,
         idempotencyKey,
-        method: QR_PAYMENT_METHOD,
+        method: selectedMethod,
         createdAt: order.createdAt,
         itemCount: items.length,
         createdFromCart: true,
@@ -629,45 +634,25 @@ function CheckoutContent() {
               </div>
             </div>
 
-            {/* 3. Chọn ví thanh toán QR (chỉ hiển thị logo/màu trên màn QR, không gửi lên server) */}
+            {/* 3. Chọn cách thanh toán (chỉ hiển thị ví/ngân hàng trên màn QR, tên cụ thể không gửi lên server) */}
             <div className="bg-cream p-5 sm:p-6 rounded-card border border-tan/60 shadow-soft space-y-3.5">
               <div>
                 <h2 className="font-display text-base font-bold text-noir">
-                  3. Chọn ví thanh toán QR
+                  3. Chọn cách thanh toán
                 </h2>
                 <p className="mt-1 text-xs text-noir/65">
-                  Chọn ZaloPay hoặc MoMo để hiển thị mã QR tương ứng khi thanh toán.
+                  Chọn ví điện tử hoặc chuyển khoản ngân hàng để hiển thị mã QR tương ứng khi thanh toán.
                 </p>
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {QR_WALLET_OPTIONS.map((wallet) => {
-                  const isSelected = selectedWallet === wallet.id;
-                  return (
-                    <button
-                      key={wallet.id}
-                      type="button"
-                      onClick={() => setSelectedWallet(wallet.id)}
-                      aria-pressed={isSelected}
-                      className={`flex items-center gap-3 rounded-control border-2 p-4 text-left transition cursor-pointer ${
-                        isSelected
-                          ? wallet.cardActiveClass
-                          : 'border-tan bg-cream hover:border-moss'
-                      }`}
-                    >
-                      <span
-                        className={`inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-xs font-extrabold ${wallet.badgeBgClass}`}
-                        aria-hidden="true"
-                      >
-                        {wallet.badgeText}
-                      </span>
-                      <div>
-                        <div className="text-sm font-bold text-noir">{wallet.name}</div>
-                        <div className="text-xs text-noir/65">{wallet.subtitle}</div>
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
+              <PaymentMethodSelector
+                selectedMethod={selectedMethod}
+                selectedWallet={selectedWallet}
+                selectedBank={selectedBank}
+                onMethodChange={setSelectedMethod}
+                onWalletChange={setSelectedWallet}
+                onBankChange={setSelectedBank}
+                disabled={isCreatingOrder}
+              />
             </div>
           </div>
 
@@ -778,7 +763,17 @@ function CheckoutContent() {
               ? createdOrder
               : null
           }
+          initialMethod={
+            sessionCreatedOrderId === (queryOrderId || createdOrder?.id || pendingOrder?.orderId || '')
+              ? selectedMethod
+              : pendingOrder &&
+                  pendingOrder.orderId === (queryOrderId || createdOrder?.id || pendingOrder.orderId) &&
+                  pendingOrder.method
+                ? pendingOrder.method
+                : selectedMethod
+          }
           initialWallet={selectedWallet}
+          initialBank={selectedBank}
           autoStartQr={qrAutoStart}
           createdFromCart={
             sessionCreatedOrderId === (queryOrderId || createdOrder?.id)

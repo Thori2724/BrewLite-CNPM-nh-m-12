@@ -3,19 +3,23 @@ import { render, screen, fireEvent, act, cleanup } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import CheckoutPage from '../app/checkout/page';
 import QrPaymentScreen from '../app/components/QrPaymentScreen';
+import AccountLockedNotice from '../app/components/AccountLockedNotice';
 import { AuthProvider } from '../context/AuthContext';
 import { CartProvider } from '../context/CartContext';
-import { AUTH_STORAGE_KEY } from '../utils/auth';
+import { AUTH_STORAGE_KEY, loadAuthSession } from '../utils/auth';
 import { CART_STORAGE_KEY, CartItem } from '../utils/cart';
 import {
   PENDING_ORDER_STORAGE_KEY,
   savePendingOrder,
 } from '../utils/checkout';
 import {
+  QR_BANK_OPTIONS,
   QR_PAYMENT_FAILURE_ACCOUNT,
   QR_PAYMENT_SUCCESS_ACCOUNT,
+  buildQrPayload,
 } from '../constants/payment';
-import { OrderResponse, OrderStatus } from '../services/order-contract';
+import { OrderResponse, OrderStatus, PAYMENT_METHOD_LABELS } from '../services/order-contract';
+import { AUTH_ERROR_MESSAGES } from '../services/auth-contract';
 import * as ordersService from '../services/orders';
 import * as navigation from 'next/navigation';
 
@@ -104,6 +108,9 @@ async function flushAsync() {
 describe('Task 12 - Màn thanh toán QR giả (ZaloPay / MoMo)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(ordersService.createOrderApi).mockReset();
+    vi.mocked(ordersService.payOrderApi).mockReset();
+    vi.mocked(ordersService.getOrderByIdApi).mockReset();
     localStorage.clear();
     mockSearchParams = new URLSearchParams();
 
@@ -609,5 +616,262 @@ describe('Task 12 - Màn thanh toán QR giả (ZaloPay / MoMo)', () => {
     expect(dto2).toEqual(dto1);
     expect(key2).toBe(key1);
     expect(screen.getByText(/thanh toán thành công!/i)).toBeInTheDocument();
+  });
+
+  it('7. buildQrPayload tạo đúng định dạng BREWLITE|<orderNumber>|<totalAmount>|<uuid> và đổi mỗi lần mở màn QR', async () => {
+    vi.useFakeTimers();
+
+    const payload1 = buildQrPayload({ orderNumber: 1001, totalAmount: 136000 });
+    const payload2 = buildQrPayload({ orderNumber: 1001, totalAmount: 136000 });
+
+    const qrRegex =
+      /^BREWLITE\|1001\|136000\|[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    expect(payload1).toMatch(qrRegex);
+    expect(payload2).toMatch(qrRegex);
+    expect(payload1).not.toBe(payload2);
+
+    vi.mocked(ordersService.payOrderApi).mockResolvedValueOnce({
+      id: 'pay-qr-fail-format',
+      orderId: 'order-qr-001',
+      amount: 90000,
+      method: 'WALLET',
+      accountLast4: '0000',
+      status: 'FAILED',
+      failureReason: 'Giao dịch bị từ chối (mô phỏng)',
+      createdAt: '2026-11-15T00:00:02.000Z',
+      order: { id: 'order-qr-001', orderNumber: 2045, status: 'PAYMENT_FAILED', pointsEarned: 0 },
+    });
+
+    const { container } = render(
+      <QrPaymentScreen
+        orderId="order-qr-001"
+        initialOrder={makeOrder()}
+        autoStartQr={true}
+      />
+    );
+
+    const qrRoot1 = container.querySelector('[data-qr-payload]');
+    const firstRenderedPayload = qrRoot1?.getAttribute('data-qr-payload') || '';
+    expect(firstRenderedPayload).toMatch(
+      /^BREWLITE\|2045\|90000\|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+    );
+
+    // Qua 2 giây đếm ngược, mã QR trong cùng một lần mở vẫn ổn định
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2000);
+    });
+    expect(container.querySelector('[data-qr-payload]')?.getAttribute('data-qr-payload')).toBe(
+      firstRenderedPayload
+    );
+
+    // Thoát QR -> thất bại -> Thử lại thanh toán mở lần QR thứ 2 với mã QR MỚI
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /hủy thanh toán/i }));
+    });
+    await flushAsync();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /thử lại thanh toán/i }));
+    });
+
+    const secondRenderedPayload =
+      container.querySelector('[data-qr-payload]')?.getAttribute('data-qr-payload') || '';
+    expect(secondRenderedPayload).toMatch(
+      /^BREWLITE\|2045\|90000\|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+    );
+    expect(secondRenderedPayload).not.toBe(firstRenderedPayload);
+  });
+
+  it('8. Chuyển khoản ngân hàng (CARD): chọn ngân hàng cố định, không gửi tên ngân hàng, gọi POST /payments với method CARD và không hiện +N điểm', async () => {
+    vi.useFakeTimers();
+    localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(mockLoggedInUser));
+    localStorage.setItem(CART_STORAGE_KEY, JSON.stringify([mockCartItem]));
+
+    const created = makeOrder({ id: 'ord-bank-card', orderNumber: 4501, totalAmount: 90000 });
+    vi.mocked(ordersService.createOrderApi).mockResolvedValueOnce(created);
+    vi.mocked(ordersService.payOrderApi).mockResolvedValueOnce({
+      id: 'pay-bank-success',
+      orderId: created.id,
+      amount: 90000,
+      method: 'CARD',
+      accountLast4: '0001',
+      status: 'SUCCESS',
+      createdAt: '2026-11-15T00:00:05.000Z',
+      order: { id: created.id, orderNumber: 4501, status: 'PAID', pointsEarned: 9 },
+    });
+
+    render(
+      <AuthProvider>
+        <CartProvider>
+          <CheckoutPage />
+        </CartProvider>
+      </AuthProvider>
+    );
+    await flushAsync();
+
+    // Có đúng 2 tab theo nhãn bảng 9.3
+    const walletTab = screen.getByRole('tab', {
+      name: new RegExp(`^${PAYMENT_METHOD_LABELS.WALLET.replace(/[()]/g, '\\$&')}`, 'i'),
+    });
+    const bankTab = screen.getByRole('tab', {
+      name: new RegExp(`^${PAYMENT_METHOD_LABELS.CARD}`, 'i'),
+    });
+    expect(walletTab).toBeInTheDocument();
+    expect(bankTab).toBeInTheDocument();
+
+    await act(async () => {
+      fireEvent.click(bankTab);
+    });
+
+    // Hiển thị đủ danh sách ngân hàng cố định, không có ô nhập số/thẻ
+    for (const bank of QR_BANK_OPTIONS) {
+      expect(screen.getByRole('button', { name: new RegExp(bank.name, 'i') })).toBeInTheDocument();
+    }
+    expect(screen.queryByPlaceholderText(/nhập số/i)).not.toBeInTheDocument();
+
+    const mbBtn = screen.getByRole('button', { name: /MB Bank/i });
+    await act(async () => {
+      fireEvent.click(mbBtn);
+    });
+    expect(mbBtn).toHaveAttribute('aria-pressed', 'true');
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /xác nhận đặt đơn hàng/i }));
+    });
+    await flushAsync();
+
+    // POST /orders không chứa tên ngân hàng
+    const orderPayloadStr = JSON.stringify(vi.mocked(ordersService.createOrderApi).mock.calls[0][0]);
+    expect(orderPayloadStr).not.toMatch(/mb bank|vietcombank|card/i);
+
+    // Màn QR hiển thị đúng ngân hàng và số tiền từ server
+    expect(screen.getByText(/Chuyển khoản ngân hàng • MB Bank/i)).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: /mã qr MB Bank cho đơn hàng #4501/i })).toBeInTheDocument();
+    expect(screen.getByText('90.000đ')).toBeInTheDocument();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5000);
+    });
+    await flushAsync();
+
+    expect(ordersService.payOrderApi).toHaveBeenCalledTimes(1);
+    const [payDto, idempKey] = vi.mocked(ordersService.payOrderApi).mock.calls[0];
+    expect(payDto).toEqual({
+      orderId: 'ord-bank-card',
+      method: 'CARD',
+      accountNumber: QR_PAYMENT_SUCCESS_ACCOUNT,
+    });
+    expect(JSON.stringify(payDto)).not.toMatch(/mb bank/i);
+    expect((idempKey as string).length).toBeGreaterThanOrEqual(8);
+
+    // Thành công: xóa giỏ, hiện mã đơn + "Đã thanh toán", KHÔNG hiện "+N điểm"
+    expect(screen.getByText(/thanh toán thành công!/i)).toBeInTheDocument();
+    expect(screen.getAllByText('#4501').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText('Đã thanh toán')).toBeInTheDocument();
+    expect(screen.queryByText(/\+9 điểm/i)).not.toBeInTheDocument();
+    expect(localStorage.getItem(CART_STORAGE_KEY)).toBe('[]');
+  });
+
+  it('9. Thoát màn QR với CARD gửi 0900000000, thử lại dùng key mới, và bấm thoát đúng lúc hết 5s chỉ gửi đúng 1 request', async () => {
+    vi.useFakeTimers();
+
+    vi.mocked(ordersService.payOrderApi)
+      .mockResolvedValueOnce({
+        id: 'pay-card-fail',
+        orderId: 'order-qr-001',
+        amount: 90000,
+        method: 'CARD',
+        accountLast4: '0000',
+        status: 'FAILED',
+        failureReason: 'Giao dịch bị từ chối (mô phỏng)',
+        createdAt: '2026-11-15T00:00:02.000Z',
+        order: { id: 'order-qr-001', orderNumber: 2045, status: 'PAYMENT_FAILED', pointsEarned: 0 },
+      })
+      .mockResolvedValueOnce({
+        id: 'pay-card-race-ok',
+        orderId: 'order-qr-001',
+        amount: 90000,
+        method: 'CARD',
+        accountLast4: '0001',
+        status: 'SUCCESS',
+        createdAt: '2026-11-15T00:00:10.000Z',
+        order: { id: 'order-qr-001', orderNumber: 2045, status: 'PAID', pointsEarned: 9 },
+      });
+
+    render(
+      <QrPaymentScreen
+        orderId="order-qr-001"
+        initialOrder={makeOrder()}
+        initialMethod="CARD"
+        initialBank="TCB"
+        autoStartQr={true}
+      />
+    );
+
+    // Thoát ngay ở lần 1 -> gửi method CARD + 0900000000
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /hủy thanh toán/i }));
+    });
+    await flushAsync();
+
+    expect(ordersService.payOrderApi).toHaveBeenCalledTimes(1);
+    const [dto1, key1] = vi.mocked(ordersService.payOrderApi).mock.calls[0];
+    expect(dto1).toEqual({
+      orderId: 'order-qr-001',
+      method: 'CARD',
+      accountNumber: QR_PAYMENT_FAILURE_ACCOUNT,
+    });
+
+    // Thử lại thanh toán -> mở QR lần 2 -> tiến đủ 5s rồi bấm đóng trong cùng tick cũng chỉ gọi ĐÚNG 1 lần (không gửi cả 2)
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /thử lại thanh toán/i }));
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5000);
+      fireEvent.click(screen.getByRole('button', { name: /đóng màn thanh toán qr/i }));
+    });
+    await flushAsync();
+
+    expect(ordersService.payOrderApi).toHaveBeenCalledTimes(2);
+    const [dto2, key2] = vi.mocked(ordersService.payOrderApi).mock.calls[1];
+    expect(dto2).toEqual({
+      orderId: 'order-qr-001',
+      method: 'CARD',
+      accountNumber: QR_PAYMENT_FAILURE_ACCOUNT,
+    });
+    expect(key2).not.toBe(key1);
+  });
+
+  it('10. Nhận 403 "Tài khoản đã bị khóa" khi thanh toán: hiện thông báo và tự đăng xuất', async () => {
+    vi.useFakeTimers();
+    localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(mockLoggedInUser));
+
+    vi.mocked(ordersService.payOrderApi).mockRejectedValueOnce(
+      new ordersService.OrderApiError(403, AUTH_ERROR_MESSAGES.ACCOUNT_LOCKED)
+    );
+
+    render(
+      <>
+        <AccountLockedNotice />
+        <QrPaymentScreen
+          orderId="order-qr-001"
+          initialOrder={makeOrder()}
+          autoStartQr={true}
+        />
+      </>
+    );
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5000);
+    });
+    await flushAsync();
+
+    expect(screen.getByTestId('account-locked-notice')).toHaveTextContent(
+      AUTH_ERROR_MESSAGES.ACCOUNT_LOCKED
+    );
+    expect(screen.getAllByText(AUTH_ERROR_MESSAGES.ACCOUNT_LOCKED).length).toBeGreaterThanOrEqual(1);
+    expect(loadAuthSession()).toBeNull();
+    // Không coi 403 bị khóa là lỗi mạng (không có nút Thử lại giao dịch bị gián đoạn)
+    expect(screen.queryByText(/giao dịch bị gián đoạn/i)).not.toBeInTheDocument();
   });
 });
