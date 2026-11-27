@@ -918,6 +918,7 @@ describe('Staff & Role Management Integration (10B)', () => {
         {
           productId: PRODUCT_DRINK_ID,
           name: 'Trà đào cam sả 10B',
+          available: 0,
         },
       ],
     });

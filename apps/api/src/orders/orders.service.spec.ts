@@ -539,8 +539,52 @@ describe('Orders (OrdersService & CreateOrderDto)', () => {
     });
   });
 
-  describe('6 & 7. Kiểm tra món đang bán / tạm hết (stock > 0 vs stock = 0, 409 Conflict)', () => {
-    it('món đang bán (stock > 0) thì tạo đơn thành công và stock KHÔNG đổi', async () => {
+  describe('6 & 7. Trừ kho có điều kiện, gộp theo productId và rollback khi không đủ hàng (409 Conflict)', () => {
+    it('(a) đặt đơn thành công trừ đúng số lượng từng món bằng câu cập nhật có điều kiện stock >= số lượng cần', async () => {
+      prisma.product.findMany.mockResolvedValue([mockMilkTea, mockCake]);
+
+      const result = await service.create(USER_ID, {
+        items: [
+          {
+            productId: mockMilkTea.id,
+            quantity: 3,
+            size: Size.M,
+          },
+          {
+            productId: mockCake.id,
+            quantity: 2,
+          },
+        ],
+      });
+
+      expect(result.id).toBe('33333333-0000-0000-0000-000000000001');
+      expect(result.status).toBe(OrderStatus.PENDING);
+      expect(txMock.product.updateMany).toHaveBeenCalledTimes(2);
+      expect(txMock.product.updateMany).toHaveBeenNthCalledWith(1, {
+        where: {
+          id: mockMilkTea.id,
+          isVisible: true,
+          stock: { gte: 3 },
+        },
+        data: {
+          stock: { decrement: 3 },
+        },
+      });
+      expect(txMock.product.updateMany).toHaveBeenNthCalledWith(2, {
+        where: {
+          id: mockCake.id,
+          isVisible: true,
+          stock: { gte: 2 },
+        },
+        data: {
+          stock: { decrement: 2 },
+        },
+      });
+      expect(txMock.order.create).toHaveBeenCalledTimes(1);
+      expect(txMock.orderItem.create).toHaveBeenCalledTimes(2);
+    });
+
+    it('(b) cùng một món nhưng khác size ở nhiều dòng được gộp số lượng khi trừ kho', async () => {
       prisma.product.findMany.mockResolvedValue([mockMilkTea]);
 
       const result = await service.create(USER_ID, {
@@ -560,12 +604,72 @@ describe('Orders (OrdersService & CreateOrderDto)', () => {
 
       expect(result.id).toBe('33333333-0000-0000-0000-000000000001');
       expect(result.status).toBe(OrderStatus.PENDING);
+      expect(txMock.product.updateMany).toHaveBeenCalledTimes(1);
+      expect(txMock.product.updateMany).toHaveBeenCalledWith({
+        where: {
+          id: mockMilkTea.id,
+          isVisible: true,
+          stock: { gte: 5 },
+        },
+        data: {
+          stock: { decrement: 5 },
+        },
+      });
       expect(txMock.order.create).toHaveBeenCalledTimes(1);
       expect(txMock.orderItem.create).toHaveBeenCalledTimes(2);
-      expect(txMock.product.updateMany).not.toHaveBeenCalled();
     });
 
-    it('từ chối cả đơn với 409 kèm details (không có available) và không tạo đơn khi có 1 món tạm hết (stock = 0)', async () => {
+    it('(b & c) cùng 1 món khác size có tổng vượt kho: trả 409 "Sản phẩm \'X\' chỉ còn N" kèm details có available và không tạo đơn', async () => {
+      prisma.product.findMany.mockResolvedValue([mockMilkTea]);
+      txMock.product.updateMany.mockResolvedValueOnce({ count: 0 });
+      txMock.product.findMany.mockResolvedValueOnce([
+        {
+          id: mockMilkTea.id,
+          name: mockMilkTea.name,
+          stock: 4,
+        },
+      ]);
+
+      let caughtError: unknown;
+      try {
+        await service.create(USER_ID, {
+          items: [
+            { productId: mockMilkTea.id, quantity: 2, size: Size.S },
+            { productId: mockMilkTea.id, quantity: 3, size: Size.L },
+          ],
+        });
+      } catch (err) {
+        caughtError = err;
+      }
+
+      expect(caughtError).toBeInstanceOf(ConflictException);
+      expect((caughtError as ConflictException).getResponse()).toEqual({
+        statusCode: 409,
+        message: "Sản phẩm 'Trà sữa truyền thống' chỉ còn 4",
+        error: 'Conflict',
+        details: [
+          {
+            productId: mockMilkTea.id,
+            name: 'Trà sữa truyền thống',
+            available: 4,
+          },
+        ],
+      });
+      expect(txMock.product.updateMany).toHaveBeenCalledWith({
+        where: {
+          id: mockMilkTea.id,
+          isVisible: true,
+          stock: { gte: 5 },
+        },
+        data: {
+          stock: { decrement: 5 },
+        },
+      });
+      expect(txMock.order.create).not.toHaveBeenCalled();
+      expect(txMock.orderItem.create).not.toHaveBeenCalled();
+    });
+
+    it('(c) từ chối cả đơn trong transaction với 409 "Sản phẩm \'X\' hiện đã tạm hết" kèm details có available = 0 khi món hết hàng', async () => {
       const mockOutOfStock = {
         id: '11111111-0000-0000-0000-000000000003',
         name: 'Bạc xỉu',
@@ -574,6 +678,16 @@ describe('Orders (OrdersService & CreateOrderDto)', () => {
         stock: 0,
       };
       prisma.product.findMany.mockResolvedValue([mockMilkTea, mockOutOfStock]);
+      txMock.product.updateMany
+        .mockResolvedValueOnce({ count: 1 })
+        .mockResolvedValueOnce({ count: 0 });
+      txMock.product.findMany.mockResolvedValueOnce([
+        {
+          id: mockOutOfStock.id,
+          name: mockOutOfStock.name,
+          stock: 0,
+        },
+      ]);
 
       let caughtError: unknown;
       try {
@@ -596,21 +710,21 @@ describe('Orders (OrdersService & CreateOrderDto)', () => {
           {
             productId: mockOutOfStock.id,
             name: 'Bạc xỉu',
+            available: 0,
           },
         ],
       });
       expect(txMock.order.create).not.toHaveBeenCalled();
       expect(txMock.orderItem.create).not.toHaveBeenCalled();
-      expect(txMock.product.updateMany).not.toHaveBeenCalled();
     });
 
-    it('liệt kê đủ các món tạm hết trong details khi đơn có nhiều món tạm hết (stock = 0) và không tạo đơn nào', async () => {
+    it('(c) liệt kê TẤT CẢ món thiếu trong details (available > 0 và available = 0), message nói về món thiếu đầu tiên và không tạo đơn nào', async () => {
       const mockBacXiu = {
         id: '11111111-0000-0000-0000-000000000003',
         name: 'Bạc xỉu',
         category: Category.COFFEE,
         basePrice: 32000,
-        stock: 0,
+        stock: 2,
       };
       const mockMatcha = {
         id: '11111111-0000-0000-0000-000000000008',
@@ -624,12 +738,28 @@ describe('Orders (OrdersService & CreateOrderDto)', () => {
         mockBacXiu,
         mockMatcha,
       ]);
+      txMock.product.updateMany
+        .mockResolvedValueOnce({ count: 0 })
+        .mockResolvedValueOnce({ count: 1 })
+        .mockResolvedValueOnce({ count: 0 });
+      txMock.product.findMany.mockResolvedValueOnce([
+        {
+          id: mockBacXiu.id,
+          name: mockBacXiu.name,
+          stock: 2,
+        },
+        {
+          id: mockMatcha.id,
+          name: mockMatcha.name,
+          stock: 0,
+        },
+      ]);
 
       let caughtError: unknown;
       try {
         await service.create(USER_ID, {
           items: [
-            { productId: mockBacXiu.id, quantity: 1 },
+            { productId: mockBacXiu.id, quantity: 3 },
             { productId: mockMilkTea.id, quantity: 2 },
             { productId: mockMatcha.id, quantity: 1 },
           ],
@@ -641,16 +771,18 @@ describe('Orders (OrdersService & CreateOrderDto)', () => {
       expect(caughtError).toBeInstanceOf(ConflictException);
       expect((caughtError as ConflictException).getResponse()).toEqual({
         statusCode: 409,
-        message: "Sản phẩm 'Bạc xỉu' hiện đã tạm hết",
+        message: "Sản phẩm 'Bạc xỉu' chỉ còn 2",
         error: 'Conflict',
         details: [
           {
             productId: mockBacXiu.id,
             name: 'Bạc xỉu',
+            available: 2,
           },
           {
             productId: mockMatcha.id,
             name: 'Trà sữa matcha',
+            available: 0,
           },
         ],
       });
