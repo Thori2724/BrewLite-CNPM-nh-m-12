@@ -172,6 +172,7 @@ describe('Trang Giỏ hàng (CartPage)', () => {
   });
 
   it('4. Nút giảm bị vô hiệu hóa khi số lượng = 1 (không tự xóa)', async () => {
+    const user = userEvent.setup();
     localStorage.setItem(CART_STORAGE_KEY, JSON.stringify([mockItemCake])); // quantity = 1
 
     render(
@@ -186,9 +187,14 @@ describe('Trang Giỏ hàng (CartPage)', () => {
 
     const decreaseBtn = screen.getByRole('button', { name: 'Giảm số lượng' });
     expect(decreaseBtn).toBeDisabled();
+
+    await user.click(decreaseBtn);
+    expect(screen.getByText('Bánh croissant phô mai')).toBeInTheDocument();
+    expect(screen.getByText('1')).toBeInTheDocument();
+    expect(screen.getAllByText(/25\.000/).length).toBeGreaterThan(0);
   });
 
-  it('5. Xóa từng dòng bằng nút ✕', async () => {
+  it('5. Xóa từng dòng bằng nút thùng rác: xóa ngay cả dòng không cần xác nhận, cập nhật tổng tiền và trạng thái trống', async () => {
     const user = userEvent.setup();
     localStorage.setItem(CART_STORAGE_KEY, JSON.stringify([mockItem1, mockItemCake]));
 
@@ -202,13 +208,31 @@ describe('Trang Giỏ hàng (CartPage)', () => {
       expect(screen.getByText('Cà phê sữa đá')).toBeInTheDocument();
     });
 
-    // Bấm nút xóa Cà phê sữa đá
-    const deleteBtn = screen.getByRole('button', { name: 'Xóa Cà phê sữa đá' });
+    // Không có ô tích chọn món
+    expect(screen.queryAllByRole('checkbox')).toHaveLength(0);
+    expect(screen.queryByText('✕')).not.toBeInTheDocument();
+
+    // Bấm nút thùng rác xóa Cà phê sữa đá (số lượng 2) -> xóa ngay cả dòng, không mở hộp xác nhận
+    const deleteBtn = screen.getByRole('button', { name: 'Xóa Cà phê sữa đá khỏi giỏ' });
+    expect(deleteBtn.querySelector('svg')).toBeInTheDocument();
     await user.click(deleteBtn);
 
-    // Cà phê sữa đá biến mất, chỉ còn Bánh croissant
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(screen.queryByText('Cà phê sữa đá')).not.toBeInTheDocument();
     expect(screen.getByText('Bánh croissant phô mai')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 1, name: /Giỏ hàng \(1 món\)/i })).toBeInTheDocument();
+    expect(screen.getAllByText(/25\.000/).length).toBeGreaterThan(0);
+
+    const savedAfterFirstDelete = JSON.parse(localStorage.getItem(CART_STORAGE_KEY) || '[]');
+    expect(savedAfterFirstDelete).toHaveLength(1);
+    expect(savedAfterFirstDelete[0].id).toBe(mockItemCake.id);
+
+    // Xóa nốt món cuối cùng -> hiện trạng thái giỏ trống và lưu localStorage rỗng
+    const deleteCakeBtn = screen.getByRole('button', { name: 'Xóa Bánh croissant phô mai khỏi giỏ' });
+    await user.click(deleteCakeBtn);
+
+    expect(screen.getByRole('heading', { level: 1, name: 'Giỏ hàng của bạn đang trống' })).toBeInTheDocument();
+    expect(JSON.parse(localStorage.getItem(CART_STORAGE_KEY) || '[]')).toEqual([]);
   });
 
   it('6. Nút "Xóa tất cả" mở ConfirmDialog (không dùng window.confirm); Quay lại/Esc giữ nguyên giỏ, xác nhận mới xóa', async () => {

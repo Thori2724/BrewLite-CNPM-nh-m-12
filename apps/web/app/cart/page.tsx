@@ -4,6 +4,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { useCart } from '../../context/CartContext';
 import ConfirmDialog from '../components/ConfirmDialog';
+import { TrashIcon } from '../components/Icons';
 import { getLineTotal, MAX_ITEM_QUANTITY } from '../../utils/cart';
 import { formatVnd } from '../../utils/validation';
 import {
@@ -155,10 +156,10 @@ export default function CartPage() {
                       <button
                         type="button"
                         onClick={() => removeFromCart(item.id)}
-                        aria-label={`Xóa ${item.name}`}
-                        className="text-noir/40 hover:text-error text-xs sm:text-sm px-2 py-0.5 rounded-control hover:bg-error/10 transition cursor-pointer shrink-0"
+                        aria-label={`Xóa ${item.name} khỏi giỏ`}
+                        className="inline-flex items-center justify-center p-1.5 text-noir/45 hover:text-error rounded-control hover:bg-error/10 transition cursor-pointer shrink-0"
                       >
-                        ✕
+                        <TrashIcon className="w-4 h-4 sm:w-[18px] sm:h-[18px]" />
                       </button>
                     </div>
 
