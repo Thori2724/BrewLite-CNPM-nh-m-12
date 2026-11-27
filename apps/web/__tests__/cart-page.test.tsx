@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import CartPage from '../app/cart/page';
@@ -211,8 +211,9 @@ describe('Trang Giỏ hàng (CartPage)', () => {
     expect(screen.getByText('Bánh croissant phô mai')).toBeInTheDocument();
   });
 
-  it('6. Nút "Xóa tất cả" có bước xác nhận', async () => {
+  it('6. Nút "Xóa tất cả" mở ConfirmDialog (không dùng window.confirm); Quay lại/Esc giữ nguyên giỏ, xác nhận mới xóa', async () => {
     const user = userEvent.setup();
+    const confirmSpy = vi.spyOn(window, 'confirm');
     localStorage.setItem(CART_STORAGE_KEY, JSON.stringify([mockItem1]));
 
     render(
@@ -225,17 +226,37 @@ describe('Trang Giỏ hàng (CartPage)', () => {
       expect(screen.getByText('Cà phê sữa đá')).toBeInTheDocument();
     });
 
-    // Trường hợp 1: Người dùng HỦY xác nhận
-    vi.spyOn(window, 'confirm').mockReturnValue(false);
+    // Bấm nút "Xóa tất cả" -> mở ConfirmDialog, CHƯA xóa giỏ
     const clearBtn = screen.getByRole('button', { name: 'Xóa tất cả' });
     await user.click(clearBtn);
-    expect(screen.getByText('Cà phê sữa đá')).toBeInTheDocument(); // Vẫn còn
 
-    // Trường hợp 2: Người dùng ĐỒNG Ý xác nhận
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
-    await user.click(clearBtn);
-    // Giỏ hàng chuyển sang trạng thái rỗng
+    const dialog = screen.getByRole('dialog');
+    expect(
+      within(dialog).getByRole('heading', { name: 'Xóa tất cả món trong giỏ?' })
+    ).toBeInTheDocument();
+    expect(screen.getByText('Cà phê sữa đá')).toBeInTheDocument();
+    expect(confirmSpy).not.toHaveBeenCalled();
+
+    // Trường hợp 1: Bấm "Quay lại" -> đóng hộp, giỏ vẫn còn
+    await user.click(within(dialog).getByRole('button', { name: 'Quay lại' }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.getByText('Cà phê sữa đá')).toBeInTheDocument();
+
+    // Trường hợp 2: Mở lại và bấm Esc -> đóng hộp, giỏ vẫn còn
+    await user.click(screen.getByRole('button', { name: 'Xóa tất cả' }));
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.getByText('Cà phê sữa đá')).toBeInTheDocument();
+
+    // Trường hợp 3: Mở lại và bấm "Xóa tất cả" trong hộp xác nhận -> xóa toàn bộ giỏ
+    await user.click(screen.getByRole('button', { name: 'Xóa tất cả' }));
+    const confirmDialog = screen.getByRole('dialog');
+    await user.click(within(confirmDialog).getByRole('button', { name: 'Xóa tất cả' }));
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(screen.getByText('Giỏ hàng của bạn đang trống')).toBeInTheDocument();
+    expect(confirmSpy).not.toHaveBeenCalled();
   });
 
   it('7. Nút "Tiến hành đặt đơn" liên kết điều hướng sang trang /checkout', async () => {

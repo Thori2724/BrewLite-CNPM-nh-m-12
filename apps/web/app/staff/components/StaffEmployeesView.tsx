@@ -46,7 +46,10 @@ export default function StaffEmployeesView() {
 
   const [updatingEmployeeId, setUpdatingEmployeeId] = useState<string | null>(null);
   const [updatingAction, setUpdatingAction] = useState<'lock' | 'unlock' | null>(null);
-  const [lockTargetEmployee, setLockTargetEmployee] = useState<StaffUser | null>(null);
+  const [statusDialogTarget, setStatusDialogTarget] = useState<{
+    employee: StaffUser;
+    nextIsActive: boolean;
+  } | null>(null);
   const [actionFeedback, setActionFeedback] = useState<ActionFeedback | null>(null);
   const [authBlocked, setAuthBlocked] = useState<boolean>(false);
 
@@ -195,22 +198,22 @@ export default function StaffEmployeesView() {
     );
   };
 
-  const handleOpenLockDialog = (employee: StaffUser) => {
+  const handleOpenStatusDialog = (employee: StaffUser, nextIsActive: boolean) => {
     if (
       !isAdmin ||
-      !employee.isActive ||
+      employee.isActive === nextIsActive ||
       actionInFlightRef.current ||
       updatingEmployeeId !== null
     ) {
       return;
     }
     setActionFeedback(null);
-    setLockTargetEmployee(employee);
+    setStatusDialogTarget({ employee, nextIsActive });
   };
 
-  const handleCloseLockDialog = () => {
+  const handleCloseStatusDialog = () => {
     if (actionInFlightRef.current || updatingEmployeeId !== null) return;
-    setLockTargetEmployee(null);
+    setStatusDialogTarget(null);
   };
 
   const runStatusUpdate = async (employee: StaffUser, nextIsActive: boolean) => {
@@ -231,7 +234,7 @@ export default function StaffEmployeesView() {
       );
       if (!isMountedRef.current) return;
 
-      setLockTargetEmployee(null);
+      setStatusDialogTarget(null);
       applyUpdatedEmployee(updated);
       setActionFeedback({
         type: 'success',
@@ -243,7 +246,7 @@ export default function StaffEmployeesView() {
       if (!isMountedRef.current) return;
       const parsed = parseStaffEmployeeError(err);
 
-      setLockTargetEmployee(null);
+      setStatusDialogTarget(null);
 
       if (handleAuthFailureRef.current(parsed)) {
         setError(parsed.message);
@@ -459,7 +462,7 @@ export default function StaffEmployeesView() {
                           <button
                             type="button"
                             disabled={isAnyUpdating}
-                            onClick={() => handleOpenLockDialog(employee)}
+                            onClick={() => handleOpenStatusDialog(employee, false)}
                             className="px-3.5 py-1.5 rounded-control border border-error/45 bg-cream hover:bg-error/10 text-error text-xs font-semibold transition disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
                           >
                             {isThisRowUpdating && updatingAction === 'lock'
@@ -470,9 +473,7 @@ export default function StaffEmployeesView() {
                           <button
                             type="button"
                             disabled={isAnyUpdating}
-                            onClick={() => {
-                              void runStatusUpdate(employee, true);
-                            }}
+                            onClick={() => handleOpenStatusDialog(employee, true)}
                             className="px-3.5 py-1.5 rounded-control bg-kombu hover:bg-noir text-bone text-xs font-semibold transition shadow-soft disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
                           >
                             {isThisRowUpdating && updatingAction === 'unlock'
@@ -490,24 +491,33 @@ export default function StaffEmployeesView() {
         </div>
       )}
 
-      {/* Hộp xác nhận khóa tài khoản nhân viên */}
+      {/* Hộp xác nhận khóa / mở khóa tài khoản nhân viên */}
       <ConfirmDialog
-        isOpen={Boolean(lockTargetEmployee)}
+        isOpen={Boolean(statusDialogTarget)}
         title={
-          lockTargetEmployee
-            ? `Khóa tài khoản "${lockTargetEmployee.displayName}"?`
+          statusDialogTarget
+            ? statusDialogTarget.nextIsActive
+              ? `Mở khóa tài khoản "${statusDialogTarget.employee.displayName}"?`
+              : `Khóa tài khoản "${statusDialogTarget.employee.displayName}"?`
             : ''
         }
-        description="Nhân viên bị khóa sẽ không thể đăng nhập và bị đăng xuất ngay khỏi các phiên đang hoạt động. Bạn có thể mở khóa lại sau."
-        cancelLabel="Đóng"
-        confirmLabel="Xác nhận khóa"
-        processingLabel="Đang khóa..."
-        variant="danger"
+        description={
+          statusDialogTarget?.nextIsActive
+            ? 'Nhân viên này sẽ có thể đăng nhập lại và tiếp tục xử lý đơn hàng tại quầy.'
+            : 'Nhân viên bị khóa sẽ không thể đăng nhập và bị đăng xuất ngay khỏi các phiên đang hoạt động. Bạn có thể mở khóa lại sau.'
+        }
+        cancelLabel={statusDialogTarget?.nextIsActive ? 'Quay lại' : 'Đóng'}
+        confirmLabel={statusDialogTarget?.nextIsActive ? 'Mở khóa' : 'Xác nhận khóa'}
+        processingLabel={statusDialogTarget?.nextIsActive ? 'Đang mở khóa...' : 'Đang khóa...'}
+        variant={statusDialogTarget?.nextIsActive ? 'default' : 'danger'}
         isProcessing={updatingEmployeeId !== null}
-        onCancel={handleCloseLockDialog}
+        onCancel={handleCloseStatusDialog}
         onConfirm={() => {
-          if (lockTargetEmployee) {
-            void runStatusUpdate(lockTargetEmployee, false);
+          if (statusDialogTarget) {
+            void runStatusUpdate(
+              statusDialogTarget.employee,
+              statusDialogTarget.nextIsActive
+            );
           }
         }}
       />
