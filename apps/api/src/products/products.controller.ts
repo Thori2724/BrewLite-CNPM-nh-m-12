@@ -59,6 +59,10 @@ export class ProductsController {
     @Param('id') id: string,
     @Body() dto: UpdateProductAvailabilityDto,
   ) {
-    return this.productsService.updateAvailability(id, dto.isAvailable);
+    return this.productsService.updateAvailability(
+      id,
+      dto.isAvailable,
+      dto.stock,
+    );
   }
 }

@@ -7,7 +7,12 @@ import {
   ValidationPipe,
 } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
-import { OrderStatus, PaymentMethod, PaymentStatus } from '@prisma/client';
+import {
+  LoyaltyType,
+  OrderStatus,
+  PaymentMethod,
+  PaymentStatus,
+} from '@prisma/client';
 import type { Response } from 'express';
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
@@ -35,6 +40,12 @@ describe('Payments (PaymentsService, PaymentsController, CreatePaymentDto, Gatew
   let txMock: {
     order: {
       updateMany: jest.Mock;
+    };
+    user: {
+      update: jest.Mock;
+    };
+    loyaltyTransaction: {
+      create: jest.Mock;
     };
     payment: {
       create: jest.Mock;
@@ -79,6 +90,14 @@ describe('Payments (PaymentsService, PaymentsController, CreatePaymentDto, Gatew
     txMock = {
       order: {
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      },
+      user: {
+        update: jest.fn().mockResolvedValue({ id: USER_ID, loyaltyPoints: 13 }),
+      },
+      loyaltyTransaction: {
+        create: jest.fn().mockResolvedValue({
+          id: '55555555-0000-0000-0000-000000000001',
+        }),
       },
       payment: {
         create: jest
@@ -239,7 +258,21 @@ describe('Payments (PaymentsService, PaymentsController, CreatePaymentDto, Gatew
           userId: USER_ID,
           status: { in: [OrderStatus.PENDING, OrderStatus.PAYMENT_FAILED] },
         },
-        data: { status: OrderStatus.PAID },
+        data: { status: OrderStatus.PAID, pointsEarned: 13 },
+      });
+
+      expect(txMock.user.update).toHaveBeenCalledWith({
+        where: { id: USER_ID },
+        data: { loyaltyPoints: { increment: 13 } },
+      });
+
+      expect(txMock.loyaltyTransaction.create).toHaveBeenCalledWith({
+        data: {
+          userId: USER_ID,
+          orderId: ORDER_ID,
+          type: LoyaltyType.EARN,
+          points: 13,
+        },
       });
 
       expect(txMock.payment.create).toHaveBeenCalledWith({
@@ -267,6 +300,7 @@ describe('Payments (PaymentsService, PaymentsController, CreatePaymentDto, Gatew
           id: ORDER_ID,
           orderNumber: 1001,
           status: OrderStatus.PAID,
+          pointsEarned: 13,
         },
       });
       expect(result[IS_IDEMPOTENT_REPLAY]).toBe(false);
@@ -304,9 +338,12 @@ describe('Payments (PaymentsService, PaymentsController, CreatePaymentDto, Gatew
           id: ORDER_ID,
           orderNumber: 1001,
           status: OrderStatus.PAYMENT_FAILED,
+          pointsEarned: 0,
         },
       });
       expect(result[IS_IDEMPOTENT_REPLAY]).toBe(false);
+      expect(txMock.user.update).not.toHaveBeenCalled();
+      expect(txMock.loyaltyTransaction.create).not.toHaveBeenCalled();
       expect(txMock.product.update).not.toHaveBeenCalled();
       expect(txMock.product.updateMany).not.toHaveBeenCalled();
       expect(prisma.product.update).not.toHaveBeenCalled();
@@ -583,6 +620,299 @@ describe('Payments (PaymentsService, PaymentsController, CreatePaymentDto, Gatew
           spy.mockRestore();
         }
       }
+    });
+  });
+
+  describe('10. VIỆC 10 - POST /payments cộng điểm (hợp đồng mục 6.1, 0.10)', () => {
+    it('(a) SUCCESS: đơn 60.000đ -> PAID, pointsEarned = 6, loyaltyPoints tăng 6, có đúng 1 dòng EARN (points = 6, đúng orderId), response order.pointsEarned = 6', async () => {
+      prisma.order.findUnique.mockResolvedValueOnce({
+        id: ORDER_ID,
+        orderNumber: 1001,
+        userId: USER_ID,
+        status: OrderStatus.PENDING,
+        totalAmount: 60000,
+      });
+
+      const result = await service.create(USER_ID, VALID_KEY, {
+        orderId: ORDER_ID,
+        method: PaymentMethod.WALLET,
+        accountNumber: '0900000001',
+      });
+
+      expect(txMock.order.updateMany).toHaveBeenCalledWith({
+        where: {
+          id: ORDER_ID,
+          userId: USER_ID,
+          status: { in: [OrderStatus.PENDING, OrderStatus.PAYMENT_FAILED] },
+        },
+        data: {
+          status: OrderStatus.PAID,
+          pointsEarned: 6,
+        },
+      });
+      expect(txMock.user.update).toHaveBeenCalledTimes(1);
+      expect(txMock.user.update).toHaveBeenCalledWith({
+        where: { id: USER_ID },
+        data: { loyaltyPoints: { increment: 6 } },
+      });
+      expect(txMock.loyaltyTransaction.create).toHaveBeenCalledTimes(1);
+      expect(txMock.loyaltyTransaction.create).toHaveBeenCalledWith({
+        data: {
+          userId: USER_ID,
+          orderId: ORDER_ID,
+          type: LoyaltyType.EARN,
+          points: 6,
+        },
+      });
+      expect(result.order).toEqual({
+        id: ORDER_ID,
+        orderNumber: 1001,
+        status: OrderStatus.PAID,
+        pointsEarned: 6,
+      });
+    });
+
+    it('(b) FAILED (accountNumber đuôi 0000): PAYMENT_FAILED, điểm không đổi, không có dòng EARN, response order.pointsEarned = 0', async () => {
+      prisma.order.findUnique.mockResolvedValueOnce({
+        id: ORDER_ID,
+        orderNumber: 1001,
+        userId: USER_ID,
+        status: OrderStatus.PENDING,
+        totalAmount: 60000,
+      });
+
+      const result = await service.create(USER_ID, VALID_KEY, {
+        orderId: ORDER_ID,
+        method: PaymentMethod.WALLET,
+        accountNumber: '0900000000',
+      });
+
+      expect(txMock.order.updateMany).toHaveBeenCalledWith({
+        where: {
+          id: ORDER_ID,
+          userId: USER_ID,
+          status: { in: [OrderStatus.PENDING, OrderStatus.PAYMENT_FAILED] },
+        },
+        data: {
+          status: OrderStatus.PAYMENT_FAILED,
+        },
+      });
+      expect(txMock.user.update).not.toHaveBeenCalled();
+      expect(txMock.loyaltyTransaction.create).not.toHaveBeenCalled();
+      expect(result.status).toBe(PaymentStatus.FAILED);
+      expect(result.order).toEqual({
+        id: ORDER_ID,
+        orderNumber: 1001,
+        status: OrderStatus.PAYMENT_FAILED,
+        pointsEarned: 0,
+      });
+    });
+
+    it('(c) gửi lại cùng Idempotency-Key sau khi SUCCESS: 200, điểm không tăng thêm, không ghi thêm dòng EARN, pointsEarned trong response lấy từ Order đã lưu (= 6)', async () => {
+      prisma.payment.findUnique.mockResolvedValueOnce({
+        id: '44444444-0000-0000-0000-000000000001',
+        orderId: ORDER_ID,
+        userId: USER_ID,
+        idempotencyKey: VALID_KEY,
+        method: PaymentMethod.WALLET,
+        accountLast4: '0001',
+        amount: 60000,
+        status: PaymentStatus.SUCCESS,
+        failureReason: null,
+        createdAt: CREATED_AT,
+        order: {
+          id: ORDER_ID,
+          orderNumber: 1001,
+          status: OrderStatus.PAID,
+          pointsEarned: 6,
+        },
+      });
+
+      const statusMock = jest.fn().mockReturnThis();
+      const resMock = { status: statusMock } as unknown as Response;
+      const reqMock = {
+        user: { id: USER_ID },
+      } as unknown as AuthenticatedRequest;
+
+      const result = await controller.create(
+        reqMock,
+        VALID_KEY,
+        {
+          orderId: ORDER_ID,
+          method: PaymentMethod.WALLET,
+          accountNumber: '0900000001',
+        },
+        resMock,
+      );
+
+      expect(statusMock).toHaveBeenCalledWith(HttpStatus.OK);
+      expect(result[IS_IDEMPOTENT_REPLAY]).toBe(true);
+      expect(result.order).toEqual({
+        id: ORDER_ID,
+        orderNumber: 1001,
+        status: OrderStatus.PAID,
+        pointsEarned: 6,
+      });
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+      expect(txMock.user.update).not.toHaveBeenCalled();
+      expect(txMock.loyaltyTransaction.create).not.toHaveBeenCalled();
+    });
+
+    it('(d) FAILED rồi thử lại bằng key mới thành công: cộng điểm đúng một lần', async () => {
+      // Lần 1: FAILED
+      prisma.order.findUnique.mockResolvedValueOnce({
+        id: ORDER_ID,
+        orderNumber: 1001,
+        userId: USER_ID,
+        status: OrderStatus.PENDING,
+        totalAmount: 60000,
+      });
+      const failRes = await service.create(USER_ID, 'idem-v10-fail-1', {
+        orderId: ORDER_ID,
+        method: PaymentMethod.WALLET,
+        accountNumber: '0900000000',
+      });
+      expect(failRes.status).toBe(PaymentStatus.FAILED);
+      expect(failRes.order.pointsEarned).toBe(0);
+      expect(txMock.user.update).not.toHaveBeenCalled();
+      expect(txMock.loyaltyTransaction.create).not.toHaveBeenCalled();
+
+      // Lần 2: key mới, SUCCESS
+      prisma.order.findUnique.mockResolvedValueOnce({
+        id: ORDER_ID,
+        orderNumber: 1001,
+        userId: USER_ID,
+        status: OrderStatus.PAYMENT_FAILED,
+        totalAmount: 60000,
+      });
+      const successRes = await service.create(USER_ID, 'idem-v10-retry-2', {
+        orderId: ORDER_ID,
+        method: PaymentMethod.WALLET,
+        accountNumber: '0900000001',
+      });
+      expect(successRes.status).toBe(PaymentStatus.SUCCESS);
+      expect(successRes.order.pointsEarned).toBe(6);
+      expect(txMock.user.update).toHaveBeenCalledTimes(1);
+      expect(txMock.loyaltyTransaction.create).toHaveBeenCalledTimes(1);
+    });
+
+    it('(e) đơn dưới 10.000đ (totalAmount = 9.000): PAID, pointsEarned = 0, không gọi user.update và không có dòng EARN', async () => {
+      prisma.order.findUnique.mockResolvedValueOnce({
+        id: ORDER_ID,
+        orderNumber: 1001,
+        userId: USER_ID,
+        status: OrderStatus.PENDING,
+        totalAmount: 9000,
+      });
+
+      const result = await service.create(USER_ID, VALID_KEY, {
+        orderId: ORDER_ID,
+        method: PaymentMethod.WALLET,
+        accountNumber: '0900000001',
+      });
+
+      expect(txMock.order.updateMany).toHaveBeenCalledWith({
+        where: {
+          id: ORDER_ID,
+          userId: USER_ID,
+          status: { in: [OrderStatus.PENDING, OrderStatus.PAYMENT_FAILED] },
+        },
+        data: {
+          status: OrderStatus.PAID,
+          pointsEarned: 0,
+        },
+      });
+      expect(txMock.user.update).not.toHaveBeenCalled();
+      expect(txMock.loyaltyTransaction.create).not.toHaveBeenCalled();
+      expect(result.amount).toBe(9000);
+      expect(result.order).toEqual({
+        id: ORDER_ID,
+        orderNumber: 1001,
+        status: OrderStatus.PAID,
+        pointsEarned: 0,
+      });
+    });
+
+    it('(f) đơn có mã giảm và dùng điểm: Payment.amount bằng totalAmount (sau giảm), điểm cộng tính trên totalAmount chứ không phải subtotalAmount', async () => {
+      // Đơn có subtotalAmount = 80.000, discountAmount = 10.000, pointsUsed = 15 (15.000) -> totalAmount = 55.000 -> pointsEarned = floor(55.000 / 10.000) = 5 (chứ không phải 8)
+      prisma.order.findUnique.mockResolvedValueOnce({
+        id: ORDER_ID,
+        orderNumber: 1001,
+        userId: USER_ID,
+        status: OrderStatus.PENDING,
+        subtotalAmount: 80000,
+        discountAmount: 10000,
+        pointsUsed: 15,
+        totalAmount: 55000,
+      });
+
+      const result = await service.create(USER_ID, VALID_KEY, {
+        orderId: ORDER_ID,
+        method: PaymentMethod.WALLET,
+        accountNumber: '0900000001',
+      });
+
+      expect(result.amount).toBe(55000);
+      expect(result.order.pointsEarned).toBe(5);
+      expect(txMock.payment.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            amount: 55000,
+          }) as unknown,
+        }),
+      );
+      expect(txMock.user.update).toHaveBeenCalledWith({
+        where: { id: USER_ID },
+        data: { loyaltyPoints: { increment: 5 } },
+      });
+      expect(txMock.loyaltyTransaction.create).toHaveBeenCalledWith({
+        data: {
+          userId: USER_ID,
+          orderId: ORDER_ID,
+          type: LoyaltyType.EARN,
+          points: 5,
+        },
+      });
+    });
+
+    it('(g) hai request thanh toán đồng thời (mô phỏng xung đột count = 0 ở request thứ hai): request thua ném 409 và tuyệt đối không cộng điểm lần thứ hai', async () => {
+      prisma.order.findUnique.mockResolvedValue({
+        id: ORDER_ID,
+        orderNumber: 1001,
+        userId: USER_ID,
+        status: OrderStatus.PENDING,
+        totalAmount: 60000,
+      });
+
+      txMock.order.updateMany
+        .mockResolvedValueOnce({ count: 1 })
+        .mockResolvedValueOnce({ count: 0 });
+
+      const [res1, res2] = await Promise.allSettled([
+        service.create(USER_ID, 'idem-concurrent-key-1', {
+          orderId: ORDER_ID,
+          method: PaymentMethod.WALLET,
+          accountNumber: '0900000001',
+        }),
+        service.create(USER_ID, 'idem-concurrent-key-2', {
+          orderId: ORDER_ID,
+          method: PaymentMethod.CARD,
+          accountNumber: '0900000002',
+        }),
+      ]);
+
+      expect(res1.status).toBe('fulfilled');
+      expect(res2.status).toBe('rejected');
+      if (res2.status === 'rejected') {
+        expect(res2.reason).toEqual(
+          new ConflictException(ORDER_NOT_PAYABLE_MESSAGE),
+        );
+      }
+
+      // Chỉ cộng điểm và ghi dòng EARN đúng 1 lần cho request thắng
+      expect(txMock.user.update).toHaveBeenCalledTimes(1);
+      expect(txMock.loyaltyTransaction.create).toHaveBeenCalledTimes(1);
+      expect(txMock.payment.create).toHaveBeenCalledTimes(1);
     });
   });
 });

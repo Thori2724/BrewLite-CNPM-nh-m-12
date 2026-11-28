@@ -342,17 +342,28 @@ describe('ProductsService', () => {
   });
 
   describe('updateAvailability (PATCH /products/:id/availability)', () => {
-    it('isAvailable = true đặt stock = 999, isAvailable = false đặt stock = 0, món đang ẩn vẫn gạt được', async () => {
+    const pipe = new ValidationPipe({
+      whitelist: true,
+      transform: true,
+      forbidNonWhitelisted: false,
+    });
+
+    it('(a) & (c) isAvailable = true kèm stock hợp lệ đặt stock bằng đúng số đó (không cộng dồn), isAvailable = false đặt stock = 0 kể cả khi gửi kèm stock, món đang ẩn vẫn gạt được', async () => {
       prisma.product.findUnique.mockResolvedValue({ id: mockOutOfStock.id });
       prisma.product.update.mockResolvedValueOnce({
         ...mockOutOfStock,
-        stock: 999,
+        stock: 45,
         isVisible: false,
       });
 
+      const validDtoTrue = (await pipe.transform(
+        { isAvailable: true, stock: 45 },
+        { type: 'body', metatype: UpdateProductAvailabilityDto },
+      )) as UpdateProductAvailabilityDto;
+
       const availableResult = await controller.updateAvailability(
         mockOutOfStock.id,
-        { isAvailable: true },
+        validDtoTrue,
       );
 
       expect(prisma.product.findUnique).toHaveBeenCalledWith({
@@ -361,7 +372,7 @@ describe('ProductsService', () => {
       });
       expect(prisma.product.update).toHaveBeenCalledWith({
         where: { id: mockOutOfStock.id },
-        data: { stock: 999 },
+        data: { stock: 45 },
         select: {
           id: true,
           name: true,
@@ -372,18 +383,43 @@ describe('ProductsService', () => {
           isVisible: true,
         },
       });
-      expect(availableResult.stock).toBe(999);
+      expect(availableResult.stock).toBe(45);
       expect(availableResult.isVisible).toBe(false);
 
+      // Đặt lại stock = 120 -> ghi đè đúng 120, không cộng dồn
+      prisma.product.update.mockResolvedValueOnce({
+        ...mockOutOfStock,
+        stock: 120,
+        isVisible: false,
+      });
+
+      const secondAvailableResult = await controller.updateAvailability(
+        mockOutOfStock.id,
+        { isAvailable: true, stock: 120 },
+      );
+      expect(prisma.product.update).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          where: { id: mockOutOfStock.id },
+          data: { stock: 120 },
+        }),
+      );
+      expect(secondAvailableResult.stock).toBe(120);
+
+      // (c) isAvailable = false không kèm stock -> stock = 0
       prisma.product.update.mockResolvedValueOnce({
         ...mockOutOfStock,
         stock: 0,
         isVisible: true,
       });
 
+      const unavailableDtoNoStock = (await pipe.transform(
+        { isAvailable: false },
+        { type: 'body', metatype: UpdateProductAvailabilityDto },
+      )) as UpdateProductAvailabilityDto;
+
       const unavailableResult = await controller.updateAvailability(
         mockOutOfStock.id,
-        { isAvailable: false },
+        unavailableDtoNoStock,
       );
 
       expect(prisma.product.update).toHaveBeenLastCalledWith(
@@ -393,41 +429,84 @@ describe('ProductsService', () => {
         }),
       );
       expect(unavailableResult.stock).toBe(0);
+
+      // (c) isAvailable = false có gửi kèm stock (kể cả số âm, 0, số lớn hoặc chuỗi) -> bỏ qua không báo lỗi và vẫn đặt stock = 0
+      for (const ignoredStock of [50, 0, -5, 10000, 'abc']) {
+        prisma.product.update.mockResolvedValueOnce({
+          ...mockOutOfStock,
+          stock: 0,
+          isVisible: true,
+        });
+
+        const dtoWithIgnoredStock = (await pipe.transform(
+          { isAvailable: false, stock: ignoredStock },
+          { type: 'body', metatype: UpdateProductAvailabilityDto },
+        )) as UpdateProductAvailabilityDto;
+
+        const resWithIgnoredStock = await controller.updateAvailability(
+          mockOutOfStock.id,
+          dtoWithIgnoredStock,
+        );
+
+        expect(prisma.product.update).toHaveBeenLastCalledWith(
+          expect.objectContaining({
+            where: { id: mockOutOfStock.id },
+            data: { stock: 0 },
+          }),
+        );
+        expect(resWithIgnoredStock.stock).toBe(0);
+      }
     });
 
-    it('ném 400 BadRequestException khi body thiếu isAvailable hoặc không phải boolean', async () => {
-      const pipe = new ValidationPipe({
-        whitelist: true,
-        transform: true,
-        forbidNonWhitelisted: false,
-      });
-
+    it('(b) ném 400 BadRequestException (message là mảng chuỗi tiếng Anh) khi thiếu isAvailable, isAvailable không phải boolean, hoặc isAvailable = true nhưng thiếu stock / stock = 0 / stock = 10000 / stock không phải số nguyên', async () => {
       const invalidPayloads = [
         {},
-        { isAvailable: 'true' },
-        { isAvailable: 1 },
-        { isAvailable: null },
+        { isAvailable: 'true', stock: 10 },
+        { isAvailable: 1, stock: 10 },
+        { isAvailable: null, stock: 10 },
+        { isAvailable: true },
+        { isAvailable: true, stock: 0 },
+        { isAvailable: true, stock: -1 },
+        { isAvailable: true, stock: 10000 },
+        { isAvailable: true, stock: 12.5 },
+        { isAvailable: true, stock: '50' },
+        { isAvailable: true, stock: null },
       ];
 
       for (const payload of invalidPayloads) {
-        await expect(
-          pipe.transform(payload, {
+        try {
+          await pipe.transform(payload, {
             type: 'body',
             metatype: UpdateProductAvailabilityDto,
-          }),
-        ).rejects.toThrow(BadRequestException);
+          });
+          fail(
+            `Expected ValidationPipe to reject payload: ${JSON.stringify(payload)}`,
+          );
+        } catch (err) {
+          expect(err).toBeInstanceOf(BadRequestException);
+          const response = (err as BadRequestException).getResponse() as {
+            message: unknown;
+          };
+          expect(Array.isArray(response.message)).toBe(true);
+        }
       }
 
-      const validTrue = (await pipe.transform(
-        { isAvailable: true },
+      const validTrueMin = (await pipe.transform(
+        { isAvailable: true, stock: 1 },
         { type: 'body', metatype: UpdateProductAvailabilityDto },
       )) as UpdateProductAvailabilityDto;
-      expect(validTrue).toEqual({ isAvailable: true });
+      expect(validTrueMin).toEqual({ isAvailable: true, stock: 1 });
+
+      const validTrueMax = (await pipe.transform(
+        { isAvailable: true, stock: 9999 },
+        { type: 'body', metatype: UpdateProductAvailabilityDto },
+      )) as UpdateProductAvailabilityDto;
+      expect(validTrueMax).toEqual({ isAvailable: true, stock: 9999 });
     });
 
     it('ném 404 "Không tìm thấy sản phẩm" khi id không tồn tại hoặc không phải UUID', async () => {
       await expect(
-        service.updateAvailability('not-a-uuid', true),
+        service.updateAvailability('not-a-uuid', true, 10),
       ).rejects.toThrow(new NotFoundException(PRODUCT_NOT_FOUND_MESSAGE));
       expect(prisma.product.findUnique).not.toHaveBeenCalled();
 
@@ -449,22 +528,21 @@ describe('ProductsService', () => {
       forbidNonWhitelisted: false,
     });
 
-    it('tạo món hợp lệ với stock = 999, isVisible = true, id tự sinh và bỏ qua id/stock từ client', async () => {
+    it('(d) tạo món hợp lệ: không gửi stock thì mặc định stock = 50; có gửi stock (0..9999) thì lưu đúng; isVisible = true, id tự sinh và bỏ qua id/isVisible từ client', async () => {
       const generatedId = '77777777-0000-0000-0000-000000000001';
-      prisma.product.create.mockResolvedValue({
+      prisma.product.create.mockResolvedValueOnce({
         id: generatedId,
         name: 'Trà vải hoa hồng',
         category: Category.TEA,
         basePrice: 45000,
         imageUrl: 'https://images.unsplash.com/photo-tra-vai?w=500',
-        stock: 999,
+        stock: 50,
         isVisible: true,
       });
 
-      const dto = (await pipe.transform(
+      const dtoWithoutStock = (await pipe.transform(
         {
           id: 'client-id-should-be-stripped',
-          stock: 10,
           isVisible: false,
           name: '  Trà vải hoa hồng  ',
           category: 'TEA',
@@ -474,11 +552,11 @@ describe('ProductsService', () => {
         { type: 'body', metatype: CreateProductDto },
       )) as CreateProductDto;
 
-      expect(dto).not.toHaveProperty('id');
-      expect(dto).not.toHaveProperty('stock');
-      expect(dto).not.toHaveProperty('isVisible');
+      expect(dtoWithoutStock).not.toHaveProperty('id');
+      expect(dtoWithoutStock.stock).toBeUndefined();
+      expect(dtoWithoutStock).not.toHaveProperty('isVisible');
 
-      const result = await controller.create(dto);
+      const resultDefaultStock = await controller.create(dtoWithoutStock);
 
       expect(prisma.product.create).toHaveBeenCalledWith({
         data: {
@@ -486,7 +564,7 @@ describe('ProductsService', () => {
           category: Category.TEA,
           basePrice: 45000,
           imageUrl: 'https://images.unsplash.com/photo-tra-vai?w=500',
-          stock: 999,
+          stock: 50,
           isVisible: true,
         },
         select: {
@@ -499,15 +577,63 @@ describe('ProductsService', () => {
           isVisible: true,
         },
       });
-      expect(result).toEqual({
+      expect(resultDefaultStock).toEqual({
         id: generatedId,
         name: 'Trà vải hoa hồng',
         category: Category.TEA,
         basePrice: 45000,
         imageUrl: 'https://images.unsplash.com/photo-tra-vai?w=500',
-        stock: 999,
+        stock: 50,
         isVisible: true,
       });
+
+      // Có gửi stock (ví dụ 0 và 120) -> lưu đúng stock
+      for (const customStock of [0, 120, 9999]) {
+        prisma.product.create.mockResolvedValueOnce({
+          id: generatedId,
+          name: 'Trà vải hoa hồng',
+          category: Category.TEA,
+          basePrice: 45000,
+          imageUrl: 'https://images.unsplash.com/photo-tra-vai?w=500',
+          stock: customStock,
+          isVisible: true,
+        });
+
+        const dtoWithStock = (await pipe.transform(
+          {
+            name: 'Trà vải hoa hồng',
+            category: 'TEA',
+            basePrice: 45000,
+            imageUrl: 'https://images.unsplash.com/photo-tra-vai?w=500',
+            stock: customStock,
+          },
+          { type: 'body', metatype: CreateProductDto },
+        )) as CreateProductDto;
+
+        expect(dtoWithStock.stock).toBe(customStock);
+
+        const resCustomStock = await controller.create(dtoWithStock);
+        expect(prisma.product.create).toHaveBeenLastCalledWith({
+          data: {
+            name: 'Trà vải hoa hồng',
+            category: Category.TEA,
+            basePrice: 45000,
+            imageUrl: 'https://images.unsplash.com/photo-tra-vai?w=500',
+            stock: customStock,
+            isVisible: true,
+          },
+          select: {
+            id: true,
+            name: true,
+            category: true,
+            basePrice: true,
+            imageUrl: true,
+            stock: true,
+            isVisible: true,
+          },
+        });
+        expect(resCustomStock.stock).toBe(customStock);
+      }
     });
 
     it('gán ảnh mặc định DEFAULT_PRODUCT_IMAGE_URL khi imageUrl bỏ trống hoặc chuỗi rỗng', async () => {
@@ -535,7 +661,7 @@ describe('ProductsService', () => {
       }
     });
 
-    it('ném 400 với mảng message tiếng Anh khi dữ liệu không hợp lệ (tên rỗng/quá dài, category sai, giá ngoài 1.000..1.000.000 hoặc không nguyên, link ảnh không phải http/https hoặc quá 500 ký tự)', async () => {
+    it('(d) ném 400 với mảng message tiếng Anh khi dữ liệu không hợp lệ (tên rỗng/quá dài, category sai, giá ngoài 1.000..1.000.000 hoặc không nguyên, link ảnh không phải http/https hoặc quá 500 ký tự, stock ngoài 0..9999 hoặc không nguyên)', async () => {
       const validBase = {
         name: 'Cà phê muối',
         category: Category.COFFEE,
@@ -557,6 +683,10 @@ describe('ProductsService', () => {
           ...validBase,
           imageUrl: 'https://example.com/' + 'a'.repeat(490),
         },
+        { ...validBase, stock: -1 },
+        { ...validBase, stock: 10000 },
+        { ...validBase, stock: 10.5 },
+        { ...validBase, stock: '50' },
       ];
 
       for (const payload of invalidPayloads) {
