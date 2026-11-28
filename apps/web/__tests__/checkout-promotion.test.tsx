@@ -11,6 +11,7 @@ import { ApiHttpError } from '../services/auth-contract';
 import { OrderResponse } from '../services/order-contract';
 import { ValidatePromotionResponse } from '../services/promotions';
 import * as promotionsService from '../services/promotions';
+import * as loyaltyService from '../services/loyalty';
 import * as ordersService from '../services/orders';
 import { AUTH_STORAGE_KEY } from '../utils/auth';
 import { CART_STORAGE_KEY, CartItem } from '../utils/cart';
@@ -37,6 +38,14 @@ vi.mock('../services/promotions', async () => {
   return {
     ...actual,
     validatePromotionApi: vi.fn(),
+  };
+});
+
+vi.mock('../services/loyalty', async () => {
+  const actual = await vi.importActual<typeof import('../services/loyalty')>('../services/loyalty');
+  return {
+    ...actual,
+    getMyLoyaltyApi: vi.fn(),
   };
 });
 
@@ -80,6 +89,11 @@ describe('Dòng 18 - Mã giảm giá trên trang đặt đơn (/checkout)', () =
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(promotionsService.validatePromotionApi).mockReset();
+    vi.mocked(loyaltyService.getMyLoyaltyApi).mockReset();
+    vi.mocked(loyaltyService.getMyLoyaltyApi).mockResolvedValue({
+      loyaltyPoints: 0,
+      transactions: [],
+    });
     vi.mocked(ordersService.createOrderApi).mockReset();
     vi.mocked(ordersService.getOrderByIdApi).mockReset();
     vi.mocked(ordersService.payOrderApi).mockReset();
@@ -461,6 +475,7 @@ describe('Dòng 18 - Mã giảm giá trên trang đặt đơn (/checkout)', () =
       unknown
     >;
     expect(lastPayload.promotionCode).toBe('BREW10');
+    expect(lastPayload.usePoints).toBe(false);
     expect(lastPayload.unitPrice).toBeUndefined();
     expect(lastPayload.totalAmount).toBeUndefined();
     expect(lastPayload.discountAmount).toBeUndefined();

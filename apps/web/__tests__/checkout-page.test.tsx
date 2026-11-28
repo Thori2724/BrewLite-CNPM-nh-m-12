@@ -13,6 +13,7 @@ import {
   savePendingOrder,
 } from '../utils/checkout';
 import { OrderResponse } from '../services/order-contract';
+import * as loyaltyService from '../services/loyalty';
 import * as ordersService from '../services/orders';
 import * as navigation from 'next/navigation';
 
@@ -29,6 +30,15 @@ vi.mock('next/navigation', () => ({
   })),
   useSearchParams: vi.fn(() => mockSearchParams),
 }));
+
+// Mock services/loyalty (GET /loyalty/me)
+vi.mock('../services/loyalty', async () => {
+  const actual = await vi.importActual<typeof import('../services/loyalty')>('../services/loyalty');
+  return {
+    ...actual,
+    getMyLoyaltyApi: vi.fn(),
+  };
+});
 
 // Mock services/orders
 vi.mock('../services/orders', async () => {
@@ -68,6 +78,11 @@ const mockLoggedInUser = {
 describe('Giao diện và luồng xử lý trang Checkout (/checkout)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(loyaltyService.getMyLoyaltyApi).mockReset();
+    vi.mocked(loyaltyService.getMyLoyaltyApi).mockResolvedValue({
+      loyaltyPoints: 0,
+      transactions: [],
+    });
     vi.mocked(ordersService.createOrderApi).mockReset();
     vi.mocked(ordersService.payOrderApi).mockReset();
     vi.mocked(ordersService.getOrderByIdApi).mockReset();

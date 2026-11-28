@@ -20,6 +20,7 @@ import {
 } from '../constants/payment';
 import { OrderResponse, OrderStatus, PAYMENT_METHOD_LABELS } from '../services/order-contract';
 import { AUTH_ERROR_MESSAGES } from '../services/auth-contract';
+import * as loyaltyService from '../services/loyalty';
 import * as ordersService from '../services/orders';
 import * as navigation from 'next/navigation';
 
@@ -35,6 +36,14 @@ vi.mock('next/navigation', () => ({
   })),
   useSearchParams: vi.fn(() => mockSearchParams),
 }));
+
+vi.mock('../services/loyalty', async () => {
+  const actual = await vi.importActual<typeof import('../services/loyalty')>('../services/loyalty');
+  return {
+    ...actual,
+    getMyLoyaltyApi: vi.fn(),
+  };
+});
 
 vi.mock('../services/orders', async () => {
   const actual = await vi.importActual<typeof import('../services/orders')>('../services/orders');
@@ -108,6 +117,11 @@ async function flushAsync() {
 describe('Task 12 - Màn thanh toán QR giả (ZaloPay / MoMo)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(loyaltyService.getMyLoyaltyApi).mockReset();
+    vi.mocked(loyaltyService.getMyLoyaltyApi).mockResolvedValue({
+      loyaltyPoints: 0,
+      transactions: [],
+    });
     vi.mocked(ordersService.createOrderApi).mockReset();
     vi.mocked(ordersService.payOrderApi).mockReset();
     vi.mocked(ordersService.getOrderByIdApi).mockReset();

@@ -9,6 +9,37 @@ import { validateAccountNumber } from './validation';
 
 export const PENDING_ORDER_STORAGE_KEY = 'brewlite_pending_order_v2';
 const LEGACY_PENDING_ORDER_STORAGE_KEY = 'brewlite_pending_order_v1';
+export const POINT_VALUE_VND = 1000;
+export const MIN_PAYABLE_AMOUNT_VND = 1000;
+
+/**
+ * Tính số điểm tối đa có thể dùng (X) theo công thức mục 5.2 hợp đồng API bản 3:
+ * X = min(N, floor((Tạm tính - Giảm giá - 1000) / 1000)), nếu < 0 thì trả về 0.
+ */
+export function calculateUsablePoints(
+  loyaltyPoints: number,
+  subtotalAmount: number,
+  discountAmount: number = 0
+): number {
+  const safePoints = Number.isFinite(loyaltyPoints)
+    ? Math.max(0, Math.floor(loyaltyPoints))
+    : 0;
+  const safeSubtotal = Number.isFinite(subtotalAmount)
+    ? Math.max(0, Math.floor(subtotalAmount))
+    : 0;
+  const safeDiscount = Number.isFinite(discountAmount)
+    ? Math.max(0, Math.floor(discountAmount))
+    : 0;
+
+  const maxPointsByOrder = Math.floor(
+    (safeSubtotal - safeDiscount - MIN_PAYABLE_AMOUNT_VND) / POINT_VALUE_VND
+  );
+  if (maxPointsByOrder <= 0 || safePoints <= 0) {
+    return 0;
+  }
+
+  return Math.min(safePoints, maxPointsByOrder);
+}
 
 /**
  * Bản ghi đơn hàng đang chờ thanh toán được lưu trữ trong localStorage.

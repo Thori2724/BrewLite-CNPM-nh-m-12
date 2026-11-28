@@ -33,6 +33,7 @@ import {
   validatePromotionApi,
   ValidatePromotionResponse,
 } from '../../services/promotions';
+import { getMyLoyaltyApi } from '../../services/loyalty';
 import {
   clearAuthSession,
   isAccountLockedError,
@@ -41,10 +42,12 @@ import {
 } from '../../utils/auth';
 import {
   buildCreateOrderPayload,
+  calculateUsablePoints,
   clearPendingOrder,
   generateIdempotencyKey,
   loadPendingOrder,
   PendingOrderRecord,
+  POINT_VALUE_VND,
   savePendingOrder,
 } from '../../utils/checkout';
 import {
@@ -114,6 +117,12 @@ function CheckoutContent() {
   const [promoError, setPromoError] = useState<string | null>(null);
   const [promoNotice, setPromoNotice] = useState<string | null>(null);
 
+  // Trạng thái điểm thưởng (Dòng 19: lấy số dư từ GET /loyalty/me ở Bước 1)
+  const [loyaltyPoints, setLoyaltyPoints] = useState<number | null>(null);
+  const [isLoadingLoyalty, setIsLoadingLoyalty] = useState<boolean>(false);
+  const [loyaltyError, setLoyaltyError] = useState<string | null>(null);
+  const [usePoints, setUsePoints] = useState<boolean>(false);
+
   // Trạng thái đặt đơn hàng
   const [isCreatingOrder, setIsCreatingOrder] = useState<boolean>(false);
   const [createOrderError, setCreateOrderError] = useState<string | null>(null);
@@ -127,6 +136,23 @@ function CheckoutContent() {
   const cartSubtotal = Math.max(0, Math.floor(totalAmount));
   const cartSubtotalRef = React.useRef<number>(cartSubtotal);
   const isValidatingPromoRef = React.useRef<boolean>(false);
+
+  const previewDiscount = appliedPromotion
+    ? Math.max(0, Math.floor(appliedPromotion.discountAmount))
+    : 0;
+  const availableLoyaltyPoints = loyaltyPoints ?? 0;
+  const usablePoints =
+    loyaltyPoints !== null && !loyaltyError
+      ? calculateUsablePoints(availableLoyaltyPoints, cartSubtotal, previewDiscount)
+      : 0;
+  const pointsDiscountAmount = usablePoints * POINT_VALUE_VND;
+  const effectiveUsePoints =
+    usePoints && usablePoints > 0 && !loyaltyError && !isLoadingLoyalty;
+  const previewPointsDiscount = effectiveUsePoints ? pointsDiscountAmount : 0;
+  const previewTotal = Math.max(
+    1000,
+    Math.floor(cartSubtotal - previewDiscount - previewPointsDiscount)
+  );
 
   useEffect(() => {
     cartSubtotalRef.current = cartSubtotal;
@@ -195,6 +221,79 @@ function CheckoutContent() {
     sessionCreatedOrderIdRef.current = sessionCreatedOrderId;
     stepRef.current = step;
   });
+
+  const shouldFetchLoyalty =
+    isReady && isHydrated && step === 'order' && !queryOrderId && items.length > 0;
+
+  // Tải số dư điểm thưởng ở Bước 1 đặt đơn (GET /loyalty/me)
+  useEffect(() => {
+    if (!shouldFetchLoyalty) {
+      return;
+    }
+
+    let isMounted = true;
+    let settled = false;
+    queueMicrotask(() => {
+      if (!isMounted || settled) return;
+      setIsLoadingLoyalty(true);
+      setLoyaltyError(null);
+    });
+
+    getMyLoyaltyApi()
+      .then((res) => {
+        settled = true;
+        if (!isMounted) return;
+        const safePoints =
+          typeof res?.loyaltyPoints === 'number' && Number.isFinite(res.loyaltyPoints)
+            ? Math.max(0, Math.floor(res.loyaltyPoints))
+            : 0;
+        setLoyaltyPoints(safePoints);
+        setLoyaltyError(null);
+        setIsLoadingLoyalty(false);
+      })
+      .catch((err: unknown) => {
+        settled = true;
+        if (!isMounted) return;
+        setIsLoadingLoyalty(false);
+        setLoyaltyPoints(null);
+        setUsePoints(false);
+
+        const statusCode =
+          err && typeof err === 'object' && 'statusCode' in err
+            ? Number((err as { statusCode?: unknown }).statusCode)
+            : 0;
+
+        if (statusCode === 401) {
+          clearAuthSession();
+          routerRef.current.push(`/login?redirect=${encodeURIComponent('/checkout')}&expired=true`);
+          return;
+        }
+
+        if (isAccountLockedError(err)) {
+          if (loadAuthSession() !== null) {
+            notifyAccountLocked(AUTH_ERROR_MESSAGES.ACCOUNT_LOCKED);
+          }
+          logout();
+          setLoyaltyError(AUTH_ERROR_MESSAGES.ACCOUNT_LOCKED);
+          return;
+        }
+
+        setLoyaltyError('Không thể tải số dư điểm thưởng. Bạn vẫn có thể đặt đơn bình thường.');
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [shouldFetchLoyalty, logout]);
+
+  // Tự tắt công tắc Dùng điểm khi X về 0 (do áp/gỡ mã hoặc đổi giỏ)
+  useEffect(() => {
+    if (usePoints && usablePoints === 0) {
+      queueMicrotask(() => {
+        setUsePoints(false);
+      });
+    }
+  }, [usePoints, usablePoints]);
 
   // Kiểm tra đơn chờ khi mount / khi queryOrderId đổi / khi Activity của Next.js 16 hiện lại trang
   useEffect(() => {
@@ -500,6 +599,7 @@ function CheckoutContent() {
       const payload = buildCreateOrderPayload(items, receiveType, {
         note,
         ...(appliedPromotion ? { promotionCode: appliedPromotion.code } : {}),
+        usePoints: effectiveUsePoints,
       });
       const order = await createOrderApi(payload);
       const idempotencyKey = generateIdempotencyKey();
@@ -550,6 +650,23 @@ function CheckoutContent() {
             setPromoError(null);
             setPromoNotice(null);
             setCreateOrderError(err.message);
+            return;
+          }
+
+          const isPointsConflictError =
+            err.message === ORDER_ERROR_MESSAGES.POINTS_NOT_ENOUGH &&
+            (!err.details || err.details.length === 0);
+
+          if (isPointsConflictError) {
+            setUsePoints(false);
+            setCreateOrderError(err.message);
+            void getMyLoyaltyApi()
+              .then((res) => {
+                if (typeof res?.loyaltyPoints === 'number' && Number.isFinite(res.loyaltyPoints)) {
+                  setLoyaltyPoints(Math.max(0, Math.floor(res.loyaltyPoints)));
+                }
+              })
+              .catch(() => {});
             return;
           }
 
@@ -617,11 +734,6 @@ function CheckoutContent() {
     outOfStockCartSignature !== null && outOfStockCartSignature !== cartSignature;
   const visibleCreateOrderError = isStaleOutOfStockError ? null : createOrderError;
   const visibleOutOfStockDetails = isStaleOutOfStockError ? [] : outOfStockDetails;
-
-  const previewDiscount = appliedPromotion
-    ? Math.max(0, Math.floor(appliedPromotion.discountAmount))
-    : 0;
-  const previewTotal = Math.max(1000, Math.floor(cartSubtotal - previewDiscount));
 
   return (
     <div className="max-w-5xl mx-auto space-y-6">
@@ -1013,7 +1125,70 @@ function CheckoutContent() {
                 )}
               </div>
 
-              {/* Tạm tính / Giảm giá / Tổng */}
+              {/* Điểm thưởng (Dòng 19: chỉ có công tắc Dùng điểm tối đa có thể, không có ô nhập số) */}
+              <div className="border-t border-tan/60 pt-3.5 space-y-2">
+                <div className="flex items-center justify-between gap-3">
+                  <label
+                    id="use-points-label"
+                    htmlFor="usePointsSwitch"
+                    className="text-xs font-bold text-noir cursor-pointer"
+                  >
+                    Dùng điểm
+                  </label>
+                  <button
+                    type="button"
+                    id="usePointsSwitch"
+                    role="switch"
+                    aria-checked={effectiveUsePoints}
+                    aria-labelledby="use-points-label"
+                    disabled={
+                      isLoadingLoyalty ||
+                      Boolean(loyaltyError) ||
+                      usablePoints <= 0 ||
+                      isCreatingOrder
+                    }
+                    onClick={() => setUsePoints((prev) => !prev)}
+                    className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-moss ${
+                      isLoadingLoyalty || Boolean(loyaltyError) || usablePoints <= 0
+                        ? 'cursor-not-allowed border-tan/60 bg-tan/45 opacity-60'
+                        : effectiveUsePoints
+                          ? 'cursor-pointer border-kombu bg-kombu'
+                          : 'cursor-pointer border-tan bg-bone hover:border-moss'
+                    } disabled:cursor-not-allowed disabled:opacity-60`}
+                  >
+                    <span
+                      aria-hidden="true"
+                      className={`inline-block h-4 w-4 transform rounded-full transition-transform ${
+                        effectiveUsePoints
+                          ? 'translate-x-5.5 bg-bone'
+                          : 'translate-x-1 bg-noir/55'
+                      }`}
+                    />
+                  </button>
+                </div>
+
+                {isLoadingLoyalty && (
+                  <p data-testid="loyalty-loading" className="text-xs text-noir/60">
+                    Đang tải số dư điểm thưởng...
+                  </p>
+                )}
+
+                {!isLoadingLoyalty && loyaltyError && (
+                  <p data-testid="loyalty-error" className="text-xs text-error">
+                    {loyaltyError}
+                  </p>
+                )}
+
+                {!isLoadingLoyalty && !loyaltyError && loyaltyPoints !== null && (
+                  <p data-testid="loyalty-summary-text" className="text-xs text-noir/75">
+                    Bạn có <strong className="text-noir">{availableLoyaltyPoints}</strong> điểm
+                    {' '}(dùng được <strong className="text-kombu">{usablePoints}</strong> điểm, giảm{' '}
+                    <strong className="text-kombu">{formatVnd(pointsDiscountAmount)}</strong>)
+                  </p>
+                )}
+              </div>
+
+              {/* Tạm tính / Giảm giá / Dùng điểm / Tổng */}
               <div
                 data-testid="checkout-summary-box"
                 className="border-t border-tan/60 pt-3 space-y-1.5 text-sm"
@@ -1026,6 +1201,14 @@ function CheckoutContent() {
                   <span>Giảm giá:</span>
                   <span className={previewDiscount > 0 ? 'font-semibold text-kombu' : ''}>
                     {previewDiscount > 0 ? `-${formatVnd(previewDiscount)}` : formatVnd(0)}
+                  </span>
+                </div>
+                <div className="flex justify-between text-noir/70">
+                  <span>Dùng điểm:</span>
+                  <span className={previewPointsDiscount > 0 ? 'font-semibold text-kombu' : ''}>
+                    {previewPointsDiscount > 0
+                      ? `-${formatVnd(previewPointsDiscount)}`
+                      : '0 điểm'}
                   </span>
                 </div>
                 <div className="flex justify-between items-baseline pt-2 border-t border-tan/40">
@@ -1056,7 +1239,9 @@ function CheckoutContent() {
         <>
           {createdOrder &&
             typeof createdOrder.subtotalAmount === 'number' &&
-            (createdOrder.discountAmount > 0 || Boolean(createdOrder.promotionCode)) && (
+            (createdOrder.discountAmount > 0 ||
+              Boolean(createdOrder.promotionCode) ||
+              (createdOrder.pointsUsed ?? 0) > 0) && (
               <div
                 data-testid="created-order-summary"
                 className="max-w-2xl mx-auto rounded-card border border-tan/60 bg-cream p-4 sm:p-5 shadow-soft space-y-1.5 text-sm"
@@ -1074,6 +1259,14 @@ function CheckoutContent() {
                     {createdOrder.discountAmount > 0
                       ? `-${formatVnd(createdOrder.discountAmount)}`
                       : formatVnd(0)}
+                  </span>
+                </div>
+                <div className="flex justify-between text-noir/70">
+                  <span>Dùng điểm:</span>
+                  <span className={(createdOrder.pointsUsed ?? 0) > 0 ? 'font-semibold text-kombu' : ''}>
+                    {(createdOrder.pointsUsed ?? 0) > 0
+                      ? `${createdOrder.pointsUsed} điểm (-${formatVnd(createdOrder.pointsUsed * POINT_VALUE_VND)})`
+                      : '0 điểm'}
                   </span>
                 </div>
                 <div className="flex justify-between items-baseline border-t border-tan/40 pt-2">
