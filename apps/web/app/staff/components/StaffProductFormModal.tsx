@@ -71,6 +71,7 @@ function StaffProductFormModalInner({
   const [imageUrl, setImageUrl] = useState<string>(() =>
     isEditMode && initialProduct ? (initialProduct.imageUrl ?? '') : ''
   );
+  const [stock, setStock] = useState<string>('');
 
   const [fieldErrors, setFieldErrors] = useState<ProductFormFieldErrors>({});
   const [serverError, setServerError] = useState<string | null>(null);
@@ -144,7 +145,12 @@ function StaffProductFormModalInner({
     event.preventDefault();
     if (submitInFlightRef.current || isSubmitting) return;
 
-    const validation = validateProductForm({ name, category, basePrice, imageUrl });
+    const validation = validateProductForm(
+      isEditMode
+        ? { name, category, basePrice, imageUrl }
+        : { name, category, basePrice, imageUrl, stock },
+      { mode: isEditMode ? 'edit' : 'create' }
+    );
     if (!validation.isValid) {
       setFieldErrors(validation.errors);
       setServerError(null);
@@ -165,7 +171,7 @@ function StaffProductFormModalInner({
         );
         saved = await updateStaffProduct(initialProduct.id, payload, usingMockFallback);
       } else {
-        const payload = buildCreateProductPayload({ name, category, basePrice, imageUrl });
+        const payload = buildCreateProductPayload({ name, category, basePrice, imageUrl, stock });
         saved = await createStaffProduct(payload, usingMockFallback);
       }
 
@@ -375,6 +381,53 @@ function StaffProductFormModalInner({
               )}
             </div>
           </div>
+
+          {/* Số lượng (chỉ hiện ở form Thêm món) */}
+          {!isEditMode && (
+            <div className="space-y-1.5">
+              <label
+                htmlFor="product-form-stock"
+                className="block text-sm font-semibold text-noir"
+              >
+                Số lượng
+              </label>
+              <input
+                id="product-form-stock"
+                name="stock"
+                type="text"
+                inputMode="numeric"
+                value={stock}
+                disabled={isSubmitting}
+                placeholder="Mặc định 50"
+                aria-invalid={Boolean(fieldErrors.stock)}
+                aria-describedby={
+                  fieldErrors.stock
+                    ? 'product-form-stock-error product-form-stock-hint'
+                    : 'product-form-stock-hint'
+                }
+                onChange={(e) => {
+                  setStock(e.target.value);
+                  clearFieldError('stock');
+                }}
+                className={`w-full rounded-control border bg-bone/50 px-3.5 py-2.5 text-sm text-noir placeholder:text-noir/45 focus:outline-none focus:ring-2 focus:ring-moss disabled:opacity-60 ${
+                  fieldErrors.stock ? 'border-error' : 'border-tan'
+                }`}
+              />
+              {fieldErrors.stock && (
+                <p
+                  id="product-form-stock-error"
+                  data-testid="product-form-error-stock"
+                  role="alert"
+                  className="text-xs font-medium text-error"
+                >
+                  {fieldErrors.stock}
+                </p>
+              )}
+              <p id="product-form-stock-hint" className="text-xs text-noir/60">
+                Bỏ trống = 50. Nhập 0 nếu món tạm hết.
+              </p>
+            </div>
+          )}
 
           {/* Link ảnh & Ô xem trước */}
           <div className="space-y-2">

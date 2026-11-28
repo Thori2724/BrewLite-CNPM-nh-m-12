@@ -238,6 +238,15 @@ export async function createMockStaffProduct(
     const imgErr = validateMockImageUrl(dto.imageUrl);
     if (imgErr) errors.push(imgErr);
   }
+  if (
+    dto.stock !== undefined &&
+    (typeof dto.stock !== 'number' ||
+      !Number.isInteger(dto.stock) ||
+      dto.stock < 0 ||
+      dto.stock > 9999)
+  ) {
+    errors.push('stock must be an integer between 0 and 9999');
+  }
 
   if (errors.length > 0) {
     throw new ApiHttpError({
@@ -254,7 +263,7 @@ export async function createMockStaffProduct(
     category: dto.category,
     basePrice: dto.basePrice,
     imageUrl: trimmedImage || STAFF_MOCK_DEFAULT_PRODUCT_IMAGE,
-    stock: 999,
+    stock: dto.stock ?? 50,
     isVisible: true,
   };
 

@@ -18,6 +18,7 @@ import {
 import StaffProductsPage from '../products/page';
 import {
   STAFF_PRODUCT_FALLBACK_IMAGE,
+  validateCreateProductStock,
   validateProductBasePrice,
   validateProductCategory,
   validateProductForm,
@@ -167,6 +168,24 @@ describe('Dòng 22 - Form thêm/sửa món (ADMIN) trên /staff/products', () =>
       const tooLong = validateProductImageUrl(over500);
       expect(tooLong.isValid).toBe(false);
       expect(tooLong.error).toContain('500 ký tự');
+    });
+
+    it('validateCreateProductStock: bỏ trống hợp lệ; có nhập phải là số nguyên từ 0 đến 9999', () => {
+      expect(validateCreateProductStock(undefined).isValid).toBe(true);
+      expect(validateCreateProductStock('').isValid).toBe(true);
+      expect(validateCreateProductStock('   ').isValid).toBe(true);
+      expect(validateCreateProductStock('0').isValid).toBe(true);
+      expect(validateCreateProductStock('50').isValid).toBe(true);
+      expect(validateCreateProductStock('9999').isValid).toBe(true);
+      expect(validateCreateProductStock(0).isValid).toBe(true);
+
+      expect(validateCreateProductStock('-1').isValid).toBe(false);
+      expect(validateCreateProductStock('1.5').isValid).toBe(false);
+      expect(validateCreateProductStock('10000').isValid).toBe(false);
+      expect(validateCreateProductStock('abc').isValid).toBe(false);
+      expect(validateCreateProductStock(-1).isValid).toBe(false);
+      expect(validateCreateProductStock(1.5).isValid).toBe(false);
+      expect(validateCreateProductStock(10000).isValid).toBe(false);
     });
 
     it('validateProductForm: tổng hợp lỗi tiếng Việt theo từng trường', () => {
@@ -554,6 +573,99 @@ describe('Dòng 22 - Form thêm/sửa món (ADMIN) trên /staff/products', () =>
       );
       expect(await within(updatedRow).findByText('31.000đ')).toBeInTheDocument();
       expect(globalThis.fetch).not.toHaveBeenCalled();
+    });
+
+    it('Việc 24 - Ô Số lượng ở form Thêm món: bỏ trống không gửi stock (mock mặc định 50), nhập 0 gửi stock=0, nhập sai (10000, -1, 1.5) báo lỗi và form Sửa không có ô này', async () => {
+      const user = userEvent.setup();
+      const initialList = cloneSeedProducts();
+      const createdZeroStock: ProductManage = {
+        id: '99999999-0000-0000-0000-000000000024',
+        name: 'Trà ô long tạm hết',
+        category: 'TEA',
+        basePrice: 38000,
+        imageUrl: 'https://images.unsplash.com/photo-1514432324607-a09d9b4aefdd?w=500',
+        stock: 0,
+        isVisible: true,
+      };
+
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValueOnce(mockJsonResponse(200, initialList))
+        .mockResolvedValueOnce(mockJsonResponse(201, createdZeroStock))
+        .mockResolvedValueOnce(mockJsonResponse(200, [...initialList, createdZeroStock]));
+      globalThis.fetch = fetchMock;
+
+      const { unmount } = renderStaffProductsPage();
+
+      // Form Sửa món không có ô Số lượng
+      const editRow = await screen.findByTestId(
+        'staff-product-row-11111111-0000-0000-0000-000000000001'
+      );
+      await user.click(within(editRow).getByRole('button', { name: 'Sửa' }));
+      const editDialog = await screen.findByTestId('product-form-dialog');
+      expect(within(editDialog).queryByLabelText(/Số lượng/i)).not.toBeInTheDocument();
+      await user.click(within(editDialog).getByRole('button', { name: 'Hủy' }));
+
+      // Mở form Thêm món -> kiểm tra ô Số lượng và ghi chú
+      await user.click(screen.getByRole('button', { name: 'Thêm món' }));
+      const createDialog = await screen.findByTestId('product-form-dialog');
+      const stockInput = within(createDialog).getByLabelText(/Số lượng/i);
+      expect(
+        within(createDialog).getByText('Bỏ trống = 50. Nhập 0 nếu món tạm hết.')
+      ).toBeInTheDocument();
+
+      await user.type(within(createDialog).getByLabelText(/Tên món/i), 'Trà ô long tạm hết');
+      await user.selectOptions(within(createDialog).getByLabelText(/Danh mục/i), 'TEA');
+      await user.type(within(createDialog).getByLabelText(/Giá gốc/i), '38000');
+
+      // Nhập sai: 10000, -1, 1.5 -> báo lỗi ngay tại ô và không gọi POST
+      for (const badValue of ['10000', '-1', '1.5']) {
+        await user.clear(stockInput);
+        await user.type(stockInput, badValue);
+        await user.click(within(createDialog).getByRole('button', { name: 'Thêm món' }));
+        expect(within(createDialog).getByTestId('product-form-error-stock')).toHaveTextContent(
+          'Số lượng phải là số nguyên từ 0 đến 9999.'
+        );
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+      }
+
+      // Nhập 0 -> gửi POST /products với stock: 0
+      await user.clear(stockInput);
+      await user.type(stockInput, '0');
+      await user.click(within(createDialog).getByRole('button', { name: 'Thêm món' }));
+
+      await waitFor(() => {
+        expect(screen.queryByTestId('product-form-dialog')).not.toBeInTheDocument();
+      });
+      expect(fetchMock).toHaveBeenCalledTimes(3);
+      const sentBody = JSON.parse(String(fetchMock.mock.calls[1][1]?.body));
+      expect(sentBody).toEqual({
+        name: 'Trà ô long tạm hết',
+        category: 'TEA',
+        basePrice: 38000,
+        stock: 0,
+      });
+      unmount();
+
+      // Chế độ mock: bỏ trống Số lượng -> tự mặc định stock = 50 (không gửi stock, mock gán 50)
+      process.env.NEXT_PUBLIC_USE_MOCK_STAFF_PRODUCTS = 'true';
+      globalThis.fetch = vi.fn();
+
+      renderStaffProductsPage();
+      await screen.findByTestId('staff-product-row-11111111-0000-0000-0000-000000000001');
+      await user.click(screen.getByRole('button', { name: 'Thêm món' }));
+      const mockDialog = await screen.findByTestId('product-form-dialog');
+      await user.type(within(mockDialog).getByLabelText(/Tên món/i), 'Trà bưởi hồng mock');
+      await user.selectOptions(within(mockDialog).getByLabelText(/Danh mục/i), 'TEA');
+      await user.type(within(mockDialog).getByLabelText(/Giá gốc/i), '41000');
+      await user.click(within(mockDialog).getByRole('button', { name: 'Thêm món' }));
+
+      await waitFor(() => {
+        expect(screen.queryByTestId('product-form-dialog')).not.toBeInTheDocument();
+      });
+      const mockRow = (await screen.findByText('Trà bưởi hồng mock')).closest('tr');
+      expect(mockRow).not.toBeNull();
+      expect(within(mockRow as HTMLElement).getByText('50')).toBeInTheDocument();
     });
   });
 });
