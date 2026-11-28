@@ -16,7 +16,7 @@ const VALID_PROMOTION_TYPES: PromotionType[] = ['PERCENT', 'FIXED'];
 const PROMOTION_CODE_REGEX = /^[A-Z0-9_-]{3,20}$/;
 
 /**
- * 3 mã khuyến mãi mẫu theo đúng mục 8.2 hợp đồng API bản 3.
+ * Dữ liệu khuyến mãi mẫu (3 mã theo mục 8.2 hợp đồng API bản 3 + BREW5 dạng PERCENT không trần để kiểm thử đủ trường hợp).
  */
 export const MOCK_SEED_PROMOTIONS: Promotion[] = [
   {
@@ -45,6 +45,15 @@ export const MOCK_SEED_PROMOTIONS: Promotion[] = [
     maxDiscount: 20000,
     isActive: false,
     createdAt: '2026-11-01T08:10:00.000Z',
+  },
+  {
+    id: '77777777-0000-0000-0000-000000000004',
+    code: 'BREW5',
+    type: 'PERCENT',
+    value: 5,
+    maxDiscount: null,
+    isActive: true,
+    createdAt: '2026-11-01T08:15:00.000Z',
   },
 ];
 

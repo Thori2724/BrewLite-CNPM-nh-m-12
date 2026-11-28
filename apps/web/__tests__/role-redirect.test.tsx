@@ -105,6 +105,7 @@ describe('Task 17 - Chuyển hướng theo vai trò, bảo vệ route, 401 & 403
       expect(getPostLoginRedirectUrl('CUSTOMER', '/cart')).toBe('/cart');
       expect(getPostLoginRedirectUrl('CUSTOMER', '/staff')).toBe('/');
       expect(getPostLoginRedirectUrl('CUSTOMER', '/staff/employees')).toBe('/');
+      expect(getPostLoginRedirectUrl('CUSTOMER', '/staff/promotions')).toBe('/');
       expect(getPostLoginRedirectUrl('CUSTOMER', 'https://evil.com')).toBe('/');
 
       expect(getPostLoginRedirectUrl('STAFF')).toBe('/staff');
@@ -113,11 +114,13 @@ describe('Task 17 - Chuyển hướng theo vai trò, bảo vệ route, 401 & 403
       expect(getPostLoginRedirectUrl('STAFF', '/orders')).toBe('/staff');
       expect(getPostLoginRedirectUrl('STAFF', '/staff/products')).toBe('/staff/products');
       expect(getPostLoginRedirectUrl('STAFF', '/staff/employees')).toBe('/staff');
+      expect(getPostLoginRedirectUrl('STAFF', '/staff/promotions')).toBe('/staff');
       expect(getPostLoginRedirectUrl('STAFF', '/account')).toBe('/account');
 
       expect(getPostLoginRedirectUrl('ADMIN')).toBe('/staff');
       expect(getPostLoginRedirectUrl('ADMIN', '/checkout')).toBe('/staff');
       expect(getPostLoginRedirectUrl('ADMIN', '/staff/employees')).toBe('/staff/employees');
+      expect(getPostLoginRedirectUrl('ADMIN', '/staff/promotions')).toBe('/staff/promotions');
       expect(getPostLoginRedirectUrl('ADMIN', '/account')).toBe('/account');
     });
 
@@ -129,6 +132,7 @@ describe('Task 17 - Chuyển hướng theo vai trò, bảo vệ route, 401 & 403
       expect(getRoleRouteRedirect('/staff', null)).toBe('/');
       expect(getRoleRouteRedirect('/staff/products', null)).toBe('/');
       expect(getRoleRouteRedirect('/staff/employees', null)).toBe('/');
+      expect(getRoleRouteRedirect('/staff/promotions', null)).toBe('/');
 
       // CUSTOMER
       expect(getRoleRouteRedirect('/', 'CUSTOMER')).toBeNull();
@@ -141,6 +145,7 @@ describe('Task 17 - Chuyển hướng theo vai trò, bảo vệ route, 401 & 403
       expect(getRoleRouteRedirect('/staff', 'CUSTOMER')).toBe('/');
       expect(getRoleRouteRedirect('/staff/products', 'CUSTOMER')).toBe('/');
       expect(getRoleRouteRedirect('/staff/employees', 'CUSTOMER')).toBe('/');
+      expect(getRoleRouteRedirect('/staff/promotions', 'CUSTOMER')).toBe('/');
 
       // STAFF
       expect(getRoleRouteRedirect('/', 'STAFF')).toBe('/staff');
@@ -153,6 +158,7 @@ describe('Task 17 - Chuyển hướng theo vai trò, bảo vệ route, 401 & 403
       expect(getRoleRouteRedirect('/staff/products', 'STAFF')).toBeNull();
       expect(getRoleRouteRedirect('/staff/employees', 'STAFF')).toBe('/staff');
       expect(getRoleRouteRedirect('/staff/employees?tab=1', 'STAFF')).toBe('/staff');
+      expect(getRoleRouteRedirect('/staff/promotions', 'STAFF')).toBe('/staff');
       expect(getRoleRouteRedirect('/account', 'STAFF')).toBeNull();
       expect(getRoleRouteRedirect('/login', 'STAFF')).toBeNull();
       expect(getRoleRouteRedirect('/register', 'STAFF')).toBeNull();
@@ -166,6 +172,7 @@ describe('Task 17 - Chuyển hướng theo vai trò, bảo vệ route, 401 & 403
       expect(getRoleRouteRedirect('/staff', 'ADMIN')).toBeNull();
       expect(getRoleRouteRedirect('/staff/products', 'ADMIN')).toBeNull();
       expect(getRoleRouteRedirect('/staff/employees', 'ADMIN')).toBeNull();
+      expect(getRoleRouteRedirect('/staff/promotions', 'ADMIN')).toBeNull();
       expect(getRoleRouteRedirect('/account', 'ADMIN')).toBeNull();
     });
   });
@@ -355,6 +362,49 @@ describe('Task 17 - Chuyển hướng theo vai trò, bảo vệ route, 401 & 403
     it('3.3. STAFF gõ /staff/employees thì chuyển về /staff, còn ADMIN được vào', async () => {
       setAuthSession('STAFF');
       mockPathname = '/staff/employees';
+      const staffView = render(
+        <AuthProvider>
+          <RoleRouteGuard>
+            <RoleGuardProbe />
+          </RoleRouteGuard>
+        </AuthProvider>
+      );
+      await waitFor(() => {
+        expect(mockReplace).toHaveBeenCalledWith('/staff');
+      });
+      expect(screen.queryByTestId('protected-content')).not.toBeInTheDocument();
+      staffView.unmount();
+
+      vi.clearAllMocks();
+      setAuthSession('ADMIN');
+      render(
+        <AuthProvider>
+          <RoleRouteGuard>
+            <RoleGuardProbe />
+          </RoleRouteGuard>
+        </AuthProvider>
+      );
+      expect(await screen.findByTestId('protected-content')).toHaveTextContent('ADMIN');
+      expect(mockReplace).not.toHaveBeenCalled();
+    });
+
+    it('3.3b. STAFF gõ /staff/promotions thì chuyển về /staff, khách/chưa đăng nhập về /, còn ADMIN được vào', async () => {
+      mockPathname = '/staff/promotions';
+      const guestView = render(
+        <AuthProvider>
+          <RoleRouteGuard>
+            <RoleGuardProbe />
+          </RoleRouteGuard>
+        </AuthProvider>
+      );
+      await waitFor(() => {
+        expect(mockReplace).toHaveBeenCalledWith('/');
+      });
+      expect(screen.queryByTestId('protected-content')).not.toBeInTheDocument();
+      guestView.unmount();
+
+      vi.clearAllMocks();
+      setAuthSession('STAFF');
       const staffView = render(
         <AuthProvider>
           <RoleRouteGuard>

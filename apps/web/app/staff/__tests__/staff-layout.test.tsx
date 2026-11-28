@@ -76,7 +76,7 @@ describe('Dòng 19 - Khung khu /staff', () => {
     process.env = originalEnv;
   });
 
-  it('1. Khi đăng nhập vai trò STAFF: hiện Đơn hàng, Món, ẨN Nhân viên; hiện tên + "Nhân viên" + nút Đăng xuất', async () => {
+  it('1. Khi đăng nhập vai trò STAFF: hiện Đơn hàng, Món, ẨN Nhân viên & Khuyến mãi; hiện tên + "Nhân viên" + nút Đăng xuất', async () => {
     setAuthSession('STAFF', 'Nhân viên 1');
     renderStaffLayout();
 
@@ -88,13 +88,14 @@ describe('Dòng 19 - Khung khu /staff', () => {
     expect(screen.getByRole('link', { name: 'Đơn hàng' })).toHaveAttribute('href', '/staff');
     expect(screen.getByRole('link', { name: 'Món' })).toHaveAttribute('href', '/staff/products');
     expect(screen.queryByRole('link', { name: 'Nhân viên' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Khuyến mãi' })).not.toBeInTheDocument();
 
     expect(screen.getByRole('button', { name: 'Đăng xuất' })).toBeInTheDocument();
     expect(screen.queryByTestId('staff-mock-role-switcher')).not.toBeInTheDocument();
     expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 
-  it('2. Khi đăng nhập vai trò ADMIN: hiện đủ Đơn hàng, Món, Nhân viên; hiện tên + "Quản lý" + nút Đăng xuất', async () => {
+  it('2. Khi đăng nhập vai trò ADMIN: hiện đủ Đơn hàng, Món, Nhân viên, Khuyến mãi; hiện tên + "Quản lý" + nút Đăng xuất', async () => {
     setAuthSession('ADMIN', 'Quản lý');
     mockPathname = '/staff/employees';
     renderStaffLayout(<h1>Nhân viên</h1>);
@@ -107,6 +108,10 @@ describe('Dòng 19 - Khung khu /staff', () => {
     const employeesLink = screen.getByRole('link', { name: 'Nhân viên' });
     expect(employeesLink).toHaveAttribute('href', '/staff/employees');
     expect(employeesLink).toHaveAttribute('aria-current', 'page');
+    expect(screen.getByRole('link', { name: 'Khuyến mãi' })).toHaveAttribute(
+      'href',
+      '/staff/promotions'
+    );
 
     expect(screen.getByRole('heading', { name: 'Nhân viên' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Đăng xuất' })).toBeInTheDocument();
@@ -122,6 +127,7 @@ describe('Dòng 19 - Khung khu /staff', () => {
     expect(screen.getByTestId('staff-user-name')).toHaveTextContent('Quản lý');
     expect(screen.getByTestId('staff-user-role')).toHaveTextContent('Quản lý');
     expect(screen.getByRole('link', { name: 'Nhân viên' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Khuyến mãi' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Món' })).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Nhân viên' }));
@@ -129,11 +135,13 @@ describe('Dòng 19 - Khung khu /staff', () => {
     expect(screen.getByTestId('staff-user-name')).toHaveTextContent('Nhân viên 1');
     expect(screen.getByTestId('staff-user-role')).toHaveTextContent('Nhân viên');
     expect(screen.queryByRole('link', { name: 'Nhân viên' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Khuyến mãi' })).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Quản lý' }));
 
     expect(screen.getByTestId('staff-user-name')).toHaveTextContent('Quản lý');
     expect(screen.getByRole('link', { name: 'Nhân viên' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Khuyến mãi' })).toBeInTheDocument();
     expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 
