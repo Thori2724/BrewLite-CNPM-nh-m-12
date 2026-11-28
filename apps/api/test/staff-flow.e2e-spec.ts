@@ -75,6 +75,9 @@ describe('Staff & Role Management Integration (10B)', () => {
     const orderIds = orders.map((o) => o.id);
 
     if (orderIds.length > 0) {
+      await prisma.loyaltyTransaction.deleteMany({
+        where: { orderId: { in: orderIds } },
+      });
       await prisma.orderItemTopping.deleteMany({
         where: { orderItem: { orderId: { in: orderIds } } },
       });
@@ -90,6 +93,9 @@ describe('Staff & Role Management Integration (10B)', () => {
     }
 
     if (userIds.length > 0) {
+      await prisma.loyaltyTransaction.deleteMany({
+        where: { userId: { in: userIds } },
+      });
       await prisma.payment.deleteMany({
         where: { userId: { in: userIds } },
       });
@@ -277,6 +283,9 @@ describe('Staff & Role Management Integration (10B)', () => {
     const orderIds = existingOrders.map((o) => o.id);
 
     if (orderIds.length > 0) {
+      await prisma.loyaltyTransaction.deleteMany({
+        where: { orderId: { in: orderIds } },
+      });
       await prisma.orderItemTopping.deleteMany({
         where: { orderItem: { orderId: { in: orderIds } } },
       });
@@ -288,6 +297,12 @@ describe('Staff & Role Management Integration (10B)', () => {
       });
       await prisma.order.deleteMany({
         where: { id: { in: orderIds } },
+      });
+    }
+
+    if (userIds.length > 0) {
+      await prisma.loyaltyTransaction.deleteMany({
+        where: { userId: { in: userIds } },
       });
     }
 

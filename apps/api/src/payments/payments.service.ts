@@ -5,6 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import {
+  LoyaltyType,
   OrderStatus,
   PaymentMethod,
   PaymentStatus,
@@ -44,6 +45,7 @@ export interface PaymentResponseBody {
     id: string;
     orderNumber: number;
     status: OrderStatus;
+    pointsEarned: number;
   };
   [IS_IDEMPOTENT_REPLAY]?: boolean;
 }
@@ -76,6 +78,7 @@ export class PaymentsService {
       return this.formatPaymentResponse(
         existingPayment,
         existingPayment.order.orderNumber,
+        existingPayment.order.pointsEarned,
         true,
       );
     }
@@ -119,6 +122,11 @@ export class PaymentsService {
       }
     }
 
+    const pointsEarned =
+      gatewayResult.status === PaymentStatus.SUCCESS
+        ? Math.floor(order.totalAmount / 10000)
+        : 0;
+
     try {
       const createdPayment = await this.prisma.$transaction(async (tx) => {
         const updatedOrder = await tx.order.updateMany({
@@ -131,11 +139,35 @@ export class PaymentsService {
           },
           data: {
             status: nextOrderStatus,
+            ...(gatewayResult.status === PaymentStatus.SUCCESS
+              ? { pointsEarned }
+              : {}),
           },
         });
 
         if (updatedOrder.count === 0) {
           throw new ConflictException(ORDER_NOT_PAYABLE_MESSAGE);
+        }
+
+        if (
+          gatewayResult.status === PaymentStatus.SUCCESS &&
+          pointsEarned > 0
+        ) {
+          await tx.user.update({
+            where: { id: userId },
+            data: {
+              loyaltyPoints: { increment: pointsEarned },
+            },
+          });
+
+          await tx.loyaltyTransaction.create({
+            data: {
+              userId,
+              orderId: order.id,
+              type: LoyaltyType.EARN,
+              points: pointsEarned,
+            },
+          });
         }
 
         return tx.payment.create({
@@ -155,6 +187,7 @@ export class PaymentsService {
       return this.formatPaymentResponse(
         createdPayment,
         order.orderNumber,
+        pointsEarned,
         false,
       );
     } catch (error) {
@@ -170,6 +203,7 @@ export class PaymentsService {
           return this.formatPaymentResponse(
             racedPayment,
             racedPayment.order.orderNumber,
+            racedPayment.order.pointsEarned,
             true,
           );
         }
@@ -192,6 +226,7 @@ export class PaymentsService {
             id: true,
             orderNumber: true,
             status: true,
+            pointsEarned: true,
           },
         },
       },
@@ -222,6 +257,7 @@ export class PaymentsService {
       createdAt: Date;
     },
     orderNumber: number,
+    pointsEarned: number,
     isReplay: boolean,
   ): PaymentResponseBody {
     const orderStatus =
@@ -246,6 +282,8 @@ export class PaymentsService {
         id: payment.orderId,
         orderNumber,
         status: orderStatus,
+        pointsEarned:
+          payment.status === PaymentStatus.SUCCESS ? (pointsEarned ?? 0) : 0,
       },
     };
 
