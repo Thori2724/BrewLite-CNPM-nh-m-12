@@ -222,6 +222,9 @@ export async function getProducts(params?: GetProductsParams): Promise<Product[]
     throw new Error('Không kết nối được máy chủ, vui lòng thử lại');
   }
   if (!res.ok) {
+    if (typeof res.status === 'number' && res.status >= 500) {
+      throw new Error('Không kết nối được máy chủ, vui lòng thử lại');
+    }
     let errorMessage = 'Không thể tải danh sách sản phẩm';
     try {
       const data = await res.json();
@@ -260,6 +263,9 @@ export async function getProductById(id: string): Promise<ProductDetail | null> 
   }
 
   if (!res.ok) {
+    if (typeof res.status === 'number' && res.status >= 500) {
+      throw new Error('Không kết nối được máy chủ, vui lòng thử lại');
+    }
     let errorMessage = 'Không thể tải thông tin món';
     try {
       const data = await res.json();

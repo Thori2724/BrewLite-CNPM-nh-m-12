@@ -175,7 +175,7 @@ function OrderDetailContent() {
         if (!isCancelled) {
           if (err instanceof OrderApiError) {
             if (err.statusCode === 401) {
-              router.push(`/login?redirect=${encodeURIComponent(`/orders/${orderId}`)}&expired=true`);
+              redirectToExpiredLogin();
               return;
             }
             if (err.statusCode === 404) {
@@ -185,7 +185,7 @@ function OrderDetailContent() {
               setLoading(false);
               return;
             }
-            setError(err.message || ORDER_ERROR_MESSAGES.UNKNOWN_ERROR);
+            setError(formatServerOrNetworkErrorMessage(err.statusCode, err.message));
           } else {
             setError(ORDER_ERROR_MESSAGES.UNKNOWN_ERROR);
           }
@@ -196,7 +196,7 @@ function OrderDetailContent() {
     return () => {
       isCancelled = true;
     };
-  }, [isReady, orderId, router]);
+  }, [isReady, orderId, redirectToExpiredLogin]);
 
   // Gọi lại API khi người dùng bấm nút "Tải lại" hoặc "Thử lại"
   const handleManualReload = useCallback(async () => {
@@ -213,7 +213,7 @@ function OrderDetailContent() {
     } catch (err: unknown) {
       if (err instanceof OrderApiError) {
         if (err.statusCode === 401) {
-          router.push(`/login?redirect=${encodeURIComponent(`/orders/${orderId}`)}&expired=true`);
+          redirectToExpiredLogin();
           return;
         }
         if (err.statusCode === 404) {
@@ -222,7 +222,7 @@ function OrderDetailContent() {
           setOrder(null);
           return;
         }
-        setError(err.message || ORDER_ERROR_MESSAGES.UNKNOWN_ERROR);
+        setError(formatServerOrNetworkErrorMessage(err.statusCode, err.message));
       } else {
         setError(ORDER_ERROR_MESSAGES.UNKNOWN_ERROR);
       }
@@ -230,7 +230,7 @@ function OrderDetailContent() {
       setLoading(false);
       setIsReloading(false);
     }
-  }, [orderId, router]);
+  }, [orderId, redirectToExpiredLogin]);
 
   const handleOpenCancelDialog = () => {
     if (!order || cancelInFlightRef.current || isCancelling) return;
@@ -841,7 +841,7 @@ function OrderDetailContent() {
               {order.note && order.note.trim() && (
                 <div className="pt-2 border-t border-tan/60">
                   <span className="text-noir/65 block text-xs mb-1">Ghi chú đơn hàng:</span>
-                  <p className="text-noir bg-tan/25 border border-tan/60 rounded-control p-2.5 text-xs sm:text-sm">
+                  <p className="text-noir bg-tan/25 border border-tan/60 rounded-control p-2.5 text-xs sm:text-sm break-words">
                     {order.note}
                   </p>
                 </div>
@@ -856,13 +856,13 @@ function OrderDetailContent() {
                   className="space-y-1.5 text-sm pb-2 border-b border-tan/40"
                 >
                   {promoCode && (
-                    <div className="flex justify-between items-center">
+                    <div className="flex flex-wrap justify-between items-center gap-2">
                       <span className="text-noir/65">Mã đã dùng:</span>
-                      <span className="font-semibold text-kombu">{promoCode}</span>
+                      <span className="font-semibold text-kombu break-all text-right">{promoCode}</span>
                     </div>
                   )}
                   {discountAmount > 0 && (
-                    <div className="flex justify-between items-center">
+                    <div className="flex flex-wrap justify-between items-center gap-2">
                       <span className="text-noir/65">Tiền giảm:</span>
                       <span className="font-semibold text-kombu">
                         -{formatVndPrice(discountAmount)}
@@ -870,7 +870,7 @@ function OrderDetailContent() {
                     </div>
                   )}
                   {pointsUsed > 0 && (
-                    <div className="flex justify-between items-center">
+                    <div className="flex flex-wrap justify-between items-center gap-2">
                       <span className="text-noir/65">Điểm đã dùng:</span>
                       <span className="font-semibold text-kombu">{pointsUsed} điểm</span>
                     </div>

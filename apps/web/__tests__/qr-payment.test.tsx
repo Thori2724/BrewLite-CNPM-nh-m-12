@@ -888,4 +888,164 @@ describe('Task 12 - Màn thanh toán QR giả (ZaloPay / MoMo)', () => {
     // Không coi 403 bị khóa là lỗi mạng (không có nút Thử lại giao dịch bị gián đoạn)
     expect(screen.queryByText(/giao dịch bị gián đoạn/i)).not.toBeInTheDocument();
   });
+
+  it('11. Ví điện tử (WALLET) thành công sau 5 giây hiển thị "+N điểm" khi order.pointsEarned > 0', async () => {
+    vi.useFakeTimers();
+    localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(mockLoggedInUser));
+    localStorage.setItem(CART_STORAGE_KEY, JSON.stringify([mockCartItem]));
+
+    const created = makeOrder({ id: 'ord-wallet-points', orderNumber: 4601, totalAmount: 90000 });
+    vi.mocked(ordersService.createOrderApi).mockResolvedValueOnce(created);
+    vi.mocked(ordersService.payOrderApi).mockResolvedValueOnce({
+      id: 'pay-wallet-points',
+      orderId: created.id,
+      amount: 90000,
+      method: 'WALLET',
+      accountLast4: '0001',
+      status: 'SUCCESS',
+      createdAt: '2026-11-15T00:00:05.000Z',
+      order: { id: created.id, orderNumber: 4601, status: 'PAID', pointsEarned: 9 },
+    });
+
+    render(
+      <AuthProvider>
+        <CartProvider>
+          <CheckoutPage />
+        </CartProvider>
+      </AuthProvider>
+    );
+    await flushAsync();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /xác nhận đặt đơn hàng/i }));
+    });
+    await flushAsync();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5000);
+    });
+    await flushAsync();
+
+    expect(ordersService.payOrderApi).toHaveBeenCalledWith(
+      {
+        orderId: 'ord-wallet-points',
+        method: 'WALLET',
+        accountNumber: QR_PAYMENT_SUCCESS_ACCOUNT,
+      },
+      expect.any(String)
+    );
+    expect(screen.getByText(/thanh toán thành công!/i)).toBeInTheDocument();
+    expect(screen.getByTestId('payment-points-earned')).toHaveTextContent('+9 điểm');
+    expect(localStorage.getItem(CART_STORAGE_KEY)).toBe('[]');
+  });
+
+  it('12. Chuyển khoản ngân hàng (CARD) thoát QR giữ giỏ và orderId, bấm Thử lại thanh toán thành công sau 5 giây với Idempotency-Key mới, xóa giỏ và hiện "+N điểm"', async () => {
+    vi.useFakeTimers();
+    localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(mockLoggedInUser));
+    const initialCartJson = JSON.stringify([mockCartItem]);
+    localStorage.setItem(CART_STORAGE_KEY, initialCartJson);
+
+    const created = makeOrder({ id: 'ord-card-retry-flow', orderNumber: 4602, totalAmount: 90000 });
+    vi.mocked(ordersService.createOrderApi).mockResolvedValueOnce(created);
+    vi.mocked(ordersService.payOrderApi)
+      .mockResolvedValueOnce({
+        id: 'pay-card-fail-1',
+        orderId: created.id,
+        amount: 90000,
+        method: 'CARD',
+        accountLast4: '0000',
+        status: 'FAILED',
+        failureReason: 'Giao dịch bị từ chối (mô phỏng)',
+        createdAt: '2026-11-15T00:00:02.000Z',
+        order: { id: created.id, orderNumber: 4602, status: 'PAYMENT_FAILED', pointsEarned: 0 },
+      })
+      .mockResolvedValueOnce({
+        id: 'pay-card-success-2',
+        orderId: created.id,
+        amount: 90000,
+        method: 'CARD',
+        accountLast4: '0001',
+        status: 'SUCCESS',
+        createdAt: '2026-11-15T00:00:10.000Z',
+        order: { id: created.id, orderNumber: 4602, status: 'PAID', pointsEarned: 9 },
+      });
+
+    render(
+      <AuthProvider>
+        <CartProvider>
+          <CheckoutPage />
+        </CartProvider>
+      </AuthProvider>
+    );
+    await flushAsync();
+
+    // Chọn tab Chuyển khoản ngân hàng (CARD) và ngân hàng MB Bank
+    await act(async () => {
+      fireEvent.click(
+        screen.getByRole('tab', {
+          name: new RegExp(`^${PAYMENT_METHOD_LABELS.CARD}`, 'i'),
+        })
+      );
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /MB Bank/i }));
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /xác nhận đặt đơn hàng/i }));
+    });
+    await flushAsync();
+
+    // Thoát khỏi QR -> gọi CARD với 0900000000, giữ giỏ và giữ orderId
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /hủy thanh toán/i }));
+    });
+    await flushAsync();
+
+    expect(ordersService.payOrderApi).toHaveBeenCalledTimes(1);
+    const [dto1, key1] = vi.mocked(ordersService.payOrderApi).mock.calls[0];
+    expect(dto1).toEqual({
+      orderId: 'ord-card-retry-flow',
+      method: 'CARD',
+      accountNumber: QR_PAYMENT_FAILURE_ACCOUNT,
+    });
+    expect(localStorage.getItem(CART_STORAGE_KEY)).toBe(initialCartJson);
+    expect(JSON.parse(localStorage.getItem(PENDING_ORDER_STORAGE_KEY)!).orderId).toBe(
+      'ord-card-retry-flow'
+    );
+
+    // Bấm Thử lại thanh toán -> đếm đủ 5 giây -> gọi CARD với 0900000001 và key mới
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /thử lại thanh toán/i }));
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5000);
+    });
+    await flushAsync();
+
+    expect(ordersService.createOrderApi).toHaveBeenCalledTimes(1);
+    expect(ordersService.payOrderApi).toHaveBeenCalledTimes(2);
+    const [dto2, key2] = vi.mocked(ordersService.payOrderApi).mock.calls[1];
+    expect(dto2).toEqual({
+      orderId: 'ord-card-retry-flow',
+      method: 'CARD',
+      accountNumber: QR_PAYMENT_SUCCESS_ACCOUNT,
+    });
+    expect(key2).not.toBe(key1);
+    expect(screen.getByText(/thanh toán thành công!/i)).toBeInTheDocument();
+    expect(screen.getByTestId('payment-points-earned')).toHaveTextContent('+9 điểm');
+    expect(localStorage.getItem(CART_STORAGE_KEY)).toBe('[]');
+  });
+
+  it('13. Mở ?orderId=... khi GET /orders/:id trả 500 "Internal Server Error" báo tiếng Việt, không lộ chữ tiếng Anh', async () => {
+    vi.mocked(ordersService.getOrderByIdApi).mockRejectedValueOnce(
+      new ordersService.OrderApiError(500, 'Internal Server Error')
+    );
+
+    render(<QrPaymentScreen orderId="ord-err-500" />);
+
+    expect(
+      await screen.findByText('Máy chủ đang gặp sự cố tạm thời. Vui lòng thử lại.')
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Internal Server Error/i)).not.toBeInTheDocument();
+  });
 });

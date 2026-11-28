@@ -16,7 +16,7 @@ import {
   CATEGORY_LABELS,
 } from '../../../services/api';
 import { calculatePrice } from '../../../utils/price';
-import { formatVnd } from '../../../utils/validation';
+import { formatVnd, validateNote } from '../../../utils/validation';
 import { useCart } from '../../../context/CartContext';
 
 const MAX_TOPPINGS = 3;
@@ -50,6 +50,7 @@ function ProductDetailContent() {
   const [cartError, setCartError] = useState<string | null>(null);
   const [toppingWarning, setToppingWarning] = useState<string | null>(null);
   const [quantityWarning, setQuantityWarning] = useState<string | null>(null);
+  const [noteError, setNoteError] = useState<string | null>(null);
 
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fadeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -217,6 +218,13 @@ function ProductDetailContent() {
       setQuantityWarning('Số lượng phải từ 1 đến 10.');
       return;
     }
+
+    const noteValidation = validateNote(note);
+    if (!noteValidation.isValid) {
+      setNoteError(noteValidation.error || 'Ghi chú không được vượt quá 200 ký tự');
+      return;
+    }
+    setNoteError(null);
 
     setCartError(null);
 
@@ -551,10 +559,28 @@ function ProductDetailContent() {
               maxLength={MAX_NOTE_LENGTH}
               disabled={isOutOfStock}
               value={note}
-              onChange={(e) => setNote(e.target.value)}
+              aria-invalid={Boolean(noteError)}
+              aria-describedby={noteError ? 'item-note-error' : undefined}
+              onChange={(e) => {
+                const val = e.target.value;
+                setNote(val);
+                if (noteError) {
+                  const res = validateNote(val);
+                  setNoteError(res.isValid ? null : res.error || null);
+                }
+              }}
               placeholder="Ví dụ: ít ngọt, pha đậm vị trà..."
-              className="w-full px-3.5 py-2.5 text-xs sm:text-sm bg-cream border border-tan rounded-control text-noir placeholder:text-noir/40 focus:outline-none focus:border-moss focus:ring-2 focus:ring-moss/30 disabled:bg-bone disabled:text-noir/40"
+              className={`w-full px-3.5 py-2.5 text-xs sm:text-sm bg-cream border rounded-control text-noir placeholder:text-noir/40 focus:outline-none focus:ring-2 disabled:bg-bone disabled:text-noir/40 ${
+                noteError
+                  ? 'border-error focus:border-error focus:ring-error/30'
+                  : 'border-tan focus:border-moss focus:ring-moss/30'
+              }`}
             />
+            {noteError && (
+              <p id="item-note-error" role="alert" className="text-xs text-error font-medium mt-1">
+                {noteError}
+              </p>
+            )}
           </div>
 
           {/* 6. Số lượng và Giá tạm tính */}

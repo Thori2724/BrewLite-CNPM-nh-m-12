@@ -115,10 +115,10 @@ function OrdersHistoryContent() {
         if (!isCancelled) {
           if (err instanceof OrderApiError) {
             if (err.statusCode === 401) {
-              router.push(`/login?redirect=${encodeURIComponent('/orders')}&expired=true`);
+              redirectToExpiredLogin();
               return;
             }
-            setError(err.message || ORDER_ERROR_MESSAGES.UNKNOWN_ERROR);
+            setError(formatServerOrNetworkErrorMessage(err.statusCode, err.message));
           } else {
             setError(ORDER_ERROR_MESSAGES.UNKNOWN_ERROR);
           }
@@ -129,7 +129,7 @@ function OrdersHistoryContent() {
     return () => {
       isCancelled = true;
     };
-  }, [isReady, router]);
+  }, [isReady, redirectToExpiredLogin]);
 
   const handleManualReload = useCallback(async () => {
     setIsReloading(true);
@@ -142,10 +142,10 @@ function OrdersHistoryContent() {
     } catch (err: unknown) {
       if (err instanceof OrderApiError) {
         if (err.statusCode === 401) {
-          router.push(`/login?redirect=${encodeURIComponent('/orders')}&expired=true`);
+          redirectToExpiredLogin();
           return;
         }
-        setError(err.message || ORDER_ERROR_MESSAGES.UNKNOWN_ERROR);
+        setError(formatServerOrNetworkErrorMessage(err.statusCode, err.message));
       } else {
         setError(ORDER_ERROR_MESSAGES.UNKNOWN_ERROR);
       }
@@ -153,7 +153,7 @@ function OrdersHistoryContent() {
       setLoading(false);
       setIsReloading(false);
     }
-  }, [router]);
+  }, [redirectToExpiredLogin]);
 
   const handleOpenCancelDialog = (order: OrderResponse) => {
     if (cancelInFlightRef.current || cancellingOrderId) return;

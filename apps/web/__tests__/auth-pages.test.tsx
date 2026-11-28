@@ -441,4 +441,61 @@ describe('Giao diện và nghiệp vụ trang Đăng ký (/register)', () => {
     expect(screen.queryByText('email must be an email')).not.toBeInTheDocument();
     expect(screen.queryByText('password must be at least 6 characters')).not.toBeInTheDocument();
   });
+
+  it('16. Lỗi mạng / 500 trên trang Đăng nhập (/login) và Đăng ký (/register) hiển thị thông báo tiếng Việt, không lộ tiếng Anh', async () => {
+    const user = userEvent.setup();
+
+    // 1. /login gặp lỗi mạng và lỗi 500
+    vi.mocked(authService.loginApi)
+      .mockRejectedValueOnce(
+        new authService.AuthApiError(0, AUTH_ERROR_MESSAGES.NETWORK_ERROR)
+      )
+      .mockRejectedValueOnce(new authService.AuthApiError(500, 'Internal Server Error'));
+
+    const loginView = render(
+      <AuthProvider>
+        <LoginPage />
+      </AuthProvider>
+    );
+
+    await user.type(await screen.findByLabelText(/địa chỉ email/i), 'user@brewlite.vn');
+    await user.type(screen.getByLabelText(/^mật khẩu$/i), 'password123');
+    await user.click(screen.getByRole('button', { name: /^đăng nhập$/i }));
+
+    expect(await screen.findByText(AUTH_ERROR_MESSAGES.NETWORK_ERROR)).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /^đăng nhập$/i }));
+    expect(
+      await screen.findByText('Không kết nối được máy chủ, vui lòng thử lại')
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Internal Server Error/i)).not.toBeInTheDocument();
+    loginView.unmount();
+
+    // 2. /register gặp lỗi mạng và lỗi 500
+    vi.mocked(authService.registerApi)
+      .mockRejectedValueOnce(
+        new authService.AuthApiError(0, AUTH_ERROR_MESSAGES.NETWORK_ERROR)
+      )
+      .mockRejectedValueOnce(new authService.AuthApiError(500, 'Internal Server Error'));
+
+    render(
+      <AuthProvider>
+        <RegisterPage />
+      </AuthProvider>
+    );
+
+    await user.type(await screen.findByLabelText(/tên hiển thị/i), 'Nguyễn Văn A');
+    await user.type(screen.getByLabelText(/địa chỉ email/i), 'new@brewlite.vn');
+    await user.type(screen.getByLabelText(/^mật khẩu$/i), '123456');
+    await user.type(screen.getByLabelText(/nhập lại mật khẩu/i), '123456');
+    await user.click(screen.getByRole('button', { name: /đăng ký tài khoản/i }));
+
+    expect(await screen.findByText(AUTH_ERROR_MESSAGES.NETWORK_ERROR)).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /đăng ký tài khoản/i }));
+    expect(
+      await screen.findByText('Không kết nối được máy chủ, vui lòng thử lại')
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Internal Server Error/i)).not.toBeInTheDocument();
+  });
 });

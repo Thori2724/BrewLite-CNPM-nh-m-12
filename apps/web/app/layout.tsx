@@ -43,11 +43,11 @@ export default function RootLayout({
               header={
                 /* Header Top Bar trải toàn chiều rộng */
                 <header className="sticky top-0 z-40 border-b border-moss/35 bg-kombu text-bone shadow-soft">
-                  <div className="mx-auto flex h-20 max-w-6xl items-center justify-between gap-4 sm:gap-8 px-4 sm:px-6 lg:px-8">
+                  <div className="mx-auto flex min-h-20 sm:h-20 max-w-6xl flex-wrap sm:flex-nowrap items-center justify-between gap-2 sm:gap-8 px-3 sm:px-6 lg:px-8 py-2 sm:py-0">
                     <div className="flex items-center gap-6 sm:gap-8 shrink-0">
                       <Link
                         href="/"
-                        className="flex shrink-0 items-center gap-2 rounded-control font-display text-2xl font-bold tracking-tight text-bone outline-none hover:text-tan transition focus-visible:ring-2 focus-visible:ring-moss"
+                        className="flex shrink-0 items-center gap-2 rounded-control font-display text-xl sm:text-2xl font-bold tracking-tight text-bone outline-none hover:text-tan transition focus-visible:ring-2 focus-visible:ring-moss"
                       >
                         <span className="grid size-9 place-items-center rounded-full bg-bone text-kombu">
                           <CoffeeIcon className="size-5" />
@@ -67,7 +67,7 @@ export default function RootLayout({
                       </nav>
                     </div>
 
-                    <div className="flex items-center gap-2 sm:gap-4 shrink-0">
+                    <div className="flex flex-wrap sm:flex-nowrap items-center justify-end gap-2 sm:gap-4 min-w-0 sm:shrink-0">
                       <AuthNav />
                       <CartIcon />
                     </div>

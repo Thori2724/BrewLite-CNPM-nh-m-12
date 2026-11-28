@@ -223,8 +223,13 @@ export default function QrPaymentScreen({
         return;
       }
 
+      if (err instanceof OrderApiError && err.statusCode >= 500) {
+        setLoadOrderError('Máy chủ đang gặp sự cố tạm thời. Vui lòng thử lại.');
+        return;
+      }
+
       setLoadOrderError(
-        err instanceof Error && err.message
+        err instanceof Error && err.message && err.message !== 'Internal Server Error'
           ? err.message
           : 'Không thể tải thông tin đơn hàng. Vui lòng thử lại.'
       );
@@ -706,41 +711,41 @@ export default function QrPaymentScreen({
         : 0;
 
     return (
-      <div className="rounded-card border border-moss/25 bg-cream p-8 text-center shadow-soft max-w-2xl mx-auto">
+      <div className="rounded-card border border-moss/25 bg-cream p-5 sm:p-8 text-center shadow-soft max-w-2xl mx-auto">
         <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-moss/15 text-moss text-3xl font-bold">
           ✓
         </div>
         <h2 className="font-display text-2xl font-bold text-noir">
           Thanh toán thành công!
         </h2>
-        <p className="mt-2 text-sm text-noir/75">
+        <p className="mt-2 text-sm text-noir/75 break-words">
           Đơn hàng <strong className="text-noir">#{order.orderNumber}</strong> đã được ghi nhận thành công ({confirmedProvider.displayLabel}).
         </p>
 
-        <div className="mt-6 rounded-xl border border-noir/10 bg-white/75 p-5 text-left text-sm space-y-2.5">
-          <div className="flex justify-between items-center">
+        <div className="mt-6 rounded-xl border border-noir/10 bg-white/75 p-4 sm:p-5 text-left text-sm space-y-2.5">
+          <div className="flex flex-wrap justify-between items-center gap-x-3 gap-y-1">
             <span className="text-noir/65">Mã đơn hàng:</span>
             <span className="font-bold text-noir">#{order.orderNumber}</span>
           </div>
-          <div className="flex justify-between items-center">
+          <div className="flex flex-wrap justify-between items-center gap-x-3 gap-y-1">
             <span className="text-noir/65">Trạng thái:</span>
             <span className="inline-flex items-center rounded-full border border-moss/30 bg-moss/10 px-2.5 py-0.5 text-xs font-semibold text-moss">
               {ORDER_STATUS_LABELS.PAID}
             </span>
           </div>
-          <div className="flex justify-between items-center">
+          <div className="flex flex-wrap justify-between items-center gap-x-3 gap-y-1">
             <span className="text-noir/65">Hình thức nhận:</span>
             <span className="font-medium text-noir">
               {RECEIVE_TYPE_LABELS[order.receiveType]}
             </span>
           </div>
-          <div className="flex justify-between items-center">
+          <div className="flex flex-wrap justify-between items-center gap-x-3 gap-y-1">
             <span className="text-noir/65">Phương thức thanh toán:</span>
-            <span className="font-medium text-noir">
+            <span className="font-medium text-noir break-words text-right">
               {PAYMENT_METHOD_LABELS[confirmedMethod]} • {confirmedProvider.name}
             </span>
           </div>
-          <div className="flex justify-between items-center border-t border-noir/10 pt-2.5">
+          <div className="flex flex-wrap justify-between items-center gap-x-3 gap-y-1 border-t border-noir/10 pt-2.5">
             <span className="text-noir/65">Tổng tiền đã thanh toán:</span>
             <span className="font-bold text-kombu text-base">
               {formatVnd(paymentSuccessData.amount || order.totalAmount)}
@@ -749,7 +754,7 @@ export default function QrPaymentScreen({
           {pointsEarned > 0 && (
             <div
               data-testid="payment-points-earned"
-              className="flex justify-between items-center border-t border-noir/10 pt-2.5"
+              className="flex flex-wrap justify-between items-center gap-x-3 gap-y-1 border-t border-noir/10 pt-2.5"
             >
               <span className="text-noir/65">Điểm thưởng tích lũy:</span>
               <span className="inline-flex items-center rounded-full border border-moss/35 bg-moss/15 px-2.5 py-0.5 font-bold text-kombu">
@@ -833,7 +838,7 @@ export default function QrPaymentScreen({
   // Màn thất bại sau khi hủy QR hoặc gặp lỗi khi gọi POST /payments
   if (subView === 'failed') {
     return (
-      <div className="rounded-card border border-error/25 bg-cream p-6 sm:p-8 shadow-soft max-w-2xl mx-auto space-y-6">
+      <div className="rounded-card border border-error/25 bg-cream p-5 sm:p-8 shadow-soft max-w-2xl mx-auto space-y-6">
         <div className="flex flex-wrap items-start justify-between gap-4 border-b border-noir/10 pb-4">
           <div>
             <p className="text-xs font-semibold uppercase tracking-wider text-error">
@@ -937,7 +942,7 @@ export default function QrPaymentScreen({
       order.payments?.find((p) => p.status === 'FAILED')?.failureReason || null;
 
     return (
-      <div className="rounded-card border border-noir/10 bg-cream p-6 sm:p-8 shadow-soft max-w-2xl mx-auto space-y-6">
+      <div className="rounded-card border border-noir/10 bg-cream p-5 sm:p-8 shadow-soft max-w-2xl mx-auto space-y-6">
         <div className="flex flex-wrap items-start justify-between gap-4 border-b border-noir/10 pb-4">
           <div>
             <p className="text-xs font-semibold uppercase tracking-wider text-noir/55">
@@ -1030,21 +1035,21 @@ export default function QrPaymentScreen({
 
   return (
     <div
-      className="rounded-card border border-noir/10 bg-cream p-6 sm:p-8 shadow-soft max-w-2xl mx-auto space-y-6"
+      className="rounded-card border border-noir/10 bg-cream p-4 sm:p-8 shadow-soft max-w-2xl mx-auto space-y-6"
       data-method={selectedMethod}
       data-provider={providerConfig.id}
       data-qr-payload={qrPayload}
     >
       <div
-        className={`flex items-center justify-between gap-4 rounded-xl border p-4 ${providerConfig.headerBgClass}`}
+        className={`flex items-center justify-between gap-3 sm:gap-4 rounded-xl border p-3.5 sm:p-4 ${providerConfig.headerBgClass}`}
       >
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 min-w-0 flex-1">
           <ProviderBadge config={providerConfig} />
-          <div>
-            <p className={`text-sm font-bold ${providerConfig.accentTextClass}`}>
+          <div className="min-w-0">
+            <p className={`text-sm font-bold break-words ${providerConfig.accentTextClass}`}>
               {qrHeaderTitle}
             </p>
-            <p className="text-xs text-noir/70">
+            <p className="text-xs text-noir/70 break-words">
               Mã đơn <span className="font-semibold">#{order.orderNumber}</span> •{' '}
               {RECEIVE_TYPE_LABELS[order.receiveType]}
             </p>
@@ -1055,7 +1060,7 @@ export default function QrPaymentScreen({
           onClick={handleCancelQr}
           disabled={isSubmittingPayment}
           aria-label="Đóng màn thanh toán QR"
-          className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-noir/15 bg-white text-noir/75 hover:bg-bone hover:text-noir transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+          className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-noir/15 bg-white text-noir/75 hover:bg-bone hover:text-noir transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
         >
           ✕
         </button>
@@ -1063,7 +1068,7 @@ export default function QrPaymentScreen({
 
       <div className="grid grid-cols-1 md:grid-cols-[auto_1fr] gap-6 items-center">
         <div
-          className={`mx-auto flex flex-col items-center justify-center rounded-2xl border-2 p-5 ${providerConfig.qrBorderClass}`}
+          className={`mx-auto flex flex-col items-center justify-center rounded-2xl border-2 p-4 sm:p-5 ${providerConfig.qrBorderClass}`}
         >
           <div className="rounded-xl bg-white p-3 shadow-sm">
             <QRCodeSVG
