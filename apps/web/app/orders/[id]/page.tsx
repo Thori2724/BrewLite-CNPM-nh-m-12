@@ -25,6 +25,7 @@ import {
   SizeId,
   SugarLevel,
   IceLevel,
+  notifyProductsInvalidated,
 } from '../../../services/api';
 import { cancelOrderApi, getOrderByIdApi, OrderApiError } from '../../../services/orders';
 import { clearAuthSession, getSafeRedirectUrl } from '../../../utils/auth';
@@ -255,6 +256,7 @@ function OrderDetailContent() {
 
     try {
       const cancelledOrder = await cancelOrderApi(targetOrderId);
+      notifyProductsInvalidated();
       clearMatchingPendingOrder(targetOrderId);
 
       const resolvedCancelPayments =

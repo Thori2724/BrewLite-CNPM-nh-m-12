@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { Product } from '../../services/api';
+import { isSoldOut, Product, PRODUCT_STATUS_LABELS } from '../../services/api';
 import { formatVnd } from '../../utils/validation';
 
 interface ProductCardProps {
@@ -14,7 +14,7 @@ const CATEGORY_LABELS: Record<string, string> = {
 };
 
 export default function ProductCard({ product }: ProductCardProps) {
-  const isOutOfStock = product.stock <= 0;
+  const isOutOfStock = isSoldOut(product.stock);
   const categoryLabel = CATEGORY_LABELS[product.category] || product.category;
 
   return (
@@ -40,7 +40,7 @@ export default function ProductCard({ product }: ProductCardProps) {
           {/* Nhãn Hết hàng */}
           {isOutOfStock && (
             <span className="absolute top-2.5 right-2.5 bg-error text-bone text-xs px-2.5 py-1 rounded-control font-semibold shadow-xs">
-              Hết hàng
+              {PRODUCT_STATUS_LABELS.OUT_OF_STOCK_BADGE}
             </span>
           )}
         </div>
@@ -73,7 +73,7 @@ export default function ProductCard({ product }: ProductCardProps) {
             disabled
             className="w-full py-2.5 rounded-control text-xs sm:text-sm font-semibold transition bg-tan/40 text-noir/40 cursor-not-allowed pointer-events-none"
           >
-            Tạm hết
+            {PRODUCT_STATUS_LABELS.OUT_OF_STOCK}
           </button>
         )}
       </div>

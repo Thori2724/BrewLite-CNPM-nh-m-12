@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, waitFor, fireEvent, act, cleanup } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent, act, cleanup, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import CheckoutPage from '../app/checkout/page';
@@ -13,7 +13,9 @@ import {
   savePendingOrder,
 } from '../utils/checkout';
 import { OrderResponse } from '../services/order-contract';
+import * as loyaltyService from '../services/loyalty';
 import * as ordersService from '../services/orders';
+import * as promotionsService from '../services/promotions';
 import * as navigation from 'next/navigation';
 
 // Mock next/navigation
@@ -30,6 +32,15 @@ vi.mock('next/navigation', () => ({
   useSearchParams: vi.fn(() => mockSearchParams),
 }));
 
+// Mock services/loyalty (GET /loyalty/me)
+vi.mock('../services/loyalty', async () => {
+  const actual = await vi.importActual<typeof import('../services/loyalty')>('../services/loyalty');
+  return {
+    ...actual,
+    getMyLoyaltyApi: vi.fn(),
+  };
+});
+
 // Mock services/orders
 vi.mock('../services/orders', async () => {
   const actual = await vi.importActual<typeof import('../services/orders')>('../services/orders');
@@ -38,6 +49,17 @@ vi.mock('../services/orders', async () => {
     createOrderApi: vi.fn(),
     payOrderApi: vi.fn(),
     getOrderByIdApi: vi.fn(),
+  };
+});
+
+// Mock services/promotions
+vi.mock('../services/promotions', async () => {
+  const actual = await vi.importActual<typeof import('../services/promotions')>(
+    '../services/promotions'
+  );
+  return {
+    ...actual,
+    validatePromotionApi: vi.fn(),
   };
 });
 
@@ -68,9 +90,15 @@ const mockLoggedInUser = {
 describe('Giao diện và luồng xử lý trang Checkout (/checkout)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(loyaltyService.getMyLoyaltyApi).mockReset();
+    vi.mocked(loyaltyService.getMyLoyaltyApi).mockResolvedValue({
+      loyaltyPoints: 0,
+      transactions: [],
+    });
     vi.mocked(ordersService.createOrderApi).mockReset();
     vi.mocked(ordersService.payOrderApi).mockReset();
     vi.mocked(ordersService.getOrderByIdApi).mockReset();
+    vi.mocked(promotionsService.validatePromotionApi).mockReset();
     localStorage.clear();
     mockSearchParams = new URLSearchParams();
 
@@ -198,7 +226,7 @@ describe('Giao diện và luồng xử lý trang Checkout (/checkout)', () => {
   });
 
   // 5. Tạo đơn thất bại do món tạm hết 409
-  it('5. Món tạm hết (409): Hiển thị tên món từ message và details[], không hiện tồn kho, giữ nguyên giỏ hàng và dữ liệu đang nhập', async () => {
+  it('5. Món tạm hết (409, available = 0): Hiển thị thông báo theo details[], giữ nguyên giỏ hàng và dữ liệu đang nhập', async () => {
     const user = userEvent.setup();
     localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(mockLoggedInUser));
     localStorage.setItem(CART_STORAGE_KEY, JSON.stringify([mockCartItem]));
@@ -227,16 +255,14 @@ describe('Giao diện và luồng xử lý trang Checkout (/checkout)', () => {
 
     await waitFor(() => {
       expect(screen.getByText("Sản phẩm 'Cà phê muối' hiện đã tạm hết")).toBeInTheDocument();
-      expect(screen.getByText('Cà phê muối — Tạm hết')).toBeInTheDocument();
+      expect(screen.getByText("Sản phẩm 'Cà phê muối' đã tạm hết")).toBeInTheDocument();
       expect(screen.getByText('Tạm hết')).toBeInTheDocument();
       expect(screen.getByRole('link', { name: /xóa khỏi giỏ hàng/i })).toBeInTheDocument();
       expect(screen.getAllByRole('link', { name: /quay lại giỏ hàng/i }).length).toBeGreaterThanOrEqual(1);
     });
 
-    // Không hiển thị số lượng tồn kho
+    // Khi available = 0 không hiện "còn 0"
     expect(screen.queryByText(/còn 0/i)).not.toBeInTheDocument();
-    expect(screen.queryByText(/tồn kho/i)).not.toBeInTheDocument();
-    expect(screen.queryByText(/thiếu hàng/i)).not.toBeInTheDocument();
 
     // Dữ liệu đang nhập vẫn còn nguyên vẹn
     expect(takeAwayRadio).toBeChecked();
@@ -1863,5 +1889,215 @@ describe('Giao diện và luồng xử lý trang Checkout (/checkout)', () => {
 
     // pendingOrder đã được xóa để khách không bị kẹt ở đơn cũ
     expect(localStorage.getItem(PENDING_ORDER_STORAGE_KEY)).toBeNull();
+  });
+
+  // 26. Dòng 20 - Lỗi 409 kèm nhiều món trong details (available > 0 và available = 0): hiển thị đủ tất cả món, giữ nguyên giỏ, mã giảm giá và công tắc điểm
+  it('26. Lỗi 409 kèm nhiều món trong details: hiển thị tất cả món (chỉ còn N / đã tạm hết), giữ nguyên giỏ hàng, mã giảm giá và công tắc Dùng điểm', async () => {
+    const user = userEvent.setup();
+    localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(mockLoggedInUser));
+
+    const multiCart: CartItem[] = [
+      {
+        id: 'cart-bac-xiu',
+        productId: 'prod-bac-xiu',
+        name: 'Bạc xỉu',
+        imageUrl: 'https://images.unsplash.com/photo-1517701550927-30cf4ba1dba5?w=500',
+        size: 'M',
+        sugarLevel: 'P70',
+        iceLevel: 'NORMAL',
+        toppings: [],
+        note: '',
+        unitPrice: 35000,
+        quantity: 5,
+      },
+      {
+        id: 'cart-tra-dao',
+        productId: 'prod-tra-dao',
+        name: 'Trà đào cam sả',
+        imageUrl: 'https://images.unsplash.com/photo-1556679343-c7306c1976bc?w=500',
+        size: 'S',
+        sugarLevel: 'P100',
+        iceLevel: 'NORMAL',
+        toppings: [],
+        note: '',
+        unitPrice: 39000,
+        quantity: 2,
+      },
+    ];
+    const initialCartJson = JSON.stringify(multiCart);
+    localStorage.setItem(CART_STORAGE_KEY, initialCartJson);
+
+    vi.mocked(loyaltyService.getMyLoyaltyApi).mockResolvedValue({
+      loyaltyPoints: 20,
+      transactions: [],
+    });
+    vi.mocked(promotionsService.validatePromotionApi).mockResolvedValueOnce({
+      code: 'BREW10',
+      type: 'PERCENT',
+      value: 10,
+      maxDiscount: 15000,
+      discountAmount: 15000,
+    });
+    vi.mocked(ordersService.createOrderApi).mockRejectedValueOnce(
+      new ordersService.OrderApiError(409, "Sản phẩm 'Bạc xỉu' chỉ còn 2", {
+        details: [
+          { productId: 'prod-bac-xiu', name: 'Bạc xỉu', available: 2 },
+          { productId: 'prod-tra-dao', name: 'Trà đào cam sả', available: 0 },
+        ],
+      })
+    );
+
+    renderCheckout();
+
+    await waitFor(() => {
+      expect(screen.getByText('Bạc xỉu')).toBeInTheDocument();
+      expect(screen.getByText('Trà đào cam sả')).toBeInTheDocument();
+    });
+
+    // Áp mã BREW10 và bật công tắc Dùng điểm
+    await user.type(screen.getByLabelText(/mã giảm giá/i), 'BREW10');
+    await user.click(screen.getByRole('button', { name: /^áp dụng$/i }));
+    await waitFor(() => {
+      expect(screen.getByText('Đã áp dụng mã BREW10')).toBeInTheDocument();
+    });
+
+    const pointsSwitch = screen.getByRole('switch', { name: /dùng điểm/i });
+    await waitFor(() => {
+      expect(pointsSwitch).not.toBeDisabled();
+    });
+    await user.click(pointsSwitch);
+    expect(pointsSwitch).toBeChecked();
+
+    await user.click(screen.getByRole('button', { name: /xác nhận đặt đơn hàng/i }));
+
+    // Hiển thị đủ cả 2 món từ details[] theo đúng mẫu
+    await waitFor(() => {
+      const list = screen.getByTestId('out-of-stock-details-list');
+      expect(within(list).getByText("Sản phẩm 'Bạc xỉu' chỉ còn 2")).toBeInTheDocument();
+      expect(within(list).getByText("Sản phẩm 'Trà đào cam sả' đã tạm hết")).toBeInTheDocument();
+    });
+
+    // Nhãn trên từng món ở tóm tắt giỏ cũng khớp số liệu từng món
+    expect(screen.getByText('Chỉ còn 2')).toBeInTheDocument();
+    expect(screen.getByText('Tạm hết')).toBeInTheDocument();
+
+    // Giữ nguyên giỏ hàng, mã giảm giá và công tắc Dùng điểm; không tạo đơn chờ
+    expect(localStorage.getItem(CART_STORAGE_KEY)).toBe(initialCartJson);
+    expect(screen.getByText('Đã áp dụng mã BREW10')).toBeInTheDocument();
+    expect(pointsSwitch).toBeChecked();
+    expect(localStorage.getItem(PENDING_ORDER_STORAGE_KEY)).toBeNull();
+    expect(screen.getByText('Bước 1/2: Đặt đơn')).toBeInTheDocument();
+  });
+
+  // 27. Dòng 20 - Lỗi 409 "Mã giảm giá đã ngừng áp dụng": hiển thị đúng thông báo server, giữ giỏ và công tắc điểm
+  it('27. Lỗi 409 "Mã giảm giá đã ngừng áp dụng": hiện đúng thông báo server, giữ nguyên giỏ hàng và không tạo đơn', async () => {
+    const user = userEvent.setup();
+    localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(mockLoggedInUser));
+    const initialCartJson = JSON.stringify([mockCartItem]);
+    localStorage.setItem(CART_STORAGE_KEY, initialCartJson);
+
+    vi.mocked(loyaltyService.getMyLoyaltyApi).mockResolvedValue({
+      loyaltyPoints: 15,
+      transactions: [],
+    });
+    vi.mocked(promotionsService.validatePromotionApi).mockResolvedValueOnce({
+      code: 'TAMNGUNG',
+      type: 'FIXED',
+      value: 10000,
+      maxDiscount: null,
+      discountAmount: 10000,
+    });
+    vi.mocked(ordersService.createOrderApi).mockRejectedValueOnce(
+      new ordersService.OrderApiError(409, 'Mã giảm giá đã ngừng áp dụng')
+    );
+
+    renderCheckout();
+
+    await waitFor(() => {
+      expect(screen.getByText('Cà phê muối')).toBeInTheDocument();
+    });
+
+    await user.type(screen.getByLabelText(/mã giảm giá/i), 'TAMNGUNG');
+    await user.click(screen.getByRole('button', { name: /^áp dụng$/i }));
+    await waitFor(() => {
+      expect(screen.getByText('Đã áp dụng mã TAMNGUNG')).toBeInTheDocument();
+    });
+
+    const pointsSwitch = screen.getByRole('switch', { name: /dùng điểm/i });
+    await waitFor(() => {
+      expect(pointsSwitch).not.toBeDisabled();
+    });
+    await user.click(pointsSwitch);
+    expect(pointsSwitch).toBeChecked();
+
+    await user.click(screen.getByRole('button', { name: /xác nhận đặt đơn hàng/i }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('alert')).toHaveTextContent('Mã giảm giá đã ngừng áp dụng');
+    });
+
+    expect(localStorage.getItem(CART_STORAGE_KEY)).toBe(initialCartJson);
+    expect(pointsSwitch).toBeChecked();
+    expect(localStorage.getItem(PENDING_ORDER_STORAGE_KEY)).toBeNull();
+    expect(screen.getByText('Bước 1/2: Đặt đơn')).toBeInTheDocument();
+  });
+
+  // 28. Dòng 20 - Lỗi 409 "Số điểm không đủ, vui lòng thử lại": hiển thị đúng thông báo server, giữ giỏ và mã giảm giá
+  it('28. Lỗi 409 "Số điểm không đủ, vui lòng thử lại": hiện đúng thông báo server, giữ nguyên giỏ hàng và mã đang áp', async () => {
+    const user = userEvent.setup();
+    localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(mockLoggedInUser));
+    const initialCartJson = JSON.stringify([mockCartItem]);
+    localStorage.setItem(CART_STORAGE_KEY, initialCartJson);
+
+    vi.mocked(loyaltyService.getMyLoyaltyApi)
+      .mockResolvedValueOnce({
+        loyaltyPoints: 30,
+        transactions: [],
+      })
+      .mockResolvedValueOnce({
+        loyaltyPoints: 5,
+        transactions: [],
+      });
+    vi.mocked(promotionsService.validatePromotionApi).mockResolvedValueOnce({
+      code: 'BREW10',
+      type: 'PERCENT',
+      value: 10,
+      maxDiscount: 15000,
+      discountAmount: 9000,
+    });
+    vi.mocked(ordersService.createOrderApi).mockRejectedValueOnce(
+      new ordersService.OrderApiError(409, 'Số điểm không đủ, vui lòng thử lại')
+    );
+
+    renderCheckout();
+
+    await waitFor(() => {
+      expect(screen.getByText('Cà phê muối')).toBeInTheDocument();
+    });
+
+    await user.type(screen.getByLabelText(/mã giảm giá/i), 'BREW10');
+    await user.click(screen.getByRole('button', { name: /^áp dụng$/i }));
+    await waitFor(() => {
+      expect(screen.getByText('Đã áp dụng mã BREW10')).toBeInTheDocument();
+    });
+
+    const pointsSwitch = screen.getByRole('switch', { name: /dùng điểm/i });
+    await waitFor(() => {
+      expect(pointsSwitch).not.toBeDisabled();
+    });
+    await user.click(pointsSwitch);
+    expect(pointsSwitch).toBeChecked();
+
+    await user.click(screen.getByRole('button', { name: /xác nhận đặt đơn hàng/i }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('alert')).toHaveTextContent('Số điểm không đủ, vui lòng thử lại');
+    });
+
+    expect(localStorage.getItem(CART_STORAGE_KEY)).toBe(initialCartJson);
+    expect(screen.getByText('Đã áp dụng mã BREW10')).toBeInTheDocument();
+    expect(pointsSwitch).not.toBeChecked();
+    expect(localStorage.getItem(PENDING_ORDER_STORAGE_KEY)).toBeNull();
+    expect(screen.getByText('Bước 1/2: Đặt đơn')).toBeInTheDocument();
   });
 });
