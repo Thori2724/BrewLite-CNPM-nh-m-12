@@ -31,3 +31,11 @@ export function isMockStaffActive(): boolean {
   return isMockEnabled(process.env.NEXT_PUBLIC_USE_MOCK_AUTH);
 }
 
+export function isMockPromotionsActive(): boolean {
+  return isMockEnabled(process.env.NEXT_PUBLIC_USE_MOCK_PROMOTIONS);
+}
+
+export function isMockLoyaltyActive(): boolean {
+  return isMockEnabled(process.env.NEXT_PUBLIC_USE_MOCK_LOYALTY);
+}
+

@@ -1,7 +1,10 @@
 'use client';
 
+import { useState } from 'react';
 import Link from 'next/link';
 import { useCart } from '../../context/CartContext';
+import ConfirmDialog from '../components/ConfirmDialog';
+import { TrashIcon } from '../components/Icons';
 import { getLineTotal, MAX_ITEM_QUANTITY } from '../../utils/cart';
 import { formatVnd } from '../../utils/validation';
 import {
@@ -39,6 +42,7 @@ export default function CartPage() {
     removeFromCart,
     clearAll,
   } = useCart();
+  const [isClearDialogOpen, setIsClearDialogOpen] = useState(false);
 
   // 1. Trạng thái Loading: Chờ hydration từ localStorage để tránh nhấp nháy hoặc lệch giao diện Server/Client
   if (!isHydrated) {
@@ -78,11 +82,18 @@ export default function CartPage() {
     );
   }
 
-  // 3. Xử lý xóa toàn bộ giỏ có xác nhận
-  const handleClearAll = () => {
-    if (typeof window !== 'undefined' && window.confirm('Bạn có chắc chắn muốn xóa toàn bộ món trong giỏ hàng?')) {
-      clearAll();
-    }
+  // 3. Xử lý xóa toàn bộ giỏ có xác nhận qua ConfirmDialog
+  const handleOpenClearDialog = () => {
+    setIsClearDialogOpen(true);
+  };
+
+  const handleCloseClearDialog = () => {
+    setIsClearDialogOpen(false);
+  };
+
+  const handleConfirmClearAll = () => {
+    setIsClearDialogOpen(false);
+    clearAll();
   };
 
   return (
@@ -109,7 +120,7 @@ export default function CartPage() {
         </div>
         <button
           type="button"
-          onClick={handleClearAll}
+          onClick={handleOpenClearDialog}
           className="self-start sm:self-end text-xs sm:text-sm text-error hover:underline font-medium transition cursor-pointer"
         >
           Xóa tất cả
@@ -145,10 +156,10 @@ export default function CartPage() {
                       <button
                         type="button"
                         onClick={() => removeFromCart(item.id)}
-                        aria-label={`Xóa ${item.name}`}
-                        className="text-noir/40 hover:text-error text-xs sm:text-sm px-2 py-0.5 rounded-control hover:bg-error/10 transition cursor-pointer shrink-0"
+                        aria-label={`Xóa ${item.name} khỏi giỏ`}
+                        className="inline-flex items-center justify-center p-1.5 text-noir/45 hover:text-error rounded-control hover:bg-error/10 transition cursor-pointer shrink-0"
                       >
-                        ✕
+                        <TrashIcon className="w-4 h-4 sm:w-[18px] sm:h-[18px]" />
                       </button>
                     </div>
 
@@ -261,6 +272,17 @@ export default function CartPage() {
           </div>
         </div>
       </div>
+
+      <ConfirmDialog
+        open={isClearDialogOpen}
+        title="Xóa tất cả món trong giỏ?"
+        message="Toàn bộ món bạn đã chọn sẽ bị xóa khỏi giỏ hàng. Thao tác này không thể hoàn tác."
+        cancelLabel="Quay lại"
+        confirmLabel="Xóa tất cả"
+        variant="danger"
+        onCancel={handleCloseClearDialog}
+        onConfirm={handleConfirmClearAll}
+      />
     </div>
   );
 }

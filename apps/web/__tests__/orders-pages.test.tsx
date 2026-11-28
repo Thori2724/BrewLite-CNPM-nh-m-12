@@ -82,7 +82,7 @@ describe('Task 18 - Bảng nhãn tiếng Việt & Tiện ích định dạng đ�
     // 2 hình thức thanh toán (PaymentMethod)
     expect(PAYMENT_METHOD_LABELS).toEqual({
       WALLET: 'Ví điện tử (ZaloPay/Momo)',
-      CARD: 'Thẻ ngân hàng',
+      CARD: 'Chuyển khoản ngân hàng',
     });
 
     // 3 trạng thái thanh toán (PaymentStatus)

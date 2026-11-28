@@ -150,6 +150,13 @@ export function resetMockProductsDatabase(): void {
   );
 }
 
+export function adjustMockProductStock(productId: string, delta: number): void {
+  const product = mockManageProductsDb.find((p) => p.id === productId);
+  if (product) {
+    product.stock = Math.max(0, product.stock + delta);
+  }
+}
+
 function generateMockProductId(): string {
   if (typeof globalThis !== 'undefined' && globalThis.crypto?.randomUUID) {
     return globalThis.crypto.randomUUID();
@@ -244,6 +251,15 @@ export async function mockCreateProduct(dto: CreateProductDto): Promise<ProductM
     const imgErr = validateImageUrl(dto.imageUrl);
     if (imgErr) errors.push(imgErr);
   }
+  if (
+    dto.stock !== undefined &&
+    (typeof dto.stock !== 'number' ||
+      !Number.isInteger(dto.stock) ||
+      dto.stock < 0 ||
+      dto.stock > 9999)
+  ) {
+    errors.push('stock must be an integer between 0 and 9999');
+  }
 
   if (errors.length > 0) {
     throw new ApiHttpError({
@@ -262,7 +278,7 @@ export async function mockCreateProduct(dto: CreateProductDto): Promise<ProductM
     category: dto.category,
     basePrice: dto.basePrice,
     imageUrl: resolvedImage,
-    stock: 999,
+    stock: dto.stock ?? 50,
     isVisible: true,
   };
 
@@ -346,17 +362,33 @@ export async function mockUpdateProduct(
 
 /**
  * Giả lập PATCH /products/:id/availability (STAFF, ADMIN)
+ * Khi isAvailable = true bắt buộc stock nguyên 1..9999; khi false đặt stock = 0.
  */
 export async function mockUpdateProductAvailability(
   id: string,
-  isAvailable: boolean
+  isAvailable: boolean,
+  stock?: number
 ): Promise<ProductManage> {
   await new Promise((resolve) => setTimeout(resolve, 50));
 
+  const errors: string[] = [];
   if (typeof isAvailable !== 'boolean') {
+    errors.push('isAvailable must be a boolean value');
+  } else if (isAvailable) {
+    if (
+      typeof stock !== 'number' ||
+      !Number.isInteger(stock) ||
+      stock < 1 ||
+      stock > 9999
+    ) {
+      errors.push('stock must be an integer between 1 and 9999');
+    }
+  }
+
+  if (errors.length > 0) {
     throw new ApiHttpError({
       statusCode: 400,
-      message: ['isAvailable must be a boolean value'],
+      message: errors,
       error: 'Bad Request',
     });
   }
@@ -370,6 +402,6 @@ export async function mockUpdateProductAvailability(
     });
   }
 
-  product.stock = isAvailable ? 999 : 0;
+  product.stock = isAvailable ? (stock as number) : 0;
   return { ...product };
 }

@@ -48,8 +48,10 @@ import {
   isMockProductsActive,
   isMockStaffActive,
   resetMockAuthDatabase,
+  resetMockLoyaltyDatabase,
   resetMockOrdersDatabase,
   resetMockProductsDatabase,
+  resetMockPromotionsDatabase,
 } from '../mocks';
 
 function mockJsonResponse(status: number, body: unknown): Response {
@@ -72,6 +74,8 @@ describe('Task 11 - Lớp nền API, TypeScript, Mock và Bảng nhãn tiếng V
     resetMockAuthDatabase();
     resetMockProductsDatabase();
     resetMockOrdersDatabase();
+    resetMockPromotionsDatabase();
+    resetMockLoyaltyDatabase();
 
     process.env = { ...originalEnv };
     delete process.env.NEXT_PUBLIC_USE_MOCK;
@@ -215,7 +219,7 @@ describe('Task 11 - Lớp nền API, TypeScript, Mock và Bảng nhãn tiếng V
           amount: 29000,
           status: 'SUCCESS',
           createdAt: '2026-11-14T10:00:00.000Z',
-          order: { id: 'ord-1', orderNumber: 1001, status: 'PAID' },
+          order: { id: 'ord-1', orderNumber: 1001, status: 'PAID', pointsEarned: 2 },
         })
       );
       globalThis.fetch = fetchMock;
@@ -236,7 +240,7 @@ describe('Task 11 - Lớp nền API, TypeScript, Mock và Bảng nhãn tiếng V
       });
     });
 
-    it('2.3. POST /orders lọc bỏ unitPrice/totalAmount nếu vô tình truyền và giữ details [{productId, name}] khi lỗi 409', async () => {
+    it('2.3. POST /orders lọc bỏ unitPrice/totalAmount nếu vô tình truyền và giữ details [{productId, name, available}] khi lỗi 409', async () => {
       const fetchMock = vi
         .fn()
         .mockResolvedValueOnce(
@@ -244,7 +248,13 @@ describe('Task 11 - Lớp nền API, TypeScript, Mock và Bảng nhãn tiếng V
             statusCode: 409,
             message: "Sản phẩm 'Bạc xỉu' hiện đã tạm hết",
             error: 'Conflict',
-            details: [{ productId: '11111111-0000-0000-0000-000000000003', name: 'Bạc xỉu' }],
+            details: [
+              {
+                productId: '11111111-0000-0000-0000-000000000003',
+                name: 'Bạc xỉu',
+                available: 0,
+              },
+            ],
           })
         );
       globalThis.fetch = fetchMock;
@@ -270,7 +280,11 @@ describe('Task 11 - Lớp nền API, TypeScript, Mock và Bảng nhãn tiếng V
         expect(orderErr.statusCode).toBe(409);
         expect(orderErr.message).toBe("Sản phẩm 'Bạc xỉu' hiện đã tạm hết");
         expect(orderErr.details).toEqual([
-          { productId: '11111111-0000-0000-0000-000000000003', name: 'Bạc xỉu' },
+          {
+            productId: '11111111-0000-0000-0000-000000000003',
+            name: 'Bạc xỉu',
+            available: 0,
+          },
         ]);
       }
 
@@ -502,12 +516,18 @@ describe('Task 11 - Lớp nền API, TypeScript, Mock và Bảng nhãn tiếng V
         imageUrl: '',
       });
       expect(created.id).toBeTruthy();
-      expect(created.stock).toBe(999);
+      expect(created.stock).toBe(50);
       expect(created.isVisible).toBe(true);
       expect(created.imageUrl).toMatch(/^https?:\/\//);
 
       const toggled = await updateProductAvailabilityApi(created.id, false);
       expect(toggled.stock).toBe(0);
+
+      const reEnabled = await updateProductAvailabilityApi(created.id, {
+        isAvailable: true,
+        stock: 25,
+      });
+      expect(reEnabled.stock).toBe(25);
 
       const updated = await updateProductApi(created.id, { isVisible: false });
       expect(updated.isVisible).toBe(false);
@@ -587,7 +607,10 @@ describe('Task 11 - Lớp nền API, TypeScript, Mock và Bảng nhãn tiếng V
         PAYMENT_FAILED: 'Thanh toán lỗi',
         CANCELLED: 'Đã hủy',
       });
-      expect(PAYMENT_METHOD_LABELS.WALLET).toBe('Ví điện tử (ZaloPay/Momo)');
+      expect(PAYMENT_METHOD_LABELS).toEqual({
+        WALLET: 'Ví điện tử (ZaloPay/Momo)',
+        CARD: 'Chuyển khoản ngân hàng',
+      });
       expect(CATEGORY_LABELS).toEqual({
         TEA: 'Trà',
         COFFEE: 'Cà phê',

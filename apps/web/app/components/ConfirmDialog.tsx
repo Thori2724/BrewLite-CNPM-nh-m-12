@@ -3,15 +3,18 @@
 import React, { useEffect, useId, useRef } from 'react';
 
 export interface ConfirmDialogProps {
-  isOpen: boolean;
+  open?: boolean;
+  isOpen?: boolean;
   title: string;
+  message?: React.ReactNode;
   description?: React.ReactNode;
   children?: React.ReactNode;
   confirmLabel?: string;
   cancelLabel?: string;
   processingLabel?: string;
+  loading?: boolean;
   isProcessing?: boolean;
-  variant?: 'danger' | 'primary';
+  variant?: 'danger' | 'primary' | 'default';
   onConfirm: () => void;
   onCancel: () => void;
 }
@@ -20,33 +23,40 @@ const FOCUSABLE_SELECTOR =
   'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 export default function ConfirmDialog({
+  open,
   isOpen,
   title,
+  message,
   description,
   children,
   confirmLabel = 'Xác nhận',
-  cancelLabel = 'Hủy',
+  cancelLabel = 'Quay lại',
   processingLabel = 'Đang xử lý...',
-  isProcessing = false,
-  variant = 'primary',
+  loading,
+  isProcessing,
+  variant = 'default',
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) {
+  const resolvedOpen = open ?? isOpen ?? false;
+  const resolvedMessage = message ?? description;
+  const resolvedLoading = loading ?? isProcessing ?? false;
+
   const titleId = useId();
   const descriptionId = useId();
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const cancelButtonRef = useRef<HTMLButtonElement | null>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
-  const isProcessingRef = useRef(isProcessing);
+  const isProcessingRef = useRef(resolvedLoading);
   const onCancelRef = useRef(onCancel);
 
   useEffect(() => {
-    isProcessingRef.current = isProcessing;
+    isProcessingRef.current = resolvedLoading;
     onCancelRef.current = onCancel;
   });
 
   useEffect(() => {
-    if (!isOpen) return;
+    if (!resolvedOpen) return;
 
     previousFocusRef.current =
       document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -54,7 +64,7 @@ export default function ConfirmDialog({
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
 
-    // Đưa tiêu điểm vào nút an toàn ("Giữ đơn" / "Hủy") khi hộp thoại mở
+    // Đưa tiêu điểm vào nút an toàn ("Quay lại" / "Giữ đơn" / "Đóng") khi hộp thoại mở
     const focusTimer = window.setTimeout(() => {
       if (cancelButtonRef.current && !cancelButtonRef.current.disabled) {
         cancelButtonRef.current.focus();
@@ -112,14 +122,14 @@ export default function ConfirmDialog({
         prevEl.focus();
       }
     };
-  }, [isOpen]);
+  }, [resolvedOpen]);
 
-  if (!isOpen) {
+  if (!resolvedOpen) {
     return null;
   }
 
   const handleBackdropMouseDown = (event: React.MouseEvent<HTMLDivElement>) => {
-    if (event.target === event.currentTarget && !isProcessing) {
+    if (event.target === event.currentTarget && !resolvedLoading) {
       onCancel();
     }
   };
@@ -129,7 +139,7 @@ export default function ConfirmDialog({
       ? 'bg-error hover:bg-error/90 text-bone'
       : 'bg-kombu hover:bg-noir text-bone';
 
-  const hasDescription = Boolean(description || children);
+  const hasDescription = Boolean(resolvedMessage || children);
 
   return (
     <div
@@ -152,7 +162,12 @@ export default function ConfirmDialog({
           </h2>
           {hasDescription && (
             <div id={descriptionId} className="text-sm text-noir/80 space-y-2 leading-relaxed">
-              {description && <p>{description}</p>}
+              {resolvedMessage &&
+                (typeof resolvedMessage === 'string' || typeof resolvedMessage === 'number' ? (
+                  <p>{resolvedMessage}</p>
+                ) : (
+                  <div>{resolvedMessage}</div>
+                ))}
               {children}
             </div>
           )}
@@ -162,7 +177,7 @@ export default function ConfirmDialog({
           <button
             ref={cancelButtonRef}
             type="button"
-            disabled={isProcessing}
+            disabled={resolvedLoading}
             onClick={onCancel}
             className="min-h-10 px-4 py-2 rounded-control border border-tan bg-bone/60 hover:bg-tan/40 text-noir font-semibold text-sm transition disabled:opacity-45 disabled:cursor-not-allowed cursor-pointer"
           >
@@ -170,15 +185,15 @@ export default function ConfirmDialog({
           </button>
           <button
             type="button"
-            disabled={isProcessing}
+            disabled={resolvedLoading}
             onClick={() => {
-              if (!isProcessing) {
+              if (!resolvedLoading) {
                 onConfirm();
               }
             }}
             className={`min-h-10 px-4 py-2 rounded-control font-semibold text-sm transition shadow-soft disabled:opacity-55 disabled:cursor-not-allowed cursor-pointer ${confirmBtnClass}`}
           >
-            {isProcessing ? processingLabel : confirmLabel}
+            {resolvedLoading ? processingLabel : confirmLabel}
           </button>
         </div>
       </div>

@@ -13,10 +13,20 @@ import {
   PaymentResponse,
   StaffUpdatableOrderStatus,
 } from '../services/order-contract';
+import { PROMOTION_ERROR_MESSAGES } from '../services/promotions';
 import { OrderApiError } from '../services/orders';
 import { loadCartFromStorage } from '../utils/cart';
 import { isMockOrdersActive } from './mock-config';
-import { findMockProductById, MOCK_TOPPINGS } from './mock-products';
+import { getMockLoyaltyPoints, recordMockLoyaltyTransaction } from './mock-loyalty';
+import {
+  adjustMockProductStock,
+  findMockProductById,
+  MOCK_TOPPINGS,
+} from './mock-products';
+import {
+  calculatePromotionDiscount,
+  findMockPromotionByCode,
+} from './mock-promotions';
 
 export { isMockOrdersActive };
 
@@ -46,6 +56,11 @@ export const MOCK_SEED_ORDERS: MockOrderRecord[] = [
     status: 'PAID',
     receiveType: 'TAKE_AWAY',
     note: 'Cho xin thêm quai xách giấy',
+    subtotalAmount: 136000,
+    discountAmount: 0,
+    promotionCode: null,
+    pointsUsed: 0,
+    pointsEarned: 13,
     totalAmount: 136000,
     createdAt: '2026-11-05T03:00:00.000Z',
     items: [
@@ -97,6 +112,11 @@ export const MOCK_SEED_ORDERS: MockOrderRecord[] = [
     status: 'PENDING',
     receiveType: 'AT_COUNTER',
     note: null,
+    subtotalAmount: 29000,
+    discountAmount: 0,
+    promotionCode: null,
+    pointsUsed: 0,
+    pointsEarned: 0,
     totalAmount: 29000,
     createdAt: '2026-11-05T04:15:00.000Z',
     items: [
@@ -123,6 +143,11 @@ export const MOCK_SEED_ORDERS: MockOrderRecord[] = [
     status: 'PAYMENT_FAILED',
     receiveType: 'TAKE_AWAY',
     note: 'Gọi điện khi tới sảnh',
+    subtotalAmount: 49000,
+    discountAmount: 0,
+    promotionCode: null,
+    pointsUsed: 0,
+    pointsEarned: 0,
     totalAmount: 49000,
     createdAt: '2026-11-05T05:30:00.000Z',
     items: [
@@ -158,6 +183,11 @@ export const MOCK_SEED_ORDERS: MockOrderRecord[] = [
     status: 'READY',
     receiveType: 'AT_COUNTER',
     note: null,
+    subtotalAmount: 65000,
+    discountAmount: 0,
+    promotionCode: null,
+    pointsUsed: 0,
+    pointsEarned: 6,
     totalAmount: 65000,
     createdAt: '2026-11-05T06:45:00.000Z',
     items: [
@@ -206,6 +236,11 @@ export const MOCK_SEED_ORDERS: MockOrderRecord[] = [
     status: 'PREPARING',
     receiveType: 'AT_COUNTER',
     note: 'Ít đá giúp mình',
+    subtotalAmount: 39000,
+    discountAmount: 0,
+    promotionCode: null,
+    pointsUsed: 0,
+    pointsEarned: 3,
     totalAmount: 39000,
     createdAt: '2026-11-05T07:10:00.000Z',
     items: [
@@ -241,6 +276,11 @@ export const MOCK_SEED_ORDERS: MockOrderRecord[] = [
     status: 'COMPLETED',
     receiveType: 'TAKE_AWAY',
     note: null,
+    subtotalAmount: 35000,
+    discountAmount: 0,
+    promotionCode: null,
+    pointsUsed: 0,
+    pointsEarned: 3,
     totalAmount: 35000,
     createdAt: '2026-11-05T08:00:00.000Z',
     items: [
@@ -276,6 +316,11 @@ export const MOCK_SEED_ORDERS: MockOrderRecord[] = [
     status: 'CANCELLED',
     receiveType: 'AT_COUNTER',
     note: 'Đổi ý không đặt nữa',
+    subtotalAmount: 30000,
+    discountAmount: 0,
+    promotionCode: null,
+    pointsUsed: 0,
+    pointsEarned: 3,
     totalAmount: 30000,
     createdAt: '2026-11-05T08:30:00.000Z',
     items: [
@@ -337,7 +382,14 @@ export function loadMockDatabaseFromStorage(): void {
 
     if (parsed.orders && typeof parsed.orders === 'object') {
       for (const [id, order] of Object.entries(parsed.orders)) {
-        mockOrdersDatabase.set(id, order);
+        mockOrdersDatabase.set(id, {
+          ...order,
+          subtotalAmount: order.subtotalAmount ?? order.totalAmount,
+          discountAmount: order.discountAmount ?? 0,
+          promotionCode: order.promotionCode ?? null,
+          pointsUsed: order.pointsUsed ?? 0,
+          pointsEarned: order.pointsEarned ?? 0,
+        });
       }
     }
 
@@ -501,6 +553,7 @@ export async function mockCreateOrder(dto: CreateOrderDto): Promise<OrderRespons
       {
         productId: targetProductId,
         name: targetName,
+        available: 0,
       },
     ];
     const message = `Sản phẩm '${targetName}' hiện đã tạm hết`;
@@ -522,40 +575,55 @@ export async function mockCreateOrder(dto: CreateOrderDto): Promise<OrderRespons
     throw new OrderApiError(0, ORDER_ERROR_MESSAGES.NETWORK_ERROR);
   }
 
-  // 1. Kiểm tra món đang bán (stock <= 0 là tạm hết) - bản 2 chỉ trả productId và name
-  const outOfStockDetails: OutOfStockDetail[] = [];
+  // 1. Gộp số lượng theo từng productId và kiểm tra tồn kho (mục 5.2 bản 3)
+  const neededByProduct = new Map<string, number>();
   for (const item of dto.items) {
-    if (item.productId === '3') {
+    neededByProduct.set(
+      item.productId,
+      (neededByProduct.get(item.productId) ?? 0) + item.quantity
+    );
+  }
+
+  const outOfStockDetails: OutOfStockDetail[] = [];
+  for (const [productId, neededQty] of neededByProduct.entries()) {
+    if (productId === '3') {
       outOfStockDetails.push({
         productId: '3',
         name: 'Trà đào cam sả',
+        available: 0,
       });
       continue;
     }
-    const product = findMockProductById(item.productId);
-    if (product && product.isVisible && product.stock <= 0) {
+    const product = findMockProductById(productId);
+    if (product && product.isVisible && product.stock < neededQty) {
       outOfStockDetails.push({
         productId: product.id,
         name: product.name,
+        available: product.stock,
       });
     }
   }
 
   if (outOfStockDetails.length > 0) {
-    const message = `Sản phẩm '${outOfStockDetails[0].name}' hiện đã tạm hết`;
+    const first = outOfStockDetails[0];
+    const message =
+      first.available === 0
+        ? `Sản phẩm '${first.name}' hiện đã tạm hết`
+        : `Sản phẩm '${first.name}' chỉ còn ${first.available}`;
     throw new OrderApiError(409, message, {
       details: outOfStockDetails,
       outOfStockItems: outOfStockDetails.map((d) => d.name),
       errorData: {
         statusCode: 409,
         message,
+        error: 'Conflict',
         details: outOfStockDetails,
       },
     });
   }
 
   // 2. SERVER TỰ TÍNH TIỀN (tuyệt đối không nhận giá từ client)
-  let calculatedTotal = 0;
+  let subtotalAmount = 0;
   const processedItems: OrderItemResponse[] = dto.items.map((item, idx) => {
     const product = resolveMockOrderProduct(item.productId);
     const isCake = product?.category === 'CAKE';
@@ -577,7 +645,7 @@ export async function mockCreateOrder(dto: CreateOrderDto): Promise<OrderRespons
     }
 
     const lineTotal = unitPrice * item.quantity;
-    calculatedTotal += lineTotal;
+    subtotalAmount += lineTotal;
 
     return {
       id: `item-${Date.now()}-${idx}`,
@@ -594,17 +662,63 @@ export async function mockCreateOrder(dto: CreateOrderDto): Promise<OrderRespons
     };
   });
 
+  // 3. Áp mã giảm giá (nếu có promotionCode)
+  let discountAmount = 0;
+  let promotionCode: string | null = null;
+  if (dto.promotionCode && dto.promotionCode.trim()) {
+    const foundPromo = findMockPromotionByCode(dto.promotionCode);
+    if (!foundPromo) {
+      throw new OrderApiError(404, PROMOTION_ERROR_MESSAGES.NOT_FOUND);
+    }
+    if (!foundPromo.isActive) {
+      throw new OrderApiError(409, PROMOTION_ERROR_MESSAGES.INACTIVE);
+    }
+    discountAmount = calculatePromotionDiscount(foundPromo, subtotalAmount);
+    promotionCode = foundPromo.code;
+  }
+
+  // 4. Áp điểm thưởng (nếu usePoints = true)
+  let pointsUsed = 0;
+  if (dto.usePoints) {
+    const availablePoints = getMockLoyaltyPoints();
+    const maxUsable = Math.max(0, Math.floor((subtotalAmount - discountAmount - 1000) / 1000));
+    pointsUsed = Math.min(availablePoints, maxUsable);
+  }
+
+  const totalAmount = Math.max(1000, subtotalAmount - discountAmount - pointsUsed * 1000);
+
+  // 5. Trừ kho và trừ điểm sau khi kiểm tra mọi điều kiện thành công
+  for (const [productId, neededQty] of neededByProduct.entries()) {
+    const product = findMockProductById(productId);
+    if (product && product.isVisible) {
+      adjustMockProductStock(product.id, -neededQty);
+    }
+  }
+
   mockLastOrderNumber += 1;
   const orderNumber = mockLastOrderNumber;
   const orderId = `order-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+
+  if (pointsUsed > 0) {
+    recordMockLoyaltyTransaction({
+      type: 'REDEEM',
+      points: -pointsUsed,
+      orderNumber,
+    });
+  }
 
   const orderRecord: MockOrderRecord = {
     id: orderId,
     orderNumber,
     status: 'PENDING',
     receiveType: dto.receiveType || 'AT_COUNTER',
-    note: dto.note,
-    totalAmount: calculatedTotal,
+    note: dto.note ?? null,
+    subtotalAmount,
+    discountAmount,
+    promotionCode,
+    pointsUsed,
+    pointsEarned: 0,
+    totalAmount,
     createdAt: new Date().toISOString(),
     items: processedItems,
     payments: [],
@@ -649,6 +763,16 @@ export async function mockPayOrder(
     throw new OrderApiError(0, ORDER_ERROR_MESSAGES.NETWORK_ERROR);
   }
 
+  if (actualDto.method !== 'WALLET' && actualDto.method !== 'CARD') {
+    throw new OrderApiError(400, 'Phương thức thanh toán không hợp lệ', {
+      errorData: {
+        statusCode: 400,
+        message: ['method must be one of WALLET, CARD'],
+        error: 'Bad Request',
+      },
+    });
+  }
+
   // 1. Kiểm tra tài khoản mô phỏng đặc biệt
   const cleanNumber = (actualDto.accountNumber || '').replace(/[\s-]+/g, '');
   if (cleanNumber === '9999999991') {
@@ -665,7 +789,7 @@ export async function mockPayOrder(
       // Cùng key nhưng khác orderId -> 409 Conflict
       throw new OrderApiError(409, ORDER_ERROR_MESSAGES.IDEMPOTENCY_MISMATCH);
     }
-    // Cùng key + cùng orderId -> Luôn trả 200 với kết quả cũ
+    // Cùng key + cùng orderId -> Luôn trả 200 với kết quả cũ (không cộng điểm lần nữa)
     return existingPayment;
   }
 
@@ -699,6 +823,7 @@ export async function mockPayOrder(
         id: order.id,
         orderNumber: order.orderNumber,
         status: 'PAYMENT_FAILED',
+        pointsEarned: 0,
       },
     };
 
@@ -717,8 +842,18 @@ export async function mockPayOrder(
     return failedPayment;
   }
 
-  // 6. THANH TOÁN THÀNH CÔNG (201 status: 'SUCCESS')
+  // 6. THANH TOÁN THÀNH CÔNG (201 status: 'SUCCESS') -> cộng điểm trong cùng giao dịch
+  const pointsEarned = Math.floor(order.totalAmount / 10000);
   order.status = 'PAID';
+  order.pointsEarned = pointsEarned;
+  if (pointsEarned > 0) {
+    recordMockLoyaltyTransaction({
+      type: 'EARN',
+      points: pointsEarned,
+      orderNumber: order.orderNumber,
+    });
+  }
+
   const successPayment: PaymentResponse = {
     id: `pay-${Date.now()}`,
     orderId,
@@ -731,6 +866,7 @@ export async function mockPayOrder(
       id: order.id,
       orderNumber: order.orderNumber,
       status: 'PAID',
+      pointsEarned,
     },
   };
 
@@ -747,6 +883,60 @@ export async function mockPayOrder(
   mockPaymentsDatabase.set(idempotencyKey, successPayment);
   persistMockDatabaseToStorage();
   return successPayment;
+}
+
+function toMockOrderSummary(order: MockOrderRecord, includeCustomer = false): OrderResponse {
+  return {
+    id: order.id,
+    orderNumber: order.orderNumber,
+    status: order.status,
+    receiveType: order.receiveType,
+    note: order.note ?? null,
+    subtotalAmount: order.subtotalAmount,
+    discountAmount: order.discountAmount,
+    promotionCode: order.promotionCode ?? null,
+    pointsUsed: order.pointsUsed,
+    pointsEarned: order.pointsEarned,
+    totalAmount: order.totalAmount,
+    createdAt: order.createdAt,
+    items: order.items,
+    ...(includeCustomer ? { customer: order.customer ?? MOCK_DEFAULT_CUSTOMER } : {}),
+  };
+}
+
+/**
+ * Hàm hủy đơn dùng chung cho mockCancelOrder và mockUpdateOrderStatus (khi CANCELLED)
+ * theo mục 5.9 hợp đồng API bản 3: hoàn kho, hoàn điểm đã dùng, thu hồi điểm đã cộng.
+ */
+function applySharedMockOrderCancellation(order: MockOrderRecord): void {
+  const qtyByProduct = new Map<string, number>();
+  for (const item of order.items) {
+    qtyByProduct.set(item.productId, (qtyByProduct.get(item.productId) ?? 0) + item.quantity);
+  }
+  for (const [productId, qty] of qtyByProduct.entries()) {
+    adjustMockProductStock(productId, qty);
+  }
+
+  if (order.pointsUsed > 0) {
+    recordMockLoyaltyTransaction({
+      type: 'REFUND',
+      points: order.pointsUsed,
+      orderNumber: order.orderNumber,
+    });
+  }
+
+  if (order.pointsEarned > 0) {
+    const revokeAmount = Math.min(order.pointsEarned, getMockLoyaltyPoints());
+    if (revokeAmount > 0) {
+      recordMockLoyaltyTransaction({
+        type: 'REVOKE',
+        points: -revokeAmount,
+        orderNumber: order.orderNumber,
+      });
+    }
+  }
+
+  order.status = 'CANCELLED';
 }
 
 /**
@@ -810,17 +1000,8 @@ export async function mockGetMyOrders(): Promise<OrderResponse[]> {
     return b.orderNumber - a.orderNumber;
   });
 
-  // Trả về danh sách theo đúng hợp đồng GET /orders/me (mục 2.8)
-  return allOrders.map((order) => ({
-    id: order.id,
-    orderNumber: order.orderNumber,
-    status: order.status,
-    receiveType: order.receiveType,
-    note: order.note ?? null,
-    totalAmount: order.totalAmount,
-    createdAt: order.createdAt,
-    items: order.items,
-  }));
+  // Trả về danh sách theo đúng hợp đồng GET /orders/me (mục 5.1 & 5.3)
+  return allOrders.map((order) => toMockOrderSummary(order, false));
 }
 
 const ALL_ORDER_STATUSES: OrderStatus[] = [
@@ -841,7 +1022,7 @@ const STAFF_UPDATABLE_STATUSES: StaffUpdatableOrderStatus[] = [
 ];
 
 /**
- * Quy tắc chuyển trạng thái đơn hàng theo mục 5.7 & 5.8 hợp đồng API bản 2.
+ * Quy tắc chuyển trạng thái đơn hàng theo mục 5.7 & 5.8 hợp đồng API bản 3.
  */
 export function validateOrderTransition(
   fromStatus: OrderStatus,
@@ -897,17 +1078,7 @@ export async function mockGetAllOrders(
     return b.orderNumber - a.orderNumber;
   });
 
-  return allOrders.map((order) => ({
-    id: order.id,
-    orderNumber: order.orderNumber,
-    status: order.status,
-    receiveType: order.receiveType,
-    note: order.note ?? null,
-    totalAmount: order.totalAmount,
-    createdAt: order.createdAt,
-    items: order.items,
-    customer: order.customer ?? MOCK_DEFAULT_CUSTOMER,
-  }));
+  return allOrders.map((order) => toMockOrderSummary(order, true));
 }
 
 /**
@@ -954,20 +1125,14 @@ export async function mockUpdateOrderStatus(
     });
   }
 
-  order.status = nextStatus;
+  if (nextStatus === 'CANCELLED') {
+    applySharedMockOrderCancellation(order);
+  } else {
+    order.status = nextStatus;
+  }
   persistMockDatabaseToStorage();
 
-  return {
-    id: order.id,
-    orderNumber: order.orderNumber,
-    status: order.status,
-    receiveType: order.receiveType,
-    note: order.note ?? null,
-    totalAmount: order.totalAmount,
-    createdAt: order.createdAt,
-    items: order.items,
-    customer: order.customer ?? MOCK_DEFAULT_CUSTOMER,
-  };
+  return toMockOrderSummary(order, true);
 }
 
 /**
@@ -1003,17 +1168,8 @@ export async function mockCancelOrder(orderId: string): Promise<OrderResponse> {
     });
   }
 
-  order.status = 'CANCELLED';
+  applySharedMockOrderCancellation(order);
   persistMockDatabaseToStorage();
 
-  return {
-    id: order.id,
-    orderNumber: order.orderNumber,
-    status: order.status,
-    receiveType: order.receiveType,
-    note: order.note ?? null,
-    totalAmount: order.totalAmount,
-    createdAt: order.createdAt,
-    items: order.items,
-  };
+  return toMockOrderSummary(order, false);
 }
