@@ -471,7 +471,7 @@ describe('Staff & Role Management Integration (10B)', () => {
     await request(app.getHttpServer())
       .patch(`/products/${PRODUCT_DRINK_ID}/availability`)
       .set('Authorization', `Bearer ${staffToken}`)
-      .send({ isAvailable: true })
+      .send({ isAvailable: true, stock: 50 })
       .expect(200);
 
     await request(app.getHttpServer())
@@ -502,7 +502,7 @@ describe('Staff & Role Management Integration (10B)', () => {
     await request(app.getHttpServer())
       .patch(`/products/${PRODUCT_DRINK_ID}/availability`)
       .set('Authorization', `Bearer ${adminToken}`)
-      .send({ isAvailable: true })
+      .send({ isAvailable: true, stock: 80 })
       .expect(200);
 
     const createdProdRes = await request(app.getHttpServer())
@@ -515,8 +515,53 @@ describe('Staff & Role Management Integration (10B)', () => {
       })
       .expect(201);
 
+    expect(createdProdRes.body).toMatchObject({
+      name: 'Bánh mới Admin 10B',
+      category: Category.CAKE,
+      basePrice: 32000,
+      stock: 50,
+      isVisible: true,
+    });
+
     const createdProdId = (createdProdRes.body as { id: string }).id;
     suiteProductIds.add(createdProdId);
+
+    const createdWithStockRes = await request(app.getHttpServer())
+      .post('/products')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        name: 'Bánh có stock tùy chọn 10B',
+        category: Category.CAKE,
+        basePrice: 35000,
+        stock: 15,
+      })
+      .expect(201);
+
+    expect(createdWithStockRes.body).toMatchObject({
+      name: 'Bánh có stock tùy chọn 10B',
+      category: Category.CAKE,
+      basePrice: 35000,
+      stock: 15,
+      isVisible: true,
+    });
+    suiteProductIds.add((createdWithStockRes.body as { id: string }).id);
+
+    for (const invalidCreateStock of [-1, 10000, 12.5, '50']) {
+      const badCreateRes = await request(app.getHttpServer())
+        .post('/products')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({
+          name: 'Món stock lỗi',
+          category: Category.TEA,
+          basePrice: 30000,
+          stock: invalidCreateStock,
+        })
+        .expect(400);
+
+      expect(
+        Array.isArray((badCreateRes.body as { message: unknown }).message),
+      ).toBe(true);
+    }
 
     await request(app.getHttpServer())
       .patch(`/products/${createdProdId}`)
@@ -1003,8 +1048,8 @@ describe('Staff & Role Management Integration (10B)', () => {
     });
   });
 
-  it('5. Gạt bán/hết & Quản lý món: PATCH /products/:id/availability false -> stock = 0 (POST /orders bị 409), true -> stock = 999; GET /products/manage thấy cả món ẩn', async () => {
-    // 5.1 Gạt isAvailable = false -> stock = 0
+  it('5. Gạt bán/hết & Quản lý món: PATCH /products/:id/availability false -> stock = 0 (kể cả khi gửi kèm stock, POST /orders bị 409), true kèm stock -> đặt đúng stock (thiếu/sai stock -> 400); GET /products/manage thấy cả món ẩn', async () => {
+    // 5.1 Gạt isAvailable = false (kể cả không kèm hay kèm stock) -> stock = 0
     const offRes = await request(app.getHttpServer())
       .patch(`/products/${PRODUCT_DRINK_ID}/availability`)
       .set('Authorization', `Bearer ${staffToken}`)
@@ -1012,6 +1057,18 @@ describe('Staff & Role Management Integration (10B)', () => {
       .expect(200);
 
     expect(offRes.body).toMatchObject({
+      id: PRODUCT_DRINK_ID,
+      stock: 0,
+      isVisible: true,
+    });
+
+    const offWithStockRes = await request(app.getHttpServer())
+      .patch(`/products/${PRODUCT_DRINK_ID}/availability`)
+      .set('Authorization', `Bearer ${staffToken}`)
+      .send({ isAvailable: false, stock: 75 })
+      .expect(200);
+
+    expect(offWithStockRes.body).toMatchObject({
       id: PRODUCT_DRINK_ID,
       stock: 0,
       isVisible: true,
@@ -1039,16 +1096,36 @@ describe('Staff & Role Management Integration (10B)', () => {
       ],
     });
 
-    // 5.3 Gạt isAvailable = true -> stock = 999, đặt lại đơn thành công (201)
+    // 5.2b Gạt isAvailable = true nhưng thiếu stock, stock = 0, stock = 10000, stock không nguyên -> 400
+    for (const invalidBody of [
+      { isAvailable: true },
+      { isAvailable: true, stock: 0 },
+      { isAvailable: true, stock: 10000 },
+      { isAvailable: true, stock: 15.5 },
+      { isAvailable: true, stock: '20' },
+      { isAvailable: 'true', stock: 20 },
+    ]) {
+      const badAvailRes = await request(app.getHttpServer())
+        .patch(`/products/${PRODUCT_DRINK_ID}/availability`)
+        .set('Authorization', `Bearer ${staffToken}`)
+        .send(invalidBody)
+        .expect(400);
+
+      expect(
+        Array.isArray((badAvailRes.body as { message: unknown }).message),
+      ).toBe(true);
+    }
+
+    // 5.3 Gạt isAvailable = true kèm stock = 35 -> stock = 35 (không cộng dồn), đặt lại đơn thành công (201)
     const onRes = await request(app.getHttpServer())
       .patch(`/products/${PRODUCT_DRINK_ID}/availability`)
       .set('Authorization', `Bearer ${staffToken}`)
-      .send({ isAvailable: true })
+      .send({ isAvailable: true, stock: 35 })
       .expect(200);
 
     expect(onRes.body).toMatchObject({
       id: PRODUCT_DRINK_ID,
-      stock: 999,
+      stock: 35,
       isVisible: true,
     });
 

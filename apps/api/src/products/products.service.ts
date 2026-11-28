@@ -131,6 +131,7 @@ export class ProductsService {
   async create(dto: CreateProductDto) {
     const trimmedImageUrl = dto.imageUrl?.trim();
     const imageUrl = trimmedImageUrl || DEFAULT_PRODUCT_IMAGE_URL;
+    const stock = dto.stock ?? 50;
 
     return this.prisma.product.create({
       data: {
@@ -138,7 +139,7 @@ export class ProductsService {
         category: dto.category,
         basePrice: dto.basePrice,
         imageUrl,
-        stock: 999,
+        stock,
         isVisible: true,
       },
       select: {
@@ -206,7 +207,26 @@ export class ProductsService {
     });
   }
 
-  async updateAvailability(id: string, isAvailable: boolean) {
+  async updateAvailability(id: string, isAvailable: boolean, stock?: number) {
+    if (typeof isAvailable !== 'boolean') {
+      throw new BadRequestException(['isAvailable must be a boolean value']);
+    }
+
+    if (isAvailable) {
+      if (
+        typeof stock !== 'number' ||
+        !Number.isInteger(stock) ||
+        stock < 1 ||
+        stock > 9999
+      ) {
+        throw new BadRequestException([
+          'stock must not be greater than 9999',
+          'stock must not be less than 1',
+          'stock must be an integer number',
+        ]);
+      }
+    }
+
     if (!UUID_REGEX.test(id)) {
       throw new NotFoundException(PRODUCT_NOT_FOUND_MESSAGE);
     }
@@ -223,7 +243,7 @@ export class ProductsService {
     return this.prisma.product.update({
       where: { id },
       data: {
-        stock: isAvailable ? 999 : 0,
+        stock: isAvailable ? stock! : 0,
       },
       select: {
         id: true,
