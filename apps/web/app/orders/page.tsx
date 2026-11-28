@@ -377,6 +377,23 @@ function OrdersHistoryContent() {
               order.status === 'PENDING' || order.status === 'PAYMENT_FAILED';
             const canCancel = isOrderCancellable(order.status);
             const isCancellingThis = cancellingOrderId === order.id;
+            const promoCode =
+              typeof order.promotionCode === 'string' && order.promotionCode.trim()
+                ? order.promotionCode.trim()
+                : null;
+            const discountAmount =
+              typeof order.discountAmount === 'number' && Number.isFinite(order.discountAmount)
+                ? order.discountAmount
+                : 0;
+            const pointsUsed =
+              typeof order.pointsUsed === 'number' && Number.isFinite(order.pointsUsed)
+                ? order.pointsUsed
+                : 0;
+            const hasPromoOrPoints = Boolean(
+              promoCode || discountAmount > 0 || pointsUsed > 0
+            );
+            const showPointsRefundNotice =
+              order.status === 'CANCELLED' && pointsUsed > 0;
 
             return (
               <div
@@ -409,9 +426,46 @@ function OrdersHistoryContent() {
                 </Link>
 
                 <div className="pt-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                  <p className="text-sm text-noir/75 font-medium line-clamp-2 sm:line-clamp-1 break-words">
-                    {summarizeOrderItems(order.items)}
-                  </p>
+                  <div className="min-w-0 space-y-1.5">
+                    <p className="text-sm text-noir/75 font-medium line-clamp-2 sm:line-clamp-1 break-words">
+                      {summarizeOrderItems(order.items)}
+                    </p>
+
+                    {(hasPromoOrPoints || showPointsRefundNotice) && (
+                      <div
+                        data-testid={`order-card-loyalty-${order.orderNumber}`}
+                        className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-noir/75"
+                      >
+                        {promoCode && (
+                          <span>
+                            Mã đã dùng: <strong className="text-kombu">{promoCode}</strong>
+                          </span>
+                        )}
+                        {discountAmount > 0 && (
+                          <span>
+                            Tiền giảm:{' '}
+                            <strong className="text-kombu">
+                              -{formatVndPrice(discountAmount)}
+                            </strong>
+                          </span>
+                        )}
+                        {pointsUsed > 0 && (
+                          <span>
+                            Điểm đã dùng:{' '}
+                            <strong className="text-kombu">{pointsUsed} điểm</strong>
+                          </span>
+                        )}
+                        {showPointsRefundNotice && (
+                          <span
+                            data-testid={`order-card-points-refund-${order.orderNumber}`}
+                            className="inline-flex items-center rounded-control border border-moss/45 bg-moss/15 px-2 py-0.5 font-semibold text-kombu"
+                          >
+                            Đã hoàn lại {pointsUsed} điểm
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </div>
 
                   <div className="flex items-center justify-between sm:justify-end gap-3 shrink-0 flex-wrap">
                     <span className="font-display text-base sm:text-lg font-bold text-kombu">

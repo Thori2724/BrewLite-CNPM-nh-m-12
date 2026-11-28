@@ -16,11 +16,13 @@ import {
 } from '../../../utils/auth';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import StaffProductFormModal from './StaffProductFormModal';
+import StaffProductStockModal from './StaffProductStockModal';
 import {
   fetchStaffProducts,
   formatStaffProductVnd,
   ParsedStaffProductError,
   parseStaffProductError,
+  parseStaffProductStockError,
   STAFF_PRODUCT_FALLBACK_IMAGE,
   updateStaffProductAvailability,
   updateStaffProductVisibility,
@@ -67,6 +69,11 @@ export default function StaffProductsView({
   const [updatingAction, setUpdatingAction] = useState<
     'availability' | 'hide' | 'show' | null
   >(null);
+  const [disableTargetProduct, setDisableTargetProduct] = useState<ProductManage | null>(null);
+  const [stockModalState, setStockModalState] = useState<{
+    mode: 'enable' | 'edit';
+    product: ProductManage;
+  } | null>(null);
   const [hideTargetProduct, setHideTargetProduct] = useState<ProductManage | null>(null);
   const [formState, setFormState] = useState<{
     mode: 'create' | 'edit';
@@ -205,23 +212,39 @@ export default function StaffProductsView({
     );
   };
 
-  const handleToggleAvailability = async (product: ProductManage) => {
+  const handleToggleAvailabilityClick = (product: ProductManage) => {
     if (actionInFlightRef.current || updatingProductId !== null) return;
 
-    const nextAvailable = product.stock <= 0;
+    setActionFeedback(null);
+    if (product.stock > 0) {
+      setDisableTargetProduct(product);
+      return;
+    }
+
+    setStockModalState({ mode: 'enable', product });
+  };
+
+  const handleCloseDisableDialog = () => {
+    if (actionInFlightRef.current || updatingProductId !== null) return;
+    setDisableTargetProduct(null);
+  };
+
+  const runDisableAvailability = async (product: ProductManage) => {
+    if (actionInFlightRef.current) return;
+
     actionInFlightRef.current = true;
     setUpdatingProductId(product.id);
     setUpdatingAction('availability');
-    setActionFeedback(null);
 
     try {
       const updated = await updateStaffProductAvailability(
         product.id,
-        nextAvailable,
+        false,
         usingShellMockFallback
       );
       if (!isMountedRef.current) return;
 
+      setDisableTargetProduct(null);
       applyUpdatedProduct(updated);
       const statusText =
         updated.stock > 0
@@ -233,7 +256,9 @@ export default function StaffProductsView({
       });
     } catch (err: unknown) {
       if (!isMountedRef.current) return;
-      const parsed = parseStaffProductError(err);
+      const parsed = parseStaffProductStockError(err);
+
+      setDisableTargetProduct(null);
 
       if (handleAuthFailureRef.current(parsed)) {
         setError(parsed.message);
@@ -244,6 +269,83 @@ export default function StaffProductsView({
       if (parsed.isNotFound) {
         await runReloadProducts({ showFullLoading: false, keepFeedback: true });
       }
+    } finally {
+      actionInFlightRef.current = false;
+      if (isMountedRef.current) {
+        setUpdatingProductId(null);
+        setUpdatingAction(null);
+      }
+    }
+  };
+
+  const handleOpenEditStockModal = (product: ProductManage) => {
+    if (
+      actionInFlightRef.current ||
+      updatingProductId !== null ||
+      product.stock <= 0
+    ) {
+      return;
+    }
+    setActionFeedback(null);
+    setStockModalState({ mode: 'edit', product });
+  };
+
+  const handleCloseStockModal = () => {
+    if (actionInFlightRef.current || updatingProductId !== null) return;
+    setStockModalState(null);
+  };
+
+  const handleSubmitStockUpdate = async (
+    stock: number
+  ): Promise<{ fieldError?: string } | void> => {
+    const currentModal = stockModalState;
+    if (!currentModal || actionInFlightRef.current) return;
+
+    const { mode, product } = currentModal;
+    actionInFlightRef.current = true;
+    setUpdatingProductId(product.id);
+    setUpdatingAction('availability');
+    setActionFeedback(null);
+
+    try {
+      const updated = await updateStaffProductAvailability(
+        product.id,
+        true,
+        usingShellMockFallback,
+        stock
+      );
+      if (!isMountedRef.current) return;
+
+      setStockModalState(null);
+      applyUpdatedProduct(updated);
+      setActionFeedback({
+        type: 'success',
+        message:
+          mode === 'enable'
+            ? `Đã mở bán lại "${updated.name}" với số lượng còn lại ${updated.stock}.`
+            : `Đã cập nhật số lượng còn lại của "${updated.name}" thành ${updated.stock}.`,
+      });
+      return;
+    } catch (err: unknown) {
+      if (!isMountedRef.current) return;
+      const parsed = parseStaffProductStockError(err);
+
+      if (handleAuthFailureRef.current(parsed)) {
+        setStockModalState(null);
+        setError(parsed.message);
+        return;
+      }
+
+      if (parsed.statusCode === 400) {
+        return { fieldError: parsed.message };
+      }
+
+      setStockModalState(null);
+      setActionFeedback({ type: 'error', message: parsed.message });
+      if (parsed.isNotFound) {
+        await runReloadProducts({ showFullLoading: false, keepFeedback: true });
+      }
+      return;
     } finally {
       actionInFlightRef.current = false;
       if (isMountedRef.current) {
@@ -498,6 +600,9 @@ export default function StaffProductsView({
                   <th scope="col" className="px-5 py-3.5 whitespace-nowrap text-right">
                     Giá
                   </th>
+                  <th scope="col" className="px-5 py-3.5 whitespace-nowrap text-right">
+                    Còn lại
+                  </th>
                   <th scope="col" className="px-5 py-3.5 whitespace-nowrap">
                     Trạng thái
                   </th>
@@ -558,6 +663,30 @@ export default function StaffProductsView({
                         {formatStaffProductVnd(product.basePrice)}
                       </td>
 
+                      <td className="px-5 py-3.5 whitespace-nowrap text-right">
+                        <div className="inline-flex items-center justify-end gap-2">
+                          <span
+                            data-testid={`staff-product-stock-${product.id}`}
+                            className={`tabular-nums font-bold ${
+                              product.stock <= 5 ? 'text-error' : 'text-noir'
+                            }`}
+                          >
+                            {product.stock}
+                          </span>
+
+                          {isAvailable && (
+                            <button
+                              type="button"
+                              disabled={isAnyUpdating}
+                              onClick={() => handleOpenEditStockModal(product)}
+                              className="px-2.5 py-1 rounded-control border border-tan bg-bone/70 hover:bg-tan/50 text-xs font-semibold text-noir transition disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                            >
+                              Sửa số lượng
+                            </button>
+                          )}
+                        </div>
+                      </td>
+
                       <td className="px-5 py-3.5 whitespace-nowrap">
                         <div className="inline-flex flex-wrap items-center gap-1.5">
                           <span
@@ -589,7 +718,7 @@ export default function StaffProductsView({
                             aria-label={`Chuyển trạng thái bán cho ${product.name}`}
                             disabled={isAnyUpdating}
                             onClick={() => {
-                              void handleToggleAvailability(product);
+                              handleToggleAvailabilityClick(product);
                             }}
                             className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full border transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-moss disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer ${
                               isAvailable
@@ -658,6 +787,37 @@ export default function StaffProductsView({
           </div>
         </div>
       )}
+
+      {/* Hộp xác nhận chuyển sang Tạm hết (dùng lại ConfirmDialog) */}
+      <ConfirmDialog
+        isOpen={Boolean(disableTargetProduct)}
+        title={
+          disableTargetProduct
+            ? `Chuyển "${disableTargetProduct.name}" sang Tạm hết?`
+            : ''
+        }
+        description="Số lượng còn lại sẽ về 0 và khách sẽ không thể đặt món này cho đến khi mở bán lại."
+        cancelLabel="Đóng"
+        confirmLabel="Xác nhận tạm hết"
+        processingLabel="Đang lưu..."
+        variant="danger"
+        isProcessing={updatingProductId !== null}
+        onCancel={handleCloseDisableDialog}
+        onConfirm={() => {
+          if (disableTargetProduct) {
+            void runDisableAvailability(disableTargetProduct);
+          }
+        }}
+      />
+
+      {/* Hộp nhập / sửa số lượng còn lại */}
+      <StaffProductStockModal
+        isOpen={Boolean(stockModalState)}
+        mode={stockModalState?.mode ?? 'enable'}
+        product={stockModalState?.product ?? null}
+        onClose={handleCloseStockModal}
+        onSubmit={handleSubmitStockUpdate}
+      />
 
       {/* Hộp xác nhận ẩn món */}
       <ConfirmDialog

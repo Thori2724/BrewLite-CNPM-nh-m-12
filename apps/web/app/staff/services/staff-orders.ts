@@ -8,6 +8,7 @@ import {
 } from '../../../services/order-contract';
 import { getAllOrdersApi, updateOrderStatusApi } from '../../../services/orders';
 import { isAccountLockedError } from '../../../utils/auth';
+import { POINT_VALUE_VND } from '../../../utils/checkout';
 import {
   getMockStaffOrders,
   isStaffOrdersMockEnabled,
@@ -31,6 +32,39 @@ export const STAFF_ORDER_FILTER_OPTIONS: StaffOrderFilterOption[] = [
   { value: 'PAYMENT_FAILED', label: ORDER_STATUS_LABELS.PAYMENT_FAILED },
   { value: 'CANCELLED', label: ORDER_STATUS_LABELS.CANCELLED },
 ];
+
+export interface StaffOrderButtonState {
+  enabled: boolean;
+  reason: string;
+}
+
+export interface StaffOrderActionStates {
+  detail: StaffOrderButtonState;
+  advance: StaffOrderButtonState & {
+    nextStatus: StaffUpdatableOrderStatus | null;
+  };
+  cancel: StaffOrderButtonState;
+}
+
+const ADVANCE_DISABLED_REASONS: Record<
+  Exclude<OrderStatus, 'PAID' | 'PREPARING' | 'READY'>,
+  string
+> = {
+  PENDING: 'Đơn chưa thanh toán, chưa thể chuyển bước',
+  PAYMENT_FAILED: 'Đơn thanh toán lỗi, chưa thể chuyển bước',
+  COMPLETED: 'Đơn đã hoàn thành, không thể chuyển bước',
+  CANCELLED: 'Đơn đã hủy, không thể chuyển bước',
+};
+
+const CANCEL_DISABLED_REASONS: Record<
+  Exclude<OrderStatus, 'PENDING' | 'PAYMENT_FAILED' | 'PAID'>,
+  string
+> = {
+  PREPARING: 'Đơn đã vào pha chế, không thể hủy',
+  READY: 'Đơn đã sẵn sàng nhận, không thể hủy',
+  COMPLETED: 'Đơn đã hoàn thành, không thể hủy',
+  CANCELLED: 'Đơn đã hủy, không thể hủy lại',
+};
 
 /**
  * Thứ tự chuyển bước hợp lệ cho nút "Chuyển sang bước tiếp theo":
@@ -61,11 +95,123 @@ export function canStaffCancelOrder(status: OrderStatus): boolean {
 }
 
 /**
+ * Hàm thuần xác định trạng thái bật/tắt và chú thích tiếng Việt của 3 nút
+ * ("Chi tiết", "Chuyển sang bước tiếp theo", "Hủy đơn") theo mục 5.7 và 5.8 hợp đồng.
+ */
+export function getStaffOrderActionStates(
+  status: OrderStatus
+): StaffOrderActionStates {
+  const nextStatus = getNextStaffOrderStatus(status);
+  const canCancel = canStaffCancelOrder(status);
+
+  const advance: StaffOrderActionStates['advance'] = nextStatus
+    ? {
+        enabled: true,
+        nextStatus,
+        reason: `Chuyển sang: ${ORDER_STATUS_LABELS[nextStatus]}`,
+      }
+    : {
+        enabled: false,
+        nextStatus: null,
+        reason:
+          ADVANCE_DISABLED_REASONS[
+            status as Exclude<OrderStatus, 'PAID' | 'PREPARING' | 'READY'>
+          ] ?? 'Trạng thái hiện tại không thể chuyển bước',
+      };
+
+  const cancel: StaffOrderButtonState = canCancel
+    ? {
+        enabled: true,
+        reason:
+          status === 'PAID'
+            ? 'Hủy đơn đã thanh toán (hoàn tiền mô phỏng)'
+            : 'Hủy đơn hàng',
+      }
+    : {
+        enabled: false,
+        reason:
+          CANCEL_DISABLED_REASONS[
+            status as Exclude<OrderStatus, 'PENDING' | 'PAYMENT_FAILED' | 'PAID'>
+          ] ?? 'Trạng thái hiện tại không thể hủy',
+      };
+
+  return {
+    detail: {
+      enabled: true,
+      reason: 'Xem chi tiết đơn hàng',
+    },
+    advance,
+    cancel,
+  };
+}
+
+/**
  * Định dạng số nguyên VND nhất quán theo quy ước dự án (ví dụ 136000 -> "136.000đ").
  */
 export function formatStaffVnd(amount: number): string {
   const safe = Number.isFinite(amount) ? Math.max(0, Math.round(amount)) : 0;
   return `${safe.toLocaleString('vi-VN')}đ`;
+}
+
+export interface StaffOrderPaymentSummary {
+  subtotalAmount: number;
+  promotionCode: string | null;
+  showPromotionCode: boolean;
+  discountAmount: number;
+  showDiscount: boolean;
+  pointsUsed: number;
+  showPointsUsed: boolean;
+  pointsDiscountAmount: number;
+  pointsEarned: number;
+  pointsEarnedLabel: string;
+  totalAmount: number;
+}
+
+function toSafeNonNegativeInt(value: unknown, fallback = 0): number {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return Math.max(0, Math.floor(value));
+  }
+  return fallback;
+}
+
+/**
+ * Đọc thẳng các trường tóm tiền & khuyến mãi/điểm từ dữ liệu GET /orders
+ * để hiển thị chỉ-xem ở /staff; xử lý an toàn khi dữ liệu cũ thiếu trường.
+ */
+export function getStaffOrderPaymentSummary(
+  order: Partial<OrderResponse> | null | undefined
+): StaffOrderPaymentSummary {
+  const totalAmount = toSafeNonNegativeInt(order?.totalAmount, 0);
+  const subtotalAmount = toSafeNonNegativeInt(order?.subtotalAmount, totalAmount);
+  const promotionCode =
+    typeof order?.promotionCode === 'string' && order.promotionCode.trim().length > 0
+      ? order.promotionCode.trim()
+      : null;
+  const discountAmount = toSafeNonNegativeInt(order?.discountAmount, 0);
+  const pointsUsed = toSafeNonNegativeInt(order?.pointsUsed, 0);
+  const pointsDiscountAmount = pointsUsed * POINT_VALUE_VND;
+  const pointsEarned = toSafeNonNegativeInt(order?.pointsEarned, 0);
+  const isUnpaidOrder = order?.status === 'PENDING' || order?.status === 'PAYMENT_FAILED';
+  const pointsEarnedLabel =
+    pointsEarned > 0
+      ? `+${pointsEarned} điểm`
+      : isUnpaidOrder
+        ? 'Chưa cộng'
+        : '0 điểm';
+
+  return {
+    subtotalAmount,
+    promotionCode,
+    showPromotionCode: promotionCode !== null,
+    discountAmount,
+    showDiscount: discountAmount > 0,
+    pointsUsed,
+    showPointsUsed: pointsUsed > 0,
+    pointsDiscountAmount,
+    pointsEarned,
+    pointsEarnedLabel,
+    totalAmount,
+  };
 }
 
 export async function fetchStaffOrders(

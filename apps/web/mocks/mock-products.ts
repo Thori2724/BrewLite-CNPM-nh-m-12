@@ -87,7 +87,7 @@ export const MOCK_SEED_MANAGE_PRODUCTS: ProductManage[] = [
     category: 'MILK_TEA',
     basePrice: 35000,
     imageUrl: 'https://images.unsplash.com/photo-1558857563-b371033873b8?w=500',
-    stock: 40,
+    stock: 5,
     isVisible: true,
   },
   {
@@ -96,7 +96,7 @@ export const MOCK_SEED_MANAGE_PRODUCTS: ProductManage[] = [
     category: 'CAKE',
     basePrice: 30000,
     imageUrl: 'https://images.unsplash.com/photo-1555507036-ab1f4038808a?w=500',
-    stock: 20,
+    stock: 3,
     isVisible: true,
   },
   {

@@ -234,6 +234,15 @@ export function isStaffEmployeesPath(pathname: string): boolean {
   return path === '/staff/employees' || path.startsWith('/staff/employees/');
 }
 
+export function isStaffPromotionsPath(pathname: string): boolean {
+  const path = extractPathname(pathname);
+  return path === '/staff/promotions' || path.startsWith('/staff/promotions/');
+}
+
+function isAdminOnlyStaffPath(pathname: string): boolean {
+  return isStaffEmployeesPath(pathname) || isStaffPromotionsPath(pathname);
+}
+
 export function isCustomerRoutePath(pathname: string): boolean {
   const path = extractPathname(pathname);
   return (
@@ -274,7 +283,7 @@ export function getRoleRouteRedirect(
 ): string | null {
   const path = extractPathname(pathname);
 
-  if (isStaffEmployeesPath(path)) {
+  if (isAdminOnlyStaffPath(path)) {
     if (!role || role === 'CUSTOMER') return '/';
     if (role === 'STAFF') return '/staff';
     return null;
@@ -309,7 +318,7 @@ export function getPostLoginRedirectUrl(
   }
 
   if (role === 'STAFF' || role === 'ADMIN') {
-    if (isStaffEmployeesPath(targetPath)) {
+    if (isAdminOnlyStaffPath(targetPath)) {
       return role === 'ADMIN' ? safeTarget : '/staff';
     }
     if (isStaffPath(targetPath) || isAccountPath(targetPath)) {

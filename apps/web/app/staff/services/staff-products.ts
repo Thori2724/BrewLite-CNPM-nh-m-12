@@ -33,6 +33,10 @@ export const PRODUCT_NAME_MAX_LENGTH = 100;
 export const PRODUCT_BASE_PRICE_MIN = 1000;
 export const PRODUCT_BASE_PRICE_MAX = 1000000;
 export const PRODUCT_IMAGE_URL_MAX_LENGTH = 500;
+export const PRODUCT_STOCK_MIN = 1;
+export const PRODUCT_STOCK_MAX = 9999;
+export const PRODUCT_CREATE_STOCK_MIN = 0;
+export const PRODUCT_CREATE_STOCK_DEFAULT = 50;
 
 export const STAFF_PRODUCT_CATEGORY_OPTIONS: {
   value: ProductCategory;
@@ -49,6 +53,7 @@ export interface ProductFormValues {
   category: ProductCategory | '';
   basePrice: string;
   imageUrl: string;
+  stock?: string;
 }
 
 export interface ProductFormFieldErrors {
@@ -56,6 +61,7 @@ export interface ProductFormFieldErrors {
   category?: string;
   basePrice?: string;
   imageUrl?: string;
+  stock?: string;
 }
 
 export const STAFF_PRODUCT_FALLBACK_IMAGE =
@@ -78,18 +84,67 @@ export async function fetchStaffProducts(forceMock = false): Promise<ProductMana
 
 /**
  * Gạt trạng thái Đang bán / Tạm hết qua PATCH /products/:id/availability.
- * Chỉ gửi duy nhất trường `isAvailable`.
+ * Khi isAvailable = true bắt buộc kèm stock (1..9999); khi false không gửi stock.
  */
 export async function updateStaffProductAvailability(
   productId: string,
   isAvailable: boolean,
-  forceMock = false
+  forceMock = false,
+  stock?: number
 ): Promise<ProductManage> {
   if (forceMock || isStaffProductsMockEnabled()) {
-    return updateMockStaffProductAvailability(productId, isAvailable);
+    return updateMockStaffProductAvailability(productId, isAvailable, stock);
   }
 
-  return updateProductAvailabilityApi(productId, { isAvailable });
+  if (isAvailable) {
+    return updateProductAvailabilityApi(productId, { isAvailable: true, stock });
+  }
+
+  return updateProductAvailabilityApi(productId, { isAvailable: false });
+}
+
+export function validateProductStock(stockInput: string | number): FieldValidationResult {
+  if (typeof stockInput === 'number') {
+    if (
+      !Number.isInteger(stockInput) ||
+      stockInput < PRODUCT_STOCK_MIN ||
+      stockInput > PRODUCT_STOCK_MAX
+    ) {
+      return {
+        isValid: false,
+        error: 'Số lượng phải là số nguyên từ 1 đến 9999.',
+      };
+    }
+    return { isValid: true };
+  }
+
+  const trimmed = (stockInput ?? '').trim();
+  if (!trimmed) {
+    return {
+      isValid: false,
+      error: 'Vui lòng nhập số lượng còn lại (từ 1 đến 9999).',
+    };
+  }
+  if (!/^\d+$/.test(trimmed)) {
+    return {
+      isValid: false,
+      error: 'Số lượng phải là số nguyên từ 1 đến 9999.',
+    };
+  }
+
+  const numericValue = Number(trimmed);
+  if (
+    !Number.isSafeInteger(numericValue) ||
+    numericValue < PRODUCT_STOCK_MIN ||
+    numericValue > PRODUCT_STOCK_MAX
+  ) {
+    return {
+      isValid: false,
+      error: 'Số lượng phải là số nguyên từ 1 đến 9999.',
+    };
+  }
+
+  return { isValid: true };
 }
 
 /**
@@ -215,7 +270,57 @@ export function isValidPreviewImageUrl(imageUrl: string): boolean {
   return Boolean(trimmed && !/\s/.test(trimmed) && /^https?:\/\//i.test(trimmed));
 }
 
-export function validateProductForm(values: ProductFormValues): {
+export function validateCreateProductStock(
+  stockInput?: string | number
+): FieldValidationResult {
+  if (stockInput === undefined) {
+    return { isValid: true };
+  }
+
+  if (typeof stockInput === 'number') {
+    if (
+      !Number.isInteger(stockInput) ||
+      stockInput < PRODUCT_CREATE_STOCK_MIN ||
+      stockInput > PRODUCT_STOCK_MAX
+    ) {
+      return {
+        isValid: false,
+        error: 'Số lượng phải là số nguyên từ 0 đến 9999.',
+      };
+    }
+    return { isValid: true };
+  }
+
+  const trimmed = (stockInput ?? '').trim();
+  if (!trimmed) {
+    return { isValid: true };
+  }
+  if (!/^\d+$/.test(trimmed)) {
+    return {
+      isValid: false,
+      error: 'Số lượng phải là số nguyên từ 0 đến 9999.',
+    };
+  }
+
+  const numericValue = Number(trimmed);
+  if (
+    !Number.isSafeInteger(numericValue) ||
+    numericValue < PRODUCT_CREATE_STOCK_MIN ||
+    numericValue > PRODUCT_STOCK_MAX
+  ) {
+    return {
+      isValid: false,
+      error: 'Số lượng phải là số nguyên từ 0 đến 9999.',
+    };
+  }
+
+  return { isValid: true };
+}
+
+export function validateProductForm(
+  values: ProductFormValues,
+  options?: { mode?: 'create' | 'edit' }
+): {
   isValid: boolean;
   errors: ProductFormFieldErrors;
 } {
@@ -230,6 +335,11 @@ export function validateProductForm(values: ProductFormValues): {
   const priceCheck = validateProductBasePrice(values.basePrice);
   if (!priceCheck.isValid) errors.basePrice = priceCheck.error;
 
+  if (options?.mode !== 'edit') {
+    const stockCheck = validateCreateProductStock(values.stock);
+    if (!stockCheck.isValid) errors.stock = stockCheck.error;
+  }
+
   const imageCheck = validateProductImageUrl(values.imageUrl);
   if (!imageCheck.isValid) errors.imageUrl = imageCheck.error;
 
@@ -241,6 +351,7 @@ export function validateProductForm(values: ProductFormValues): {
 
 export function buildCreateProductPayload(values: ProductFormValues): CreateProductDto {
   const trimmedImage = values.imageUrl.trim();
+  const trimmedStock = (values.stock ?? '').trim();
   const payload: CreateProductDto = {
     name: values.name.trim(),
     category: values.category as ProductCategory,
@@ -248,6 +359,9 @@ export function buildCreateProductPayload(values: ProductFormValues): CreateProd
   };
   if (trimmedImage) {
     payload.imageUrl = trimmedImage;
+  }
+  if (trimmedStock) {
+    payload.stock = Number(trimmedStock);
   }
   return payload;
 }
@@ -272,7 +386,7 @@ export function buildUpdateProductPayload(
 
 /**
  * Thêm món mới (ADMIN) qua POST /products.
- * Tuyệt đối không gửi stock hay id.
+ * Không gửi id; chỉ gửi stock khi có nhập.
  */
 export async function createStaffProduct(
   dto: CreateProductDto,
@@ -283,6 +397,7 @@ export async function createStaffProduct(
     category: dto.category,
     basePrice: dto.basePrice,
     ...(dto.imageUrl !== undefined ? { imageUrl: dto.imageUrl } : {}),
+    ...(dto.stock !== undefined ? { stock: dto.stock } : {}),
   };
 
   if (forceMock || isStaffProductsMockEnabled()) {
@@ -404,6 +519,8 @@ function mapProductValidationMessagesToFields(
         'Link ảnh phải bắt đầu bằng http:// hoặc https:// và tối đa 500 ký tự.';
     } else if (lower.includes('baseprice') || lower.includes('price')) {
       fieldErrors.basePrice = 'Giá gốc phải là số nguyên từ 1.000 đến 1.000.000đ.';
+    } else if (lower.includes('stock')) {
+      fieldErrors.stock = 'Số lượng phải là số nguyên từ 0 đến 9999.';
     } else if (lower.includes('category')) {
       fieldErrors.category =
         'Vui lòng chọn một danh mục hợp lệ (Trà, Cà phê, Trà sữa hoặc Bánh).';
@@ -514,5 +631,82 @@ export function parseStaffProductFormError(err: unknown): ParsedStaffProductForm
   }
 
   return { ...base, fieldErrors };
+}
+
+export function parseStaffProductStockError(err: unknown): ParsedStaffProductError {
+  const base = parseStaffProductError(err);
+  let rawMessage: unknown;
+
+  if (err && typeof err === 'object') {
+    rawMessage = (err as { message?: unknown }).message;
+  }
+
+  if (base.isAccountLocked) {
+    return { ...base, message: AUTH_ERROR_MESSAGES.ACCOUNT_LOCKED };
+  }
+
+  if (base.isUnauthorized) {
+    return { ...base, message: AUTH_ERROR_MESSAGES.SESSION_EXPIRED };
+  }
+
+  if (base.statusCode === 400) {
+    if (Array.isArray(rawMessage)) {
+      const mentionsStock = rawMessage.some(
+        (item) => typeof item === 'string' && item.toLowerCase().includes('stock')
+      );
+      return {
+        ...base,
+        message: mentionsStock
+          ? 'Số lượng phải là số nguyên từ 1 đến 9999.'
+          : AUTH_ERROR_MESSAGES.VALIDATION_ERROR,
+      };
+    }
+
+    if (typeof rawMessage === 'string' && rawMessage.trim()) {
+      if (isRawEnglishHttpText(rawMessage)) {
+        return {
+          ...base,
+          message: rawMessage.toLowerCase().includes('stock')
+            ? 'Số lượng phải là số nguyên từ 1 đến 9999.'
+            : AUTH_ERROR_MESSAGES.VALIDATION_ERROR,
+        };
+      }
+      return { ...base, message: rawMessage.trim() };
+    }
+
+    return { ...base, message: 'Số lượng phải là số nguyên từ 1 đến 9999.' };
+  }
+
+  if (base.statusCode === 403) {
+    return {
+      ...base,
+      message: isRawEnglishHttpText(base.message)
+        ? AUTH_ERROR_MESSAGES.FORBIDDEN
+        : base.message,
+    };
+  }
+
+  if (base.statusCode === 404) {
+    return {
+      ...base,
+      message: isRawEnglishHttpText(base.message)
+        ? STAFF_PRODUCT_ERROR_MESSAGES.NOT_FOUND
+        : base.message,
+    };
+  }
+
+  if (base.statusCode >= 500) {
+    return { ...base, message: STAFF_PRODUCT_ERROR_MESSAGES.SERVER_ERROR };
+  }
+
+  if (base.statusCode === 0) {
+    return { ...base, message: STAFF_PRODUCT_ERROR_MESSAGES.NETWORK_ERROR };
+  }
+
+  if (isRawEnglishHttpText(base.message)) {
+    return { ...base, message: STAFF_PRODUCT_ERROR_MESSAGES.UNKNOWN_ERROR };
+  }
+
+  return base;
 }
 

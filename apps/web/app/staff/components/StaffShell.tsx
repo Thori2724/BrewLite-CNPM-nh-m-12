@@ -34,6 +34,7 @@ const STAFF_NAV_ITEMS: StaffNavItem[] = [
   { href: '/staff', label: 'Đơn hàng' },
   { href: '/staff/products', label: 'Món' },
   { href: '/staff/employees', label: 'Nhân viên', adminOnly: true },
+  { href: '/staff/promotions', label: 'Khuyến mãi', adminOnly: true },
 ];
 
 function isNavItemActive(pathname: string, href: string): boolean {
