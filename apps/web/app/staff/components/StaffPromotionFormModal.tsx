@@ -259,6 +259,7 @@ function StaffPromotionFormModalInner({
     const formValues = { code, type, value, maxDiscount, isActive };
     const validation = validatePromotionForm(formValues, {
       mode: isEditMode ? 'edit' : 'create',
+      initialPromotion,
     });
 
     if (!validation.isValid) {
@@ -528,8 +529,11 @@ function StaffPromotionFormModalInner({
                   </p>
                 ) : (
                   <p id="promotion-form-maxDiscount-hint" className="text-xs text-noir/60">
-                    Số nguyên từ 1.000 đến 1.000.000đ. Để trống nghĩa là không có trần
-                    {formattedMaxDiscountHint ? ` (${formattedMaxDiscountHint})` : ''}.
+                    {isEditMode &&
+                    initialPromotion?.maxDiscount !== null &&
+                    initialPromotion?.maxDiscount !== undefined
+                      ? `Số nguyên từ 1.000 đến 1.000.000đ${formattedMaxDiscountHint ? ` (${formattedMaxDiscountHint})` : ''}.`
+                      : `Số nguyên từ 1.000 đến 1.000.000đ. Để trống nghĩa là không có trần${formattedMaxDiscountHint ? ` (${formattedMaxDiscountHint})` : ''}.`}
                   </p>
                 )}
               </div>

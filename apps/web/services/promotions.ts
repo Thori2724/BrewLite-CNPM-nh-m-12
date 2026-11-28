@@ -57,14 +57,14 @@ export interface CreatePromotionDto {
   code: string;
   type: PromotionType;
   value: number;
-  maxDiscount?: number | null;
+  maxDiscount?: number;
   isActive?: boolean;
 }
 
 export interface UpdatePromotionDto {
   type?: PromotionType;
   value?: number;
-  maxDiscount?: number | null;
+  maxDiscount?: number;
   isActive?: boolean;
 }
 
