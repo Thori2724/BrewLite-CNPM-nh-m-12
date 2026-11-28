@@ -67,6 +67,18 @@ enum PaymentStatus {
   FAILED
 }
 
+enum PromotionType {
+  PERCENT
+  FIXED
+}
+
+enum LoyaltyType {
+  EARN
+  REDEEM
+  REFUND
+  REVOKE
+}
+
 model Product {
   id         String      @id @default(uuid())
   name       String
@@ -81,16 +93,18 @@ model Product {
 }
 
 model User {
-  id           String    @id @default(uuid())
-  email        String    @unique
-  passwordHash String
-  displayName  String
-  role         Role      @default(CUSTOMER)
-  isActive     Boolean   @default(true)
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
-  orders       Order[]
-  payments     Payment[]
+  id                  String               @id @default(uuid())
+  email               String               @unique
+  passwordHash        String
+  displayName         String
+  role                Role                 @default(CUSTOMER)
+  isActive            Boolean              @default(true)
+  loyaltyPoints       Int                  @default(0)
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+  orders              Order[]
+  payments            Payment[]
+  loyaltyTransactions LoyaltyTransaction[]
 }
 
 model Topping {
@@ -102,18 +116,48 @@ model Topping {
 }
 
 model Order {
-  id          String      @id @default(uuid())
-  orderNumber Int         @unique @default(autoincrement())
-  userId      String
-  status      OrderStatus @default(PENDING)
-  receiveType ReceiveType @default(AT_COUNTER)
-  note        String?
-  totalAmount Int
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
-  user        User        @relation(fields: [userId], references: [id])
-  items       OrderItem[]
-  payments    Payment[]
+  id                  String               @id @default(uuid())
+  orderNumber         Int                  @unique @default(autoincrement())
+  userId              String
+  status              OrderStatus          @default(PENDING)
+  receiveType         ReceiveType          @default(AT_COUNTER)
+  note                String?
+  subtotalAmount      Int                  @default(0)
+  discountAmount      Int                  @default(0)
+  promotionCode       String?
+  pointsUsed          Int                  @default(0)
+  pointsEarned        Int                  @default(0)
+  totalAmount         Int
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+  user                User                 @relation(fields: [userId], references: [id])
+  items               OrderItem[]
+  payments            Payment[]
+  loyaltyTransactions LoyaltyTransaction[]
+
+  @@index([userId])
+}
+
+model Promotion {
+  id          String        @id @default(uuid())
+  code        String        @unique
+  type        PromotionType
+  value       Int
+  maxDiscount Int?
+  isActive    Boolean       @default(true)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+}
+
+model LoyaltyTransaction {
+  id        String      @id @default(uuid())
+  userId    String
+  orderId   String?
+  type      LoyaltyType
+  points    Int
+  createdAt DateTime    @default(now())
+  user      User        @relation(fields: [userId], references: [id])
+  order     Order?      @relation(fields: [orderId], references: [id])
 
   @@index([userId])
 }
