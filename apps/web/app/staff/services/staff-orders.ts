@@ -32,6 +32,39 @@ export const STAFF_ORDER_FILTER_OPTIONS: StaffOrderFilterOption[] = [
   { value: 'CANCELLED', label: ORDER_STATUS_LABELS.CANCELLED },
 ];
 
+export interface StaffOrderButtonState {
+  enabled: boolean;
+  reason: string;
+}
+
+export interface StaffOrderActionStates {
+  detail: StaffOrderButtonState;
+  advance: StaffOrderButtonState & {
+    nextStatus: StaffUpdatableOrderStatus | null;
+  };
+  cancel: StaffOrderButtonState;
+}
+
+const ADVANCE_DISABLED_REASONS: Record<
+  Exclude<OrderStatus, 'PAID' | 'PREPARING' | 'READY'>,
+  string
+> = {
+  PENDING: 'Đơn chưa thanh toán, chưa thể chuyển bước',
+  PAYMENT_FAILED: 'Đơn thanh toán lỗi, chưa thể chuyển bước',
+  COMPLETED: 'Đơn đã hoàn thành, không thể chuyển bước',
+  CANCELLED: 'Đơn đã hủy, không thể chuyển bước',
+};
+
+const CANCEL_DISABLED_REASONS: Record<
+  Exclude<OrderStatus, 'PENDING' | 'PAYMENT_FAILED' | 'PAID'>,
+  string
+> = {
+  PREPARING: 'Đơn đã vào pha chế, không thể hủy',
+  READY: 'Đơn đã sẵn sàng nhận, không thể hủy',
+  COMPLETED: 'Đơn đã hoàn thành, không thể hủy',
+  CANCELLED: 'Đơn đã hủy, không thể hủy lại',
+};
+
 /**
  * Thứ tự chuyển bước hợp lệ cho nút "Chuyển sang bước tiếp theo":
  * PAID -> PREPARING -> READY -> COMPLETED.
@@ -58,6 +91,57 @@ export function getNextStaffOrderStatus(
  */
 export function canStaffCancelOrder(status: OrderStatus): boolean {
   return status === 'PENDING' || status === 'PAYMENT_FAILED' || status === 'PAID';
+}
+
+/**
+ * Hàm thuần xác định trạng thái bật/tắt và chú thích tiếng Việt của 3 nút
+ * ("Chi tiết", "Chuyển sang bước tiếp theo", "Hủy đơn") theo mục 5.7 và 5.8 hợp đồng.
+ */
+export function getStaffOrderActionStates(
+  status: OrderStatus
+): StaffOrderActionStates {
+  const nextStatus = getNextStaffOrderStatus(status);
+  const canCancel = canStaffCancelOrder(status);
+
+  const advance: StaffOrderActionStates['advance'] = nextStatus
+    ? {
+        enabled: true,
+        nextStatus,
+        reason: `Chuyển sang: ${ORDER_STATUS_LABELS[nextStatus]}`,
+      }
+    : {
+        enabled: false,
+        nextStatus: null,
+        reason:
+          ADVANCE_DISABLED_REASONS[
+            status as Exclude<OrderStatus, 'PAID' | 'PREPARING' | 'READY'>
+          ] ?? 'Trạng thái hiện tại không thể chuyển bước',
+      };
+
+  const cancel: StaffOrderButtonState = canCancel
+    ? {
+        enabled: true,
+        reason:
+          status === 'PAID'
+            ? 'Hủy đơn đã thanh toán (hoàn tiền mô phỏng)'
+            : 'Hủy đơn hàng',
+      }
+    : {
+        enabled: false,
+        reason:
+          CANCEL_DISABLED_REASONS[
+            status as Exclude<OrderStatus, 'PENDING' | 'PAYMENT_FAILED' | 'PAID'>
+          ] ?? 'Trạng thái hiện tại không thể hủy',
+      };
+
+  return {
+    detail: {
+      enabled: true,
+      reason: 'Xem chi tiết đơn hàng',
+    },
+    advance,
+    cancel,
+  };
 }
 
 /**

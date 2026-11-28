@@ -1,10 +1,10 @@
 import React from 'react';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as navigation from 'next/navigation';
 import { AuthProvider } from '../../../context/AuthContext';
-import { OrderResponse, ORDER_STATUS_LABELS } from '../../../services/order-contract';
+import { OrderResponse, ORDER_STATUS_LABELS, OrderStatus } from '../../../services/order-contract';
 import {
   AUTH_ACCOUNT_LOCKED_EVENT,
   AUTH_STORAGE_KEY,
@@ -12,6 +12,7 @@ import {
 } from '../../../utils/auth';
 import { resetRedirectFlag } from '../../../services/auth';
 import StaffOrdersPage from '../page';
+import { getStaffOrderActionStates } from '../services/staff-orders';
 import {
   MOCK_STAFF_ORDERS_SEED,
   resetMockStaffOrders,
@@ -119,58 +120,101 @@ describe('Dòng 20 - Trang /staff (Quản lý đơn hàng)', () => {
     expect(within(paidRow).getByText('Đã thanh toán')).toBeInTheDocument();
     expect(within(paidRow).getByText('15/11/2026 15:15')).toBeInTheDocument();
 
-    // PAID: có cả nút chuyển bước và nút hủy đơn
+    // PAID: cả 3 nút đều hiện và bấm được
+    expect(within(paidRow).getByRole('button', { name: 'Chi tiết' })).toBeEnabled();
     expect(
       within(paidRow).getByRole('button', { name: 'Chuyển sang bước tiếp theo' })
-    ).toBeInTheDocument();
-    expect(within(paidRow).getByRole('button', { name: 'Hủy đơn' })).toBeInTheDocument();
+    ).toBeEnabled();
+    expect(within(paidRow).getByRole('button', { name: 'Hủy đơn' })).toBeEnabled();
 
-    // PREPARING: chỉ có nút chuyển bước, không có nút hủy
+    // PREPARING: nút chuyển bước bấm được; nút Hủy đơn vẫn hiện nhưng bị xám + khóa + có chú thích
     const preparingRow = screen.getByTestId('staff-order-row-2006');
     expect(within(preparingRow).getByText('Đang pha chế')).toBeInTheDocument();
     expect(
       within(preparingRow).getByRole('button', { name: 'Chuyển sang bước tiếp theo' })
-    ).toBeInTheDocument();
-    expect(within(preparingRow).queryByRole('button', { name: 'Hủy đơn' })).not.toBeInTheDocument();
+    ).toBeEnabled();
+    const preparingCancelBtn = within(preparingRow).getByRole('button', { name: 'Hủy đơn' });
+    expect(preparingCancelBtn).toBeDisabled();
+    expect(preparingCancelBtn.parentElement).toHaveAttribute(
+      'title',
+      'Đơn đã vào pha chế, không thể hủy'
+    );
 
-    // READY: chỉ có nút chuyển bước, không có nút hủy
+    // READY: nút chuyển bước bấm được; nút Hủy đơn vẫn hiện nhưng bị xám + khóa + có chú thích
     const readyRow = screen.getByTestId('staff-order-row-2005');
     expect(within(readyRow).getByText('Sẵn sàng nhận')).toBeInTheDocument();
     expect(
       within(readyRow).getByRole('button', { name: 'Chuyển sang bước tiếp theo' })
-    ).toBeInTheDocument();
-    expect(within(readyRow).queryByRole('button', { name: 'Hủy đơn' })).not.toBeInTheDocument();
+    ).toBeEnabled();
+    const readyCancelBtn = within(readyRow).getByRole('button', { name: 'Hủy đơn' });
+    expect(readyCancelBtn).toBeDisabled();
+    expect(readyCancelBtn.parentElement).toHaveAttribute(
+      'title',
+      'Đơn đã sẵn sàng nhận, không thể hủy'
+    );
 
-    // PENDING: chỉ có nút hủy, không có nút chuyển bước
+    // PENDING: nút chuyển bước vẫn hiện nhưng bị xám + khóa + có chú thích; nút Hủy đơn bấm được
     const pendingRow = screen.getByTestId('staff-order-row-2004');
     expect(within(pendingRow).getByText('Chờ thanh toán')).toBeInTheDocument();
-    expect(
-      within(pendingRow).queryByRole('button', { name: 'Chuyển sang bước tiếp theo' })
-    ).not.toBeInTheDocument();
-    expect(within(pendingRow).getByRole('button', { name: 'Hủy đơn' })).toBeInTheDocument();
+    const pendingAdvanceBtn = within(pendingRow).getByRole('button', {
+      name: 'Chuyển sang bước tiếp theo',
+    });
+    expect(pendingAdvanceBtn).toBeDisabled();
+    expect(pendingAdvanceBtn.parentElement).toHaveAttribute(
+      'title',
+      'Đơn chưa thanh toán, chưa thể chuyển bước'
+    );
+    expect(within(pendingRow).getByRole('button', { name: 'Hủy đơn' })).toBeEnabled();
 
-    // PAYMENT_FAILED: chỉ có nút hủy, không có nút chuyển bước
+    // PAYMENT_FAILED: nút chuyển bước vẫn hiện nhưng bị xám + khóa; nút Hủy đơn bấm được
     const failedRow = screen.getByTestId('staff-order-row-2003');
     expect(within(failedRow).getByText('Thanh toán lỗi')).toBeInTheDocument();
-    expect(
-      within(failedRow).queryByRole('button', { name: 'Chuyển sang bước tiếp theo' })
-    ).not.toBeInTheDocument();
-    expect(within(failedRow).getByRole('button', { name: 'Hủy đơn' })).toBeInTheDocument();
+    const failedAdvanceBtn = within(failedRow).getByRole('button', {
+      name: 'Chuyển sang bước tiếp theo',
+    });
+    expect(failedAdvanceBtn).toBeDisabled();
+    expect(failedAdvanceBtn.parentElement).toHaveAttribute(
+      'title',
+      'Đơn thanh toán lỗi, chưa thể chuyển bước'
+    );
+    expect(within(failedRow).getByRole('button', { name: 'Hủy đơn' })).toBeEnabled();
 
-    // COMPLETED & CANCELLED: không có nút chuyển bước lẫn nút hủy
+    // COMPLETED & CANCELLED: cả nút chuyển bước lẫn nút hủy đều hiện nhưng bị xám + khóa + có chú thích
     const completedRow = screen.getByTestId('staff-order-row-2002');
     expect(within(completedRow).getByText('Hoàn thành')).toBeInTheDocument();
-    expect(
-      within(completedRow).queryByRole('button', { name: 'Chuyển sang bước tiếp theo' })
-    ).not.toBeInTheDocument();
-    expect(within(completedRow).queryByRole('button', { name: 'Hủy đơn' })).not.toBeInTheDocument();
+    expect(within(completedRow).getByRole('button', { name: 'Chi tiết' })).toBeEnabled();
+    const completedAdvanceBtn = within(completedRow).getByRole('button', {
+      name: 'Chuyển sang bước tiếp theo',
+    });
+    const completedCancelBtn = within(completedRow).getByRole('button', { name: 'Hủy đơn' });
+    expect(completedAdvanceBtn).toBeDisabled();
+    expect(completedAdvanceBtn.parentElement).toHaveAttribute(
+      'title',
+      'Đơn đã hoàn thành, không thể chuyển bước'
+    );
+    expect(completedCancelBtn).toBeDisabled();
+    expect(completedCancelBtn.parentElement).toHaveAttribute(
+      'title',
+      'Đơn đã hoàn thành, không thể hủy'
+    );
 
     const cancelledRow = screen.getByTestId('staff-order-row-2001');
     expect(within(cancelledRow).getByText('Đã hủy')).toBeInTheDocument();
-    expect(
-      within(cancelledRow).queryByRole('button', { name: 'Chuyển sang bước tiếp theo' })
-    ).not.toBeInTheDocument();
-    expect(within(cancelledRow).queryByRole('button', { name: 'Hủy đơn' })).not.toBeInTheDocument();
+    expect(within(cancelledRow).getByRole('button', { name: 'Chi tiết' })).toBeEnabled();
+    const cancelledAdvanceBtn = within(cancelledRow).getByRole('button', {
+      name: 'Chuyển sang bước tiếp theo',
+    });
+    const cancelledCancelBtn = within(cancelledRow).getByRole('button', { name: 'Hủy đơn' });
+    expect(cancelledAdvanceBtn).toBeDisabled();
+    expect(cancelledAdvanceBtn.parentElement).toHaveAttribute(
+      'title',
+      'Đơn đã hủy, không thể chuyển bước'
+    );
+    expect(cancelledCancelBtn).toBeDisabled();
+    expect(cancelledCancelBtn.parentElement).toHaveAttribute(
+      'title',
+      'Đơn đã hủy, không thể hủy lại'
+    );
 
     expect(globalThis.fetch).toHaveBeenCalledTimes(1);
     const [calledUrl, calledInit] = vi.mocked(globalThis.fetch).mock.calls[0];
@@ -272,7 +316,7 @@ describe('Dòng 20 - Trang /staff (Quản lý đơn hàng)', () => {
     await waitFor(() => {
       expect(within(row).getByText(ORDER_STATUS_LABELS.PREPARING)).toBeInTheDocument();
     });
-    expect(within(row).queryByRole('button', { name: 'Hủy đơn' })).not.toBeInTheDocument();
+    expect(within(row).getByRole('button', { name: 'Hủy đơn' })).toBeDisabled();
 
     // PREPARING -> READY
     await user.click(within(row).getByRole('button', { name: 'Chuyển sang bước tiếp theo' }));
@@ -286,9 +330,9 @@ describe('Dòng 20 - Trang /staff (Quản lý đơn hàng)', () => {
       expect(within(row).getByText(ORDER_STATUS_LABELS.COMPLETED)).toBeInTheDocument();
     });
     expect(
-      within(row).queryByRole('button', { name: 'Chuyển sang bước tiếp theo' })
-    ).not.toBeInTheDocument();
-    expect(within(row).queryByRole('button', { name: 'Hủy đơn' })).not.toBeInTheDocument();
+      within(row).getByRole('button', { name: 'Chuyển sang bước tiếp theo' })
+    ).toBeDisabled();
+    expect(within(row).getByRole('button', { name: 'Hủy đơn' })).toBeDisabled();
 
     // Xác minh chỉ gửi đúng { status }
     expect(fetchMock).toHaveBeenCalledTimes(4);
@@ -341,7 +385,7 @@ describe('Dòng 20 - Trang /staff (Quản lý đơn hàng)', () => {
       expect(within(row).getByText('Đã hủy')).toBeInTheDocument();
     });
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-    expect(within(row).queryByRole('button', { name: 'Hủy đơn' })).not.toBeInTheDocument();
+    expect(within(row).getByRole('button', { name: 'Hủy đơn' })).toBeDisabled();
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(String(fetchMock.mock.calls[1][0])).toBe(
@@ -488,5 +532,138 @@ describe('Dòng 20 - Trang /staff (Quản lý đơn hàng)', () => {
 
     expect(globalThis.fetch).not.toHaveBeenCalled();
   });
+
+  it('10. Dòng 25 - Cố định 3 cột nút đều kích thước ở mọi dòng và nút xám không bấm được', async () => {
+    const orders = cloneSeedOrders();
+    const fetchMock = vi.fn().mockResolvedValueOnce(mockJsonResponse(200, orders));
+    globalThis.fetch = fetchMock;
+
+    renderStaffOrdersPage();
+
+    const paidActions = await screen.findByTestId('staff-order-actions-2007');
+    const cancelledActions = screen.getByTestId('staff-order-actions-2001');
+
+    // Mọi dòng dùng cùng khung grid 3 cột bằng nhau với chiều rộng cố định
+    for (const actionGroup of [paidActions, cancelledActions]) {
+      expect(actionGroup).toHaveClass('grid', 'grid-cols-3', 'w-[360px]');
+      const buttons = within(actionGroup).getAllByRole('button');
+      expect(buttons).toHaveLength(3);
+      for (const btn of buttons) {
+        expect(btn).toHaveClass('h-10', 'w-full');
+      }
+    }
+
+    // Nút xám trên đơn đã hủy thật sự không bấm được (không gọi API, không mở dialog)
+    const cancelledAdvance = within(cancelledActions).getByRole('button', {
+      name: 'Chuyển sang bước tiếp theo',
+    });
+    const cancelledCancel = within(cancelledActions).getByRole('button', {
+      name: 'Hủy đơn',
+    });
+    expect(cancelledAdvance).toHaveClass('bg-neutral-200/80', 'text-neutral-500');
+    expect(cancelledCancel).toHaveClass('bg-neutral-200/80', 'text-neutral-500');
+
+    fireEvent.click(cancelledAdvance);
+    fireEvent.click(cancelledCancel);
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('Dòng 25 - Hàm thuần getStaffOrderActionStates (mục 5.7 & 5.8 hợp đồng)', () => {
+  const cases: Array<{
+    status: OrderStatus;
+    advanceEnabled: boolean;
+    nextStatus: string | null;
+    advanceReason: string;
+    cancelEnabled: boolean;
+    cancelReason: string;
+  }> = [
+    {
+      status: 'PENDING',
+      advanceEnabled: false,
+      nextStatus: null,
+      advanceReason: 'Đơn chưa thanh toán, chưa thể chuyển bước',
+      cancelEnabled: true,
+      cancelReason: 'Hủy đơn hàng',
+    },
+    {
+      status: 'PAYMENT_FAILED',
+      advanceEnabled: false,
+      nextStatus: null,
+      advanceReason: 'Đơn thanh toán lỗi, chưa thể chuyển bước',
+      cancelEnabled: true,
+      cancelReason: 'Hủy đơn hàng',
+    },
+    {
+      status: 'PAID',
+      advanceEnabled: true,
+      nextStatus: 'PREPARING',
+      advanceReason: `Chuyển sang: ${ORDER_STATUS_LABELS.PREPARING}`,
+      cancelEnabled: true,
+      cancelReason: 'Hủy đơn đã thanh toán (hoàn tiền mô phỏng)',
+    },
+    {
+      status: 'PREPARING',
+      advanceEnabled: true,
+      nextStatus: 'READY',
+      advanceReason: `Chuyển sang: ${ORDER_STATUS_LABELS.READY}`,
+      cancelEnabled: false,
+      cancelReason: 'Đơn đã vào pha chế, không thể hủy',
+    },
+    {
+      status: 'READY',
+      advanceEnabled: true,
+      nextStatus: 'COMPLETED',
+      advanceReason: `Chuyển sang: ${ORDER_STATUS_LABELS.COMPLETED}`,
+      cancelEnabled: false,
+      cancelReason: 'Đơn đã sẵn sàng nhận, không thể hủy',
+    },
+    {
+      status: 'COMPLETED',
+      advanceEnabled: false,
+      nextStatus: null,
+      advanceReason: 'Đơn đã hoàn thành, không thể chuyển bước',
+      cancelEnabled: false,
+      cancelReason: 'Đơn đã hoàn thành, không thể hủy',
+    },
+    {
+      status: 'CANCELLED',
+      advanceEnabled: false,
+      nextStatus: null,
+      advanceReason: 'Đơn đã hủy, không thể chuyển bước',
+      cancelEnabled: false,
+      cancelReason: 'Đơn đã hủy, không thể hủy lại',
+    },
+  ];
+
+  it.each(cases)(
+    'Trạng thái $status trả về đúng quy tắc bật/tắt và chú thích cho cả 3 nút',
+    ({
+      status,
+      advanceEnabled,
+      nextStatus,
+      advanceReason,
+      cancelEnabled,
+      cancelReason,
+    }) => {
+      const result = getStaffOrderActionStates(status);
+
+      expect(result.detail).toEqual({
+        enabled: true,
+        reason: 'Xem chi tiết đơn hàng',
+      });
+      expect(result.advance).toEqual({
+        enabled: advanceEnabled,
+        nextStatus,
+        reason: advanceReason,
+      });
+      expect(result.cancel).toEqual({
+        enabled: cancelEnabled,
+        reason: cancelReason,
+      });
+    }
+  );
 });
 

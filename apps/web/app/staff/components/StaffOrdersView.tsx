@@ -19,6 +19,7 @@ import {
   fetchStaffOrders,
   formatStaffVnd,
   getNextStaffOrderStatus,
+  getStaffOrderActionStates,
   ParsedStaffOrderError,
   parseStaffOrderError,
   STAFF_ORDER_FILTER_OPTIONS,
@@ -456,22 +457,25 @@ export default function StaffOrdersView() {
             <table className="w-full border-collapse text-left">
               <thead>
                 <tr className="border-b border-tan bg-bone/60 text-xs font-bold uppercase tracking-wide text-noir/75">
-                  <th scope="col" className="px-5 py-3.5 whitespace-nowrap">
+                  <th scope="col" className="px-4 py-3.5 whitespace-nowrap">
                     Mã đơn
                   </th>
-                  <th scope="col" className="px-5 py-3.5">
+                  <th scope="col" className="px-4 py-3.5">
                     Khách hàng
                   </th>
-                  <th scope="col" className="px-5 py-3.5 whitespace-nowrap text-right">
+                  <th scope="col" className="px-4 py-3.5 whitespace-nowrap text-right">
                     Tổng tiền
                   </th>
-                  <th scope="col" className="px-5 py-3.5 whitespace-nowrap">
+                  <th scope="col" className="px-4 py-3.5 whitespace-nowrap">
                     Trạng thái
                   </th>
-                  <th scope="col" className="px-5 py-3.5 whitespace-nowrap">
+                  <th scope="col" className="px-4 py-3.5 whitespace-nowrap">
                     Giờ đặt
                   </th>
-                  <th scope="col" className="px-5 py-3.5 whitespace-nowrap text-right">
+                  <th
+                    scope="col"
+                    className="w-[392px] min-w-[392px] px-4 py-3.5 whitespace-nowrap text-center"
+                  >
                     Thao tác
                   </th>
                 </tr>
@@ -479,10 +483,27 @@ export default function StaffOrdersView() {
               <tbody className="divide-y divide-tan/60 text-sm">
                 {orders.map((order) => {
                   const isExpanded = expandedOrderId === order.id;
-                  const nextStatus = getNextStaffOrderStatus(order.status);
-                  const isCancellable = canStaffCancelOrder(order.status);
+                  const actionStates = getStaffOrderActionStates(order.status);
+                  const nextStatus = actionStates.advance.nextStatus;
                   const isThisOrderUpdating = updatingOrderId === order.id;
                   const isAnyOrderUpdating = updatingOrderId !== null;
+                  const isAdvanceDisabled = !actionStates.advance.enabled || isAnyOrderUpdating;
+                  const isCancelDisabled = !actionStates.cancel.enabled || isAnyOrderUpdating;
+                  const advanceTitle =
+                    actionStates.advance.enabled && isAnyOrderUpdating
+                      ? isThisOrderUpdating && updatingAction === 'advance'
+                        ? 'Đang cập nhật trạng thái đơn...'
+                        : 'Đang xử lý đơn hàng khác, vui lòng chờ...'
+                      : actionStates.advance.reason;
+                  const cancelTitle =
+                    actionStates.cancel.enabled && isAnyOrderUpdating
+                      ? isThisOrderUpdating && updatingAction === 'cancel'
+                        ? 'Đang hủy đơn hàng...'
+                        : 'Đang xử lý đơn hàng khác, vui lòng chờ...'
+                      : actionStates.cancel.reason;
+                  const detailTitle = isExpanded
+                    ? 'Thu gọn chi tiết đơn hàng'
+                    : actionStates.detail.reason;
                   const customerName = order.customer?.displayName?.trim() || 'Khách hàng';
 
                   return (
@@ -499,7 +520,7 @@ export default function StaffOrdersView() {
                           isExpanded ? 'bg-tan/25' : 'hover:bg-bone/45'
                         }`}
                       >
-                        <td className="px-5 py-4 whitespace-nowrap font-display text-base font-bold text-noir">
+                        <td className="px-4 py-4 whitespace-nowrap font-display text-base font-bold text-noir">
                           <span className="inline-flex items-center gap-2">
                             <span className="text-xs text-noir/60" aria-hidden="true">
                               {isExpanded ? '▾' : '▸'}
@@ -507,17 +528,17 @@ export default function StaffOrdersView() {
                             <span>#{order.orderNumber}</span>
                           </span>
                         </td>
-                        <td className="px-5 py-4">
+                        <td className="px-4 py-4">
                           <p className="font-semibold text-noir">{customerName}</p>
                           <p className="text-xs text-noir/60">
                             {RECEIVE_TYPE_LABELS[order.receiveType] || order.receiveType} •{' '}
                             {order.items.length} dòng món
                           </p>
                         </td>
-                        <td className="px-5 py-4 whitespace-nowrap text-right font-display font-bold text-kombu">
+                        <td className="px-4 py-4 whitespace-nowrap text-right font-display font-bold text-kombu">
                           {formatStaffVnd(order.totalAmount)}
                         </td>
-                        <td className="px-5 py-4 whitespace-nowrap">
+                        <td className="px-4 py-4 whitespace-nowrap">
                           <span
                             className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-caption ${getOrderStatusBadgeClass(
                               order.status
@@ -526,51 +547,73 @@ export default function StaffOrdersView() {
                             {ORDER_STATUS_LABELS[order.status] || order.status}
                           </span>
                         </td>
-                        <td className="px-5 py-4 whitespace-nowrap text-noir/75">
+                        <td className="px-4 py-4 whitespace-nowrap text-noir/75">
                           {formatVietnamDateTime(order.createdAt)}
                         </td>
                         <td
-                          className="px-5 py-4 whitespace-nowrap text-right"
+                          className="w-[392px] min-w-[392px] px-4 py-4 align-middle"
                           onClick={(e) => e.stopPropagation()}
                         >
-                          <div className="inline-flex items-center justify-end gap-2">
-                            <button
-                              type="button"
-                              aria-expanded={isExpanded}
-                              onClick={() => toggleOrderDetail(order.id)}
-                              className="px-3 py-1.5 rounded-control border border-tan bg-bone/70 hover:bg-tan/50 text-xs font-semibold text-noir transition cursor-pointer"
-                            >
-                              {isExpanded ? 'Thu gọn' : 'Chi tiết'}
-                            </button>
-
-                            {nextStatus && (
+                          <div
+                            data-testid={`staff-order-actions-${order.orderNumber}`}
+                            className="mx-auto grid w-[360px] grid-cols-3 gap-1.5"
+                          >
+                            <span title={detailTitle} className="inline-flex h-10 w-full">
                               <button
                                 type="button"
-                                disabled={isAnyOrderUpdating}
-                                title={`Chuyển sang: ${ORDER_STATUS_LABELS[nextStatus]}`}
+                                aria-expanded={isExpanded}
+                                onClick={() => toggleOrderDetail(order.id)}
+                                className="inline-flex h-10 w-full items-center justify-center whitespace-normal rounded-control border border-tan bg-bone/70 px-2 text-center text-xs font-semibold leading-tight text-noir transition hover:bg-tan/50 cursor-pointer"
+                              >
+                                {isExpanded ? 'Thu gọn' : 'Chi tiết'}
+                              </button>
+                            </span>
+
+                            <span
+                              title={advanceTitle}
+                              className={`inline-flex h-10 w-full ${
+                                isAdvanceDisabled ? 'cursor-not-allowed' : ''
+                              }`}
+                            >
+                              <button
+                                type="button"
+                                disabled={isAdvanceDisabled}
                                 onClick={() => {
                                   void handleAdvanceOrder(order);
                                 }}
-                                className="px-3 py-1.5 rounded-control bg-kombu hover:bg-noir text-bone text-xs font-semibold transition shadow-soft disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                                className={`inline-flex h-10 w-full items-center justify-center whitespace-normal rounded-control px-1.5 text-center text-[11px] font-semibold leading-tight transition ${
+                                  actionStates.advance.enabled
+                                    ? 'bg-kombu text-bone shadow-soft hover:bg-noir disabled:opacity-50 disabled:pointer-events-none cursor-pointer'
+                                    : 'border border-neutral-300 bg-neutral-200/80 text-neutral-500 shadow-none disabled:pointer-events-none'
+                                }`}
                               >
                                 {isThisOrderUpdating && updatingAction === 'advance'
                                   ? 'Đang cập nhật...'
                                   : 'Chuyển sang bước tiếp theo'}
                               </button>
-                            )}
+                            </span>
 
-                            {isCancellable && (
+                            <span
+                              title={cancelTitle}
+                              className={`inline-flex h-10 w-full ${
+                                isCancelDisabled ? 'cursor-not-allowed' : ''
+                              }`}
+                            >
                               <button
                                 type="button"
-                                disabled={isAnyOrderUpdating}
+                                disabled={isCancelDisabled}
                                 onClick={() => handleOpenCancelDialog(order)}
-                                className="px-3 py-1.5 rounded-control border border-error/45 bg-cream hover:bg-error/10 text-error text-xs font-semibold transition disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                                className={`inline-flex h-10 w-full items-center justify-center whitespace-normal rounded-control px-2 text-center text-xs font-semibold leading-tight transition ${
+                                  actionStates.cancel.enabled
+                                    ? 'border border-error/45 bg-cream text-error hover:bg-error/10 disabled:opacity-50 disabled:pointer-events-none cursor-pointer'
+                                    : 'border border-neutral-300 bg-neutral-200/80 text-neutral-500 shadow-none disabled:pointer-events-none'
+                                }`}
                               >
                                 {isThisOrderUpdating && updatingAction === 'cancel'
                                   ? 'Đang hủy...'
                                   : 'Hủy đơn'}
                               </button>
-                            )}
+                            </span>
                           </div>
                         </td>
                       </tr>
