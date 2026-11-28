@@ -105,8 +105,32 @@ export const PRODUCT_STATUS_LABELS = {
   HIDDEN: 'Đã ẩn',
 } as const;
 
+export const PRODUCTS_INVALIDATED_EVENT = 'brewlite:products-invalidated';
+
+/**
+ * Kiểm tra món đã hết hàng hay chưa — chỉ dựa duy nhất vào `stock <= 0`.
+ */
+export function isSoldOut(stock: number): boolean {
+  return typeof stock !== 'number' || !Number.isFinite(stock) || stock <= 0;
+}
+
 export function getProductStockLabel(stock: number): string {
-  return stock > 0 ? PRODUCT_STATUS_LABELS.AVAILABLE : PRODUCT_STATUS_LABELS.OUT_OF_STOCK;
+  return isSoldOut(stock) ? PRODUCT_STATUS_LABELS.OUT_OF_STOCK : PRODUCT_STATUS_LABELS.AVAILABLE;
+}
+
+/**
+ * Phát tín hiệu báo menu và trang chi tiết món cần tải lại số liệu mới từ máy chủ
+ * ngay sau khi đặt đơn hoặc hủy đơn thành công.
+ */
+export function notifyProductsInvalidated(): void {
+  if (typeof window === 'undefined' || typeof window.dispatchEvent !== 'function') {
+    return;
+  }
+  try {
+    window.dispatchEvent(new Event(PRODUCTS_INVALIDATED_EVENT));
+  } catch {
+    // Bỏ qua nếu môi trường không hỗ trợ Event
+  }
 }
 
 // 7. Kiểu dữ liệu Sản phẩm và Chi tiết sản phẩm
@@ -193,7 +217,7 @@ export async function getProducts(params?: GetProductsParams): Promise<Product[]
 
   let res: Response;
   try {
-    res = await fetch(url);
+    res = await fetch(url, { cache: 'no-store' });
   } catch {
     throw new Error('Không kết nối được máy chủ, vui lòng thử lại');
   }
@@ -227,7 +251,7 @@ export async function getProductById(id: string): Promise<ProductDetail | null> 
 
   let res: Response;
   try {
-    res = await fetch(url);
+    res = await fetch(url, { cache: 'no-store' });
   } catch {
     throw new Error('Không kết nối được máy chủ, vui lòng thử lại');
   }

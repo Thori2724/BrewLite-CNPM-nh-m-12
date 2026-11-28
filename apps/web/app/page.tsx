@@ -1,7 +1,12 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { getProducts, Product, ProductCategory } from '../services/api';
+import { useEffect, useRef, useState } from 'react';
+import {
+  getProducts,
+  Product,
+  ProductCategory,
+  PRODUCTS_INVALIDATED_EVENT,
+} from '../services/api';
 import ProductCard from './components/ProductCard';
 import { SearchIcon } from './components/Icons';
 
@@ -25,6 +30,7 @@ export default function MenuPage() {
   const [selectedCategory, setSelectedCategory] = useState<ProductCategory | 'ALL'>('ALL');
   const [searchInput, setSearchInput] = useState<string>('');
   const [debouncedQuery, setDebouncedQuery] = useState<string>('');
+  const requestSeqRef = useRef<number>(0);
 
   // 1. Debounce ô tìm kiếm 300ms bằng setTimeout
   useEffect(() => {
@@ -35,14 +41,17 @@ export default function MenuPage() {
     return () => clearTimeout(timer);
   }, [searchInput]);
 
-  // 2. Tải danh sách món theo danh mục và từ khóa tìm kiếm
+  // 2. Tải danh sách món theo danh mục và từ khóa tìm kiếm (luôn lấy stock mới khi quay lại trang hoặc sau đặt/hủy đơn)
   useEffect(() => {
     let isCancelled = false;
 
-    async function loadData() {
+    async function loadData(showLoading: boolean) {
+      const seq = ++requestSeqRef.current;
       try {
-        setLoading(true);
-        setError(null);
+        if (showLoading) {
+          setLoading(true);
+          setError(null);
+        }
 
         const categoryParam = selectedCategory === 'ALL' ? undefined : selectedCategory;
         const qParam = debouncedQuery.trim() ? debouncedQuery.trim() : undefined;
@@ -52,11 +61,12 @@ export default function MenuPage() {
           q: qParam,
         });
 
-        if (!isCancelled) {
+        if (!isCancelled && seq === requestSeqRef.current) {
           setProducts(data);
+          setError(null);
         }
       } catch (err: unknown) {
-        if (!isCancelled) {
+        if (!isCancelled && seq === requestSeqRef.current && showLoading) {
           const message =
             err instanceof Error
               ? err.message
@@ -64,16 +74,31 @@ export default function MenuPage() {
           setError(message);
         }
       } finally {
-        if (!isCancelled) {
+        if (!isCancelled && seq === requestSeqRef.current && showLoading) {
           setLoading(false);
         }
       }
     }
 
-    loadData();
+    void loadData(true);
+
+    const handlePageShow = (event: PageTransitionEvent) => {
+      if (event.persisted) {
+        void loadData(false);
+      }
+    };
+
+    const handleProductsInvalidated = () => {
+      void loadData(false);
+    };
+
+    window.addEventListener('pageshow', handlePageShow);
+    window.addEventListener(PRODUCTS_INVALIDATED_EVENT, handleProductsInvalidated);
 
     return () => {
       isCancelled = true;
+      window.removeEventListener('pageshow', handlePageShow);
+      window.removeEventListener(PRODUCTS_INVALIDATED_EVENT, handleProductsInvalidated);
     };
   }, [selectedCategory, debouncedQuery]);
 

@@ -5,8 +5,11 @@ import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import {
   getProductById,
+  isSoldOut,
   ProductDetail,
   ProductTopping,
+  PRODUCT_STATUS_LABELS,
+  PRODUCTS_INVALIDATED_EVENT,
   SizeId,
   SugarLevel,
   IceLevel,
@@ -50,6 +53,7 @@ function ProductDetailContent() {
 
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fadeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const requestSeqRef = useRef<number>(0);
 
   // Dọn bộ đếm giờ khi component unmount / người dùng rời trang
   useEffect(() => {
@@ -63,41 +67,66 @@ function ProductDetailContent() {
     if (!id) return;
     let isCancelled = false;
 
-    getProductById(id)
-      .then((data) => {
-        if (!isCancelled) {
-          setProduct(data);
+    async function loadProduct(options: { showLoading: boolean; applyDefaults: boolean }) {
+      const seq = ++requestSeqRef.current;
+      try {
+        if (options.showLoading) {
+          setLoading(true);
           setError(null);
-          setLoading(false);
+        }
 
-          if (data) {
-            // Đặt mặc định theo server options nếu có
-            if (data.sizes && data.sizes.length > 0) {
-              const hasS = data.sizes.some((s) => s.value === 'S');
-              setSelectedSize(hasS ? 'S' : data.sizes[0].value);
-            }
-            if (data.sugarLevels && data.sugarLevels.length > 0) {
-              const hasP100 = data.sugarLevels.some((s) => s.value === 'P100');
-              setSelectedSugar(hasP100 ? 'P100' : data.sugarLevels[0].value);
-            }
-            if (data.iceLevels && data.iceLevels.length > 0) {
-              const hasNormal = data.iceLevels.some((i) => i.value === 'NORMAL');
-              setSelectedIce(hasNormal ? 'NORMAL' : data.iceLevels[0].value);
-            }
+        const data = await getProductById(id);
+
+        if (isCancelled || seq !== requestSeqRef.current) return;
+
+        setProduct(data);
+        setError(null);
+        setLoading(false);
+
+        if (options.applyDefaults && data) {
+          // Đặt mặc định theo server options nếu có
+          if (data.sizes && data.sizes.length > 0) {
+            const hasS = data.sizes.some((s) => s.value === 'S');
+            setSelectedSize(hasS ? 'S' : data.sizes[0].value);
+          }
+          if (data.sugarLevels && data.sugarLevels.length > 0) {
+            const hasP100 = data.sugarLevels.some((s) => s.value === 'P100');
+            setSelectedSugar(hasP100 ? 'P100' : data.sugarLevels[0].value);
+          }
+          if (data.iceLevels && data.iceLevels.length > 0) {
+            const hasNormal = data.iceLevels.some((i) => i.value === 'NORMAL');
+            setSelectedIce(hasNormal ? 'NORMAL' : data.iceLevels[0].value);
           }
         }
-      })
-      .catch((err: unknown) => {
-        if (!isCancelled) {
+      } catch (err: unknown) {
+        if (!isCancelled && seq === requestSeqRef.current && options.showLoading) {
           const message =
             err instanceof Error ? err.message : 'Không thể tải thông tin món. Vui lòng thử lại!';
           setError(message);
           setLoading(false);
         }
-      });
+      }
+    }
+
+    void loadProduct({ showLoading: true, applyDefaults: true });
+
+    const handlePageShow = (event: PageTransitionEvent) => {
+      if (event.persisted) {
+        void loadProduct({ showLoading: false, applyDefaults: false });
+      }
+    };
+
+    const handleProductsInvalidated = () => {
+      void loadProduct({ showLoading: false, applyDefaults: false });
+    };
+
+    window.addEventListener('pageshow', handlePageShow);
+    window.addEventListener(PRODUCTS_INVALIDATED_EVENT, handleProductsInvalidated);
 
     return () => {
       isCancelled = true;
+      window.removeEventListener('pageshow', handlePageShow);
+      window.removeEventListener(PRODUCTS_INVALIDATED_EVENT, handleProductsInvalidated);
     };
   }, [id]);
 
@@ -164,8 +193,8 @@ function ProductDetailContent() {
     setQuantity((q) => Math.max(MIN_QUANTITY, q - 1));
   };
 
-  // Tính giá tạm tính phía client
-  const isOutOfStock = !product || product.stock <= 0;
+  // Tính giá tạm tính phía client (chỉ dựa vào stock <= 0 để xác định hết hàng)
+  const isOutOfStock = !product || isSoldOut(product.stock);
   const isCake = product?.category === 'CAKE';
   const currentSizeOption = !isCake ? product?.sizes?.find((s) => s.value === selectedSize) : undefined;
   const sizeExtraPrice = currentSizeOption ? currentSizeOption.extraPrice : 0;
@@ -332,10 +361,10 @@ function ProductDetailContent() {
               alt={product.name}
               className={`w-full h-full object-cover ${isOutOfStock ? 'grayscale opacity-60' : ''}`}
             />
-            {/* Nhãn hết hàng (stock = 0) */}
+            {/* Nhãn hết hàng (stock <= 0) */}
             {isOutOfStock && (
               <span className="absolute top-3 right-3 bg-error text-bone text-xs px-3 py-1.5 rounded-control font-bold shadow-xs">
-                Hết hàng
+                {PRODUCT_STATUS_LABELS.OUT_OF_STOCK_BADGE}
               </span>
             )}
             <span className="absolute bottom-3 left-3 bg-kombu/85 text-bone text-xs px-2.5 py-1 rounded-control font-semibold backdrop-blur-xs">
@@ -583,7 +612,7 @@ function ProductDetailContent() {
             >
               {!isOutOfStock
                 ? `+ Thêm vào giỏ (${formatVnd(estimatedPrice)})`
-                : 'Tạm hết'}
+                : PRODUCT_STATUS_LABELS.OUT_OF_STOCK}
             </button>
           </div>
         </div>

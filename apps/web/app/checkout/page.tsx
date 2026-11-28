@@ -22,6 +22,7 @@ import {
   SugarLevel,
   IceLevel,
   SizeId,
+  notifyProductsInvalidated,
 } from '../../services/api';
 import {
   createOrderApi,
@@ -604,6 +605,7 @@ function CheckoutContent() {
         usePoints: effectiveUsePoints,
       });
       const order = await createOrderApi(payload);
+      notifyProductsInvalidated();
       const idempotencyKey = generateIdempotencyKey();
 
       const newPendingRecord: PendingOrderRecord = {

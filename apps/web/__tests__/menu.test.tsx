@@ -2,8 +2,9 @@ import { render, screen, waitFor, act, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import MenuPage from '../app/page';
+import ProductCard from '../app/components/ProductCard';
 import * as api from '../services/api';
-import { Product } from '../services/api';
+import { isSoldOut, notifyProductsInvalidated, Product } from '../services/api';
 
 vi.mock('../services/api', async () => {
   const actual = await vi.importActual<typeof import('../services/api')>('../services/api');
@@ -237,5 +238,116 @@ describe('Trang Menu (MenuPage)', () => {
         screen.getByText('Danh mục không hợp lệ. Cho phép: TEA, COFFEE, MILK_TEA, CAKE')
       ).toBeInTheDocument();
     });
+  });
+
+  // Test 9: Thẻ ProductCard chỉ dựa vào stock <= 0 (không hiện số tồn kho)
+  it('9. ProductCard với stock = 0 và stock < 0 hiện "Hết hàng", ảnh xám, nút "Tạm hết" và ẩn số tồn kho', () => {
+    expect(isSoldOut(0)).toBe(true);
+    expect(isSoldOut(-5)).toBe(true);
+    expect(isSoldOut(1)).toBe(false);
+
+    const { rerender } = render(
+      <ProductCard
+        product={{
+          id: 'p-test',
+          name: 'Matcha Latte',
+          category: 'MILK_TEA',
+          basePrice: 45000,
+          imageUrl: 'https://example.com/matcha.jpg',
+          stock: 0,
+        }}
+      />
+    );
+
+    expect(screen.getByText('Hết hàng')).toBeInTheDocument();
+    expect(screen.getByAltText('Matcha Latte').className).toContain('grayscale');
+    expect(screen.getByRole('button', { name: 'Tạm hết' })).toBeDisabled();
+    expect(screen.queryByText(/\b0\b/)).not.toBeInTheDocument();
+
+    // stock âm cũng xử lý giống hệt stock = 0
+    rerender(
+      <ProductCard
+        product={{
+          id: 'p-test',
+          name: 'Matcha Latte',
+          category: 'MILK_TEA',
+          basePrice: 45000,
+          imageUrl: 'https://example.com/matcha.jpg',
+          stock: -2,
+        }}
+      />
+    );
+    expect(screen.getByText('Hết hàng')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Tạm hết' })).toBeDisabled();
+
+    // stock = 1 hiện nút + Thêm và ẩn số 1
+    rerender(
+      <ProductCard
+        product={{
+          id: 'p-test',
+          name: 'Matcha Latte',
+          category: 'MILK_TEA',
+          basePrice: 45000,
+          imageUrl: 'https://example.com/matcha.jpg',
+          stock: 1,
+        }}
+      />
+    );
+    expect(screen.queryByText('Hết hàng')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '+ Thêm' })).toBeEnabled();
+    expect(screen.queryByText(/\b1\b/)).not.toBeInTheDocument();
+  });
+
+  // Test 10: Menu tải lại số liệu mới khi quay lại hoặc sau khi đặt đơn / hủy đơn (không tải lại khi đổi tab)
+  it('10. Menu gọi lại GET /products khi quay lại hoặc sau đặt đơn/hủy đơn, cập nhật xám khi hết và mở lại khi hủy', async () => {
+    const firstLoad: Product[] = [
+      { ...mockProducts[0], stock: 1 },
+    ];
+    const afterOrder: Product[] = [
+      { ...mockProducts[0], stock: 0 },
+    ];
+    const afterCancel: Product[] = [
+      { ...mockProducts[0], stock: 1 },
+    ];
+
+    vi.mocked(api.getProducts)
+      .mockResolvedValueOnce(firstLoad)
+      .mockResolvedValueOnce(afterOrder)
+      .mockResolvedValueOnce(afterCancel);
+
+    const { unmount } = render(<MenuPage />);
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: '+ Thêm' })).toBeEnabled();
+    });
+
+    // Chuyển tab (visibilitychange / focus) KHÔNG tự tải lại menu
+    act(() => {
+      window.dispatchEvent(new Event('focus'));
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+    expect(api.getProducts).toHaveBeenCalledTimes(1);
+
+    // Sau khi đặt món cuối cùng -> phát tín hiệu tải lại -> món tự xám, hiện "Hết hàng" & "Tạm hết"
+    act(() => {
+      notifyProductsInvalidated();
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('Hết hàng')).toBeInTheDocument();
+    });
+    expect(screen.getByAltText('Cà phê sữa đá').className).toContain('grayscale');
+    expect(screen.getByRole('button', { name: 'Tạm hết' })).toBeDisabled();
+    expect(api.getProducts).toHaveBeenCalledTimes(2);
+
+    // Rời menu rồi quay lại (mô phỏng hủy đơn xong quay lại menu) -> tải lại GET /products -> đang bán lại
+    unmount();
+    render(<MenuPage />);
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: '+ Thêm' })).toBeEnabled();
+    });
+    expect(screen.queryByText('Hết hàng')).not.toBeInTheDocument();
+    expect(api.getProducts).toHaveBeenCalledTimes(3);
   });
 });

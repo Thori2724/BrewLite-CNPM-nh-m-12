@@ -15,6 +15,7 @@ import {
   summarizeOrderItems,
 } from '../../services/order-contract';
 import { cancelOrderApi, getMyOrdersApi, OrderApiError } from '../../services/orders';
+import { notifyProductsInvalidated } from '../../services/api';
 import { clearAuthSession, getSafeRedirectUrl } from '../../utils/auth';
 import { clearPendingOrder, loadPendingOrder } from '../../utils/checkout';
 import { calculatePrice } from '../../utils/price';
@@ -174,6 +175,7 @@ function OrdersHistoryContent() {
 
     try {
       const cancelledOrder = await cancelOrderApi(targetOrder.id);
+      notifyProductsInvalidated();
       clearMatchingPendingOrder(targetOrder.id);
 
       setOrders((prev) =>
