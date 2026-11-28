@@ -678,7 +678,10 @@ export class OrdersService {
 
   private async cancelOrderInTransaction(order: {
     id: string;
+    userId: string;
     status: OrderStatus;
+    pointsUsed?: number;
+    pointsEarned?: number;
     items: Array<{ productId: string; quantity: number }>;
   }) {
     const restockByProduct = new Map<string, number>();
@@ -688,6 +691,9 @@ export class OrdersService {
         (restockByProduct.get(item.productId) ?? 0) + item.quantity,
       );
     }
+
+    const pointsUsed = order.pointsUsed ?? 0;
+    const pointsEarned = order.pointsEarned ?? 0;
 
     await this.prisma.$transaction(
       async (tx) => {
@@ -712,6 +718,47 @@ export class OrdersService {
               stock: { increment: quantity },
             },
           });
+        }
+
+        if (pointsUsed > 0) {
+          await tx.user.update({
+            where: { id: order.userId },
+            data: {
+              loyaltyPoints: { increment: pointsUsed },
+            },
+          });
+
+          await tx.loyaltyTransaction.create({
+            data: {
+              userId: order.userId,
+              orderId: order.id,
+              type: LoyaltyType.REFUND,
+              points: pointsUsed,
+            },
+          });
+        }
+
+        if (pointsEarned > 0) {
+          const rows = await tx.$queryRaw<Array<{ revoked: number }>>`
+            UPDATE "User" AS u
+            SET "loyaltyPoints" = u."loyaltyPoints" - LEAST(old."loyaltyPoints", ${pointsEarned}::int),
+                "updatedAt" = NOW()
+            FROM "User" AS old
+            WHERE u."id" = ${order.userId} AND old."id" = u."id"
+            RETURNING LEAST(old."loyaltyPoints", ${pointsEarned}::int)::int AS "revoked"
+          `;
+
+          const revokedPoints = Number(rows[0]?.revoked ?? 0);
+          if (revokedPoints > 0) {
+            await tx.loyaltyTransaction.create({
+              data: {
+                userId: order.userId,
+                orderId: order.id,
+                type: LoyaltyType.REVOKE,
+                points: -revokedPoints,
+              },
+            });
+          }
         }
       },
       { maxWait: 10000, timeout: 15000 },

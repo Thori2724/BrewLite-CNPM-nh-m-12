@@ -60,8 +60,10 @@ describe('Orders (OrdersService & CreateOrderDto)', () => {
     };
     user: {
       findUnique: jest.Mock;
+      update: jest.Mock;
       updateMany: jest.Mock;
     };
+    $queryRaw: jest.Mock;
     loyaltyTransaction: {
       create: jest.Mock;
     };
@@ -146,8 +148,10 @@ describe('Orders (OrdersService & CreateOrderDto)', () => {
       },
       user: {
         findUnique: jest.fn().mockResolvedValue({ loyaltyPoints: 50 }),
+        update: jest.fn().mockResolvedValue({ id: USER_ID, loyaltyPoints: 60 }),
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
+      $queryRaw: jest.fn().mockResolvedValue([{ revoked: 0 }]),
       loyaltyTransaction: {
         create: jest.fn().mockResolvedValue({
           id: '66666666-0000-0000-0000-000000000001',
@@ -2603,6 +2607,338 @@ describe('Orders (OrdersService & CreateOrderDto)', () => {
         pointsEarned: 0,
         totalAmount: 60000,
       });
+    });
+  });
+
+  describe('16. VIỆC 11 - Bổ sung phần điểm cho hàm hủy dùng chung (hợp đồng mục 5.9 bước 3 và 4, 0.4, 0.10, 11.8)', () => {
+    const ORDER_ID = '33333333-0000-0000-0000-000000000011';
+    const CUSTOMER_ID = '44444444-0000-0000-0000-000000000001';
+
+    const buildCancelableOrder = (
+      overrides: {
+        status?: OrderStatus;
+        userId?: string;
+        pointsUsed?: number;
+        pointsEarned?: number;
+        subtotalAmount?: number;
+        totalAmount?: number;
+      } = {},
+    ) => ({
+      id: ORDER_ID,
+      orderNumber: 1011,
+      userId: overrides.userId ?? CUSTOMER_ID,
+      status: overrides.status ?? OrderStatus.PENDING,
+      receiveType: ReceiveType.TAKE_AWAY,
+      note: null,
+      subtotalAmount: overrides.subtotalAmount ?? 70000,
+      discountAmount: 0,
+      promotionCode: null,
+      pointsUsed: overrides.pointsUsed ?? 0,
+      pointsEarned: overrides.pointsEarned ?? 0,
+      totalAmount: overrides.totalAmount ?? 70000,
+      createdAt: new Date('2026-11-05T03:00:00.000Z'),
+      updatedAt: new Date('2026-11-05T03:00:00.000Z'),
+      user: {
+        id: overrides.userId ?? CUSTOMER_ID,
+        displayName: 'Khách demo',
+        email: 'khach@example.com',
+      },
+      items: [
+        {
+          id: '88888888-0000-0000-0000-000000000011',
+          orderId: ORDER_ID,
+          productId: mockMilkTea.id,
+          productName: mockMilkTea.name,
+          size: Size.S,
+          sugarLevel: SugarLevel.P100,
+          iceLevel: IceLevel.NORMAL,
+          quantity: 2,
+          unitPrice: 35000,
+          lineTotal: 70000,
+          note: null,
+          toppings: [],
+        },
+      ],
+    });
+
+    it('(a) hủy đơn PENDING có dùng điểm (pointsUsed = 10): điểm khách tăng 10, có đúng 1 dòng REFUND (+10), không có dòng REVOKE', async () => {
+      const pendingWithPoints = buildCancelableOrder({
+        status: OrderStatus.PENDING,
+        pointsUsed: 10,
+        pointsEarned: 0,
+        subtotalAmount: 70000,
+        totalAmount: 60000,
+      });
+      prisma.order.findFirst.mockResolvedValueOnce(pendingWithPoints);
+
+      const res = await service.cancelForUser(CUSTOMER_ID, ORDER_ID);
+
+      expect(res.status).toBe(OrderStatus.CANCELLED);
+      expect(res.pointsUsed).toBe(10);
+      expect(res.pointsEarned).toBe(0);
+
+      expect(txMock.user.update).toHaveBeenCalledTimes(1);
+      expect(txMock.user.update).toHaveBeenCalledWith({
+        where: { id: CUSTOMER_ID },
+        data: { loyaltyPoints: { increment: 10 } },
+      });
+      expect(txMock.loyaltyTransaction.create).toHaveBeenCalledTimes(1);
+      expect(txMock.loyaltyTransaction.create).toHaveBeenCalledWith({
+        data: {
+          userId: CUSTOMER_ID,
+          orderId: ORDER_ID,
+          type: LoyaltyType.REFUND,
+          points: 10,
+        },
+      });
+      expect(txMock.$queryRaw).not.toHaveBeenCalled();
+    });
+
+    it('(b) hủy đơn PAID có pointsUsed = 10 và pointsEarned = 6: điểm tăng 10 (REFUND) TRƯỚC rồi giảm 6 (REVOKE), có 1 dòng REFUND (+10) và 1 dòng REVOKE (-6), giữ nguyên pointsUsed/pointsEarned', async () => {
+      const callOrder: string[] = [];
+      txMock.user.update.mockImplementationOnce(() => {
+        callOrder.push('user.increment.refund');
+        return Promise.resolve({ id: CUSTOMER_ID, loyaltyPoints: 50 });
+      });
+      txMock.loyaltyTransaction.create.mockImplementation(
+        ({ data }: { data: { type: LoyaltyType } }) => {
+          callOrder.push(`tx.${data.type}`);
+          return Promise.resolve({ id: 'tx-id' });
+        },
+      );
+      txMock.$queryRaw.mockImplementationOnce(() => {
+        callOrder.push('user.decrement.revoke');
+        return Promise.resolve([{ revoked: 6 }]);
+      });
+
+      const paidOrder = buildCancelableOrder({
+        status: OrderStatus.PAID,
+        pointsUsed: 10,
+        pointsEarned: 6,
+        subtotalAmount: 70000,
+        totalAmount: 60000,
+      });
+      prisma.order.findFirst.mockResolvedValueOnce(paidOrder);
+
+      const res = await service.cancelForUser(CUSTOMER_ID, ORDER_ID);
+
+      expect(res.status).toBe(OrderStatus.CANCELLED);
+      expect(res.pointsUsed).toBe(10);
+      expect(res.pointsEarned).toBe(6);
+
+      // Chứng minh thứ tự: hoàn điểm (REFUND) TRƯỚC rồi mới thu hồi (REVOKE)
+      expect(callOrder).toEqual([
+        'user.increment.refund',
+        'tx.REFUND',
+        'user.decrement.revoke',
+        'tx.REVOKE',
+      ]);
+
+      expect(txMock.user.update).toHaveBeenCalledWith({
+        where: { id: CUSTOMER_ID },
+        data: { loyaltyPoints: { increment: 10 } },
+      });
+      expect(txMock.loyaltyTransaction.create).toHaveBeenCalledTimes(2);
+      expect(txMock.loyaltyTransaction.create).toHaveBeenNthCalledWith(1, {
+        data: {
+          userId: CUSTOMER_ID,
+          orderId: ORDER_ID,
+          type: LoyaltyType.REFUND,
+          points: 10,
+        },
+      });
+      expect(txMock.loyaltyTransaction.create).toHaveBeenNthCalledWith(2, {
+        data: {
+          userId: CUSTOMER_ID,
+          orderId: ORDER_ID,
+          type: LoyaltyType.REVOKE,
+          points: -6,
+        },
+      });
+    });
+
+    it('(c) thu hồi chỉ tới 0 khi điểm đã bị tiêu: đơn PAID có pointsEarned = 6 nhưng khách chỉ còn 2 điểm và pointsUsed = 0 -> REVOKE -2; nếu khách còn 0 điểm -> không có dòng REVOKE', async () => {
+      // Trường hợp 1: khách còn 2 điểm -> thu hồi 2 điểm, ghi REVOKE -2
+      txMock.$queryRaw.mockResolvedValueOnce([{ revoked: 2 }]);
+      prisma.order.findFirst.mockResolvedValueOnce(
+        buildCancelableOrder({
+          status: OrderStatus.PAID,
+          pointsUsed: 0,
+          pointsEarned: 6,
+        }),
+      );
+
+      await service.cancelForUser(CUSTOMER_ID, ORDER_ID);
+
+      expect(txMock.user.update).not.toHaveBeenCalled();
+      expect(txMock.$queryRaw).toHaveBeenCalledTimes(1);
+      expect(txMock.loyaltyTransaction.create).toHaveBeenCalledTimes(1);
+      expect(txMock.loyaltyTransaction.create).toHaveBeenCalledWith({
+        data: {
+          userId: CUSTOMER_ID,
+          orderId: ORDER_ID,
+          type: LoyaltyType.REVOKE,
+          points: -2,
+        },
+      });
+
+      // Trường hợp 2: khách còn 0 điểm -> số thu hồi = 0 -> KHÔNG ghi dòng REVOKE nào
+      txMock.$queryRaw.mockClear();
+      txMock.loyaltyTransaction.create.mockClear();
+      txMock.$queryRaw.mockResolvedValueOnce([{ revoked: 0 }]);
+      prisma.order.findFirst.mockResolvedValueOnce(
+        buildCancelableOrder({
+          status: OrderStatus.PAID,
+          pointsUsed: 0,
+          pointsEarned: 6,
+        }),
+      );
+
+      await service.cancelForUser(CUSTOMER_ID, ORDER_ID);
+
+      expect(txMock.$queryRaw).toHaveBeenCalledTimes(1);
+      expect(txMock.loyaltyTransaction.create).not.toHaveBeenCalled();
+    });
+
+    it('(d) hủy đơn PAYMENT_FAILED hoặc PENDING không dùng điểm: không có dòng điểm nào', async () => {
+      for (const st of [OrderStatus.PENDING, OrderStatus.PAYMENT_FAILED]) {
+        prisma.order.findFirst.mockResolvedValueOnce(
+          buildCancelableOrder({
+            status: st,
+            pointsUsed: 0,
+            pointsEarned: 0,
+          }),
+        );
+
+        await service.cancelForUser(CUSTOMER_ID, ORDER_ID);
+      }
+
+      expect(txMock.user.update).not.toHaveBeenCalled();
+      expect(txMock.$queryRaw).not.toHaveBeenCalled();
+      expect(txMock.loyaltyTransaction.create).not.toHaveBeenCalled();
+    });
+
+    it('(e) nhân viên hủy qua PATCH /orders/:id/status: điểm của KHÁCH (chủ đơn order.userId) thay đổi đúng, không phải của nhân viên', async () => {
+      const ownerId = '44444444-0000-0000-0000-000000000099';
+      txMock.$queryRaw.mockResolvedValueOnce([{ revoked: 6 }]);
+      prisma.order.findFirst.mockResolvedValueOnce(
+        buildCancelableOrder({
+          userId: ownerId,
+          status: OrderStatus.PAID,
+          pointsUsed: 10,
+          pointsEarned: 6,
+        }),
+      );
+
+      const res = await service.updateStatus(ORDER_ID, {
+        status: OrderStatus.CANCELLED,
+      });
+
+      expect(res.status).toBe(OrderStatus.CANCELLED);
+      expect(res.customer.id).toBe(ownerId);
+      expect(txMock.user.update).toHaveBeenCalledWith({
+        where: { id: ownerId },
+        data: { loyaltyPoints: { increment: 10 } },
+      });
+      expect(txMock.loyaltyTransaction.create).toHaveBeenNthCalledWith(1, {
+        data: {
+          userId: ownerId,
+          orderId: ORDER_ID,
+          type: LoyaltyType.REFUND,
+          points: 10,
+        },
+      });
+      expect(txMock.loyaltyTransaction.create).toHaveBeenNthCalledWith(2, {
+        data: {
+          userId: ownerId,
+          orderId: ORDER_ID,
+          type: LoyaltyType.REVOKE,
+          points: -6,
+        },
+      });
+    });
+
+    it('(f) & (g) hủy lần hai hoặc hủy đơn PREPARING trả 409, không có dòng điểm mới, điểm không đổi', async () => {
+      // (f) Hủy lần hai (đơn đang CANCELLED)
+      prisma.order.findFirst.mockResolvedValueOnce(
+        buildCancelableOrder({
+          status: OrderStatus.CANCELLED,
+          pointsUsed: 10,
+          pointsEarned: 6,
+        }),
+      );
+      await expect(
+        service.cancelForUser(CUSTOMER_ID, ORDER_ID),
+      ).rejects.toThrow(new ConflictException(ORDER_CANNOT_CANCEL_MESSAGE));
+
+      // (f) Tranh chấp đồng thời: count = 0 trong transaction
+      prisma.order.findFirst.mockResolvedValueOnce(
+        buildCancelableOrder({
+          status: OrderStatus.PAID,
+          pointsUsed: 10,
+          pointsEarned: 6,
+        }),
+      );
+      txMock.order.updateMany.mockResolvedValueOnce({ count: 0 });
+      await expect(
+        service.cancelForUser(CUSTOMER_ID, ORDER_ID),
+      ).rejects.toThrow(new ConflictException(ORDER_STATUS_CHANGED_MESSAGE));
+
+      // (g) Hủy đơn PREPARING
+      prisma.order.findFirst.mockResolvedValueOnce(
+        buildCancelableOrder({
+          status: OrderStatus.PREPARING,
+          pointsUsed: 10,
+          pointsEarned: 6,
+        }),
+      );
+      await expect(
+        service.cancelForUser(CUSTOMER_ID, ORDER_ID),
+      ).rejects.toThrow(new ConflictException(ORDER_CANNOT_CANCEL_MESSAGE));
+
+      expect(txMock.user.update).not.toHaveBeenCalled();
+      expect(txMock.$queryRaw).not.toHaveBeenCalled();
+      expect(txMock.loyaltyTransaction.create).not.toHaveBeenCalled();
+    });
+
+    it('(h) đường hủy của khách (POST /orders/:id/cancel) và của nhân viên (PATCH /orders/:id/status) cho cùng kết quả điểm', async () => {
+      // 1. Khách hủy
+      txMock.$queryRaw.mockResolvedValueOnce([{ revoked: 6 }]);
+      prisma.order.findFirst.mockResolvedValueOnce(
+        buildCancelableOrder({
+          status: OrderStatus.PAID,
+          pointsUsed: 10,
+          pointsEarned: 6,
+        }),
+      );
+      await service.cancelForUser(CUSTOMER_ID, ORDER_ID);
+
+      const customerCalls = txMock.loyaltyTransaction.create.mock.calls.map(
+        (c: unknown[]) => c[0],
+      );
+
+      // Reset mocks
+      txMock.user.update.mockClear();
+      txMock.$queryRaw.mockClear();
+      txMock.loyaltyTransaction.create.mockClear();
+
+      // 2. Nhân viên hủy
+      txMock.$queryRaw.mockResolvedValueOnce([{ revoked: 6 }]);
+      prisma.order.findFirst.mockResolvedValueOnce(
+        buildCancelableOrder({
+          status: OrderStatus.PAID,
+          pointsUsed: 10,
+          pointsEarned: 6,
+        }),
+      );
+      await service.updateStatus(ORDER_ID, { status: OrderStatus.CANCELLED });
+
+      const staffCalls = txMock.loyaltyTransaction.create.mock.calls.map(
+        (c: unknown[]) => c[0],
+      );
+
+      expect(customerCalls).toEqual(staffCalls);
+      expect(customerCalls).toHaveLength(2);
     });
   });
 });

@@ -2,6 +2,7 @@ import { INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import {
   Category,
+  LoyaltyType,
   OrderStatus,
   PaymentMethod,
   PaymentStatus,
@@ -1169,5 +1170,564 @@ describe('Staff & Role Management Integration (10B)', () => {
     expect(visibleItem?.isVisible).toBe(true);
     expect(hiddenItem).toBeDefined();
     expect(hiddenItem?.isVisible).toBe(false);
+  });
+
+  describe('6. VIỆC 11 - Bổ sung phần điểm cho hàm hủy dùng chung (hợp đồng mục 5.9 bước 3 và 4, 0.4, 0.10, 11.8)', () => {
+    beforeEach(async () => {
+      await prisma.user.updateMany({
+        where: { id: { in: [customerId, otherCustomerId, staffId, adminId] } },
+        data: { loyaltyPoints: 0 },
+      });
+    });
+
+    it('(a) hủy đơn PENDING có dùng điểm (pointsUsed = 10): điểm khách tăng 10, có đúng 1 dòng REFUND (+10), không có dòng REVOKE', async () => {
+      // Gán khách có 10 điểm, đặt 2 ly Trà đào size S (35.000 x 2 = 70.000) với usePoints = true -> pointsUsed = 10, totalAmount = 60.000, điểm khách về 0
+      await prisma.user.update({
+        where: { id: customerId },
+        data: { loyaltyPoints: 10 },
+      });
+
+      const createRes = await request(app.getHttpServer())
+        .post('/orders')
+        .set('Authorization', `Bearer ${customerToken}`)
+        .send({
+          usePoints: true,
+          items: [{ productId: PRODUCT_DRINK_ID, quantity: 2, size: Size.S }],
+        })
+        .expect(201);
+
+      const order = createRes.body as {
+        id: string;
+        pointsUsed: number;
+        pointsEarned: number;
+        totalAmount: number;
+      };
+      expect(order.pointsUsed).toBe(10);
+      expect(order.pointsEarned).toBe(0);
+      expect(order.totalAmount).toBe(60000);
+
+      const userBeforeCancel = await prisma.user.findUniqueOrThrow({
+        where: { id: customerId },
+      });
+      expect(userBeforeCancel.loyaltyPoints).toBe(0);
+
+      // Khách hủy đơn PENDING
+      const cancelRes = await request(app.getHttpServer())
+        .post(`/orders/${order.id}/cancel`)
+        .set('Authorization', `Bearer ${customerToken}`)
+        .expect(200);
+
+      expect(cancelRes.body).toMatchObject({
+        id: order.id,
+        status: OrderStatus.CANCELLED,
+        pointsUsed: 10,
+        pointsEarned: 0,
+      });
+
+      const userAfterCancel = await prisma.user.findUniqueOrThrow({
+        where: { id: customerId },
+      });
+      expect(userAfterCancel.loyaltyPoints).toBe(10);
+
+      const txs = await prisma.loyaltyTransaction.findMany({
+        where: { orderId: order.id },
+        orderBy: { createdAt: 'asc' },
+      });
+      const refundTxs = txs.filter((t) => t.type === LoyaltyType.REFUND);
+      const revokeTxs = txs.filter((t) => t.type === LoyaltyType.REVOKE);
+
+      expect(refundTxs).toHaveLength(1);
+      expect(refundTxs[0]).toMatchObject({
+        userId: customerId,
+        orderId: order.id,
+        type: LoyaltyType.REFUND,
+        points: 10,
+      });
+      expect(revokeTxs).toHaveLength(0);
+    });
+
+    it('(b) hủy đơn PAID có pointsUsed = 10 và pointsEarned = 6: điểm tăng 10 rồi giảm 6 (tổng +4), có 1 dòng REFUND (+10) và 1 dòng REVOKE (-6), giữ nguyên Payment và Order.pointsUsed/pointsEarned', async () => {
+      // Khách có 10 điểm, đặt 2 ly Trà đào size S (70.000) dùng 10 điểm -> còn 0 điểm, totalAmount = 60.000
+      await prisma.user.update({
+        where: { id: customerId },
+        data: { loyaltyPoints: 10 },
+      });
+
+      const createRes = await request(app.getHttpServer())
+        .post('/orders')
+        .set('Authorization', `Bearer ${customerToken}`)
+        .send({
+          usePoints: true,
+          items: [{ productId: PRODUCT_DRINK_ID, quantity: 2, size: Size.S }],
+        })
+        .expect(201);
+      const orderId = (createRes.body as { id: string }).id;
+
+      // Thanh toán thành công 60.000 -> cộng 6 điểm (pointsEarned = 6), loyaltyPoints của khách = 6
+      const payment = await payOrderViaHttp(
+        orderId,
+        '0900000001',
+        'idem-v11-case-b-paid',
+        customerToken,
+      );
+
+      const userAfterPay = await prisma.user.findUniqueOrThrow({
+        where: { id: customerId },
+      });
+      expect(userAfterPay.loyaltyPoints).toBe(6);
+
+      // Khách hủy đơn PAID: điểm từ 6 + 10 (REFUND) - 6 (REVOKE) = 10 (tăng ròng +4 so với trước khi hủy)
+      const cancelRes = await request(app.getHttpServer())
+        .post(`/orders/${orderId}/cancel`)
+        .set('Authorization', `Bearer ${customerToken}`)
+        .expect(200);
+
+      expect(cancelRes.body).toMatchObject({
+        id: orderId,
+        status: OrderStatus.CANCELLED,
+        pointsUsed: 10,
+        pointsEarned: 6,
+      });
+
+      const userAfterCancel = await prisma.user.findUniqueOrThrow({
+        where: { id: customerId },
+      });
+      expect(userAfterCancel.loyaltyPoints).toBe(10);
+
+      const orderInDb = await prisma.order.findUniqueOrThrow({
+        where: { id: orderId },
+      });
+      expect(orderInDb.pointsUsed).toBe(10);
+      expect(orderInDb.pointsEarned).toBe(6);
+
+      const paymentInDb = await prisma.payment.findUniqueOrThrow({
+        where: { id: payment.id },
+      });
+      expect(paymentInDb.status).toBe(PaymentStatus.SUCCESS);
+
+      const txs = await prisma.loyaltyTransaction.findMany({
+        where: { orderId },
+        orderBy: { createdAt: 'asc' },
+      });
+      const refundTxs = txs.filter((t) => t.type === LoyaltyType.REFUND);
+      const revokeTxs = txs.filter((t) => t.type === LoyaltyType.REVOKE);
+
+      expect(refundTxs).toHaveLength(1);
+      expect(refundTxs[0]).toMatchObject({
+        userId: customerId,
+        orderId,
+        type: LoyaltyType.REFUND,
+        points: 10,
+      });
+      expect(revokeTxs).toHaveLength(1);
+      expect(revokeTxs[0]).toMatchObject({
+        userId: customerId,
+        orderId,
+        type: LoyaltyType.REVOKE,
+        points: -6,
+      });
+    });
+
+    it('(c) thu hồi chỉ tới 0 khi điểm đã bị tiêu: đơn PAID có pointsEarned = 6 nhưng khách chỉ còn 2 điểm và pointsUsed = 0 -> REVOKE -2, điểm về 0; nếu khách còn 0 điểm thì không có dòng REVOKE', async () => {
+      // Trường hợp 1: Khách có 0 điểm, đặt đơn 2 ly Trà đào size S (70.000 -> để tròn 60.000 hoặc dùng đơn có pointsEarned = 6)
+      // Đặt 2 ly Trà đào size S (70.000) nhưng gán pointsEarned = 6 hoặc dùng mã / thanh toán rồi set trực tiếp trong DB
+      const order1Res = await request(app.getHttpServer())
+        .post('/orders')
+        .set('Authorization', `Bearer ${customerToken}`)
+        .send({
+          usePoints: false,
+          items: [{ productId: PRODUCT_DRINK_ID, quantity: 2, size: Size.S }],
+        })
+        .expect(201);
+      const order1Id = (order1Res.body as { id: string }).id;
+
+      await prisma.order.update({
+        where: { id: order1Id },
+        data: {
+          status: OrderStatus.PAID,
+          pointsUsed: 0,
+          pointsEarned: 6,
+        },
+      });
+      // Khách đã tiêu bớt điểm ở đơn khác, chỉ còn 2 điểm
+      await prisma.user.update({
+        where: { id: customerId },
+        data: { loyaltyPoints: 2 },
+      });
+
+      await request(app.getHttpServer())
+        .post(`/orders/${order1Id}/cancel`)
+        .set('Authorization', `Bearer ${customerToken}`)
+        .expect(200);
+
+      const userAfter1 = await prisma.user.findUniqueOrThrow({
+        where: { id: customerId },
+      });
+      expect(userAfter1.loyaltyPoints).toBe(0);
+
+      const txs1 = await prisma.loyaltyTransaction.findMany({
+        where: { orderId: order1Id },
+      });
+      expect(txs1).toHaveLength(1);
+      expect(txs1[0]).toMatchObject({
+        userId: customerId,
+        orderId: order1Id,
+        type: LoyaltyType.REVOKE,
+        points: -2,
+      });
+
+      // Trường hợp 2: Khách còn 0 điểm, đơn PAID có pointsEarned = 6, pointsUsed = 0 -> không có dòng REVOKE, điểm vẫn = 0
+      const order2Res = await request(app.getHttpServer())
+        .post('/orders')
+        .set('Authorization', `Bearer ${customerToken}`)
+        .send({
+          usePoints: false,
+          items: [{ productId: PRODUCT_DRINK_ID, quantity: 2, size: Size.S }],
+        })
+        .expect(201);
+      const order2Id = (order2Res.body as { id: string }).id;
+
+      await prisma.order.update({
+        where: { id: order2Id },
+        data: {
+          status: OrderStatus.PAID,
+          pointsUsed: 0,
+          pointsEarned: 6,
+        },
+      });
+      await prisma.user.update({
+        where: { id: customerId },
+        data: { loyaltyPoints: 0 },
+      });
+
+      await request(app.getHttpServer())
+        .post(`/orders/${order2Id}/cancel`)
+        .set('Authorization', `Bearer ${customerToken}`)
+        .expect(200);
+
+      const userAfter2 = await prisma.user.findUniqueOrThrow({
+        where: { id: customerId },
+      });
+      expect(userAfter2.loyaltyPoints).toBe(0);
+
+      const txs2 = await prisma.loyaltyTransaction.findMany({
+        where: { orderId: order2Id },
+      });
+      expect(txs2).toHaveLength(0);
+    });
+
+    it('(d) hủy đơn PAYMENT_FAILED hoặc PENDING không dùng điểm: không có dòng điểm nào, điểm khách không đổi', async () => {
+      await prisma.user.update({
+        where: { id: customerId },
+        data: { loyaltyPoints: 25 },
+      });
+
+      // 1. Đơn PENDING không dùng điểm
+      const pendingOrder = await createOrderViaHttp(customerToken);
+      await request(app.getHttpServer())
+        .post(`/orders/${pendingOrder.id}/cancel`)
+        .set('Authorization', `Bearer ${customerToken}`)
+        .expect(200);
+
+      // 2. Đơn PAYMENT_FAILED không dùng điểm
+      const failedOrder = await createOrderViaHttp(customerToken);
+      await payOrderViaHttp(
+        failedOrder.id,
+        '0900000000',
+        'idem-v11-case-d-failed',
+        customerToken,
+      );
+      await request(app.getHttpServer())
+        .post(`/orders/${failedOrder.id}/cancel`)
+        .set('Authorization', `Bearer ${customerToken}`)
+        .expect(200);
+
+      const userInDb = await prisma.user.findUniqueOrThrow({
+        where: { id: customerId },
+      });
+      expect(userInDb.loyaltyPoints).toBe(25);
+
+      const txs = await prisma.loyaltyTransaction.findMany({
+        where: { orderId: { in: [pendingOrder.id, failedOrder.id] } },
+      });
+      expect(txs).toHaveLength(0);
+    });
+
+    it('(e) nhân viên hủy qua PATCH /orders/:id/status: điểm của KHÁCH (chủ đơn) thay đổi đúng, không phải của nhân viên', async () => {
+      await prisma.user.update({
+        where: { id: customerId },
+        data: { loyaltyPoints: 10 },
+      });
+      await prisma.user.update({
+        where: { id: staffId },
+        data: { loyaltyPoints: 0 },
+      });
+
+      // Khách đặt đơn 2 ly Trà đào size S (70.000) có dùng 10 điểm -> totalAmount = 60.000, điểm khách về 0
+      const createRes = await request(app.getHttpServer())
+        .post('/orders')
+        .set('Authorization', `Bearer ${customerToken}`)
+        .send({
+          usePoints: true,
+          items: [{ productId: PRODUCT_DRINK_ID, quantity: 2, size: Size.S }],
+        })
+        .expect(201);
+      const orderId = (createRes.body as { id: string }).id;
+
+      // Khách thanh toán thành công -> cộng 6 điểm, điểm khách = 6
+      await payOrderViaHttp(
+        orderId,
+        '0900000001',
+        'idem-v11-case-e-staff-cancel',
+        customerToken,
+      );
+
+      // Nhân viên hủy đơn qua PATCH /orders/:id/status
+      const patchRes = await request(app.getHttpServer())
+        .patch(`/orders/${orderId}/status`)
+        .set('Authorization', `Bearer ${staffToken}`)
+        .send({ status: OrderStatus.CANCELLED })
+        .expect(200);
+
+      expect(patchRes.body).toMatchObject({
+        id: orderId,
+        status: OrderStatus.CANCELLED,
+        pointsUsed: 10,
+        pointsEarned: 6,
+        customer: {
+          id: customerId,
+        },
+      });
+
+      const customerAfter = await prisma.user.findUniqueOrThrow({
+        where: { id: customerId },
+      });
+      const staffAfter = await prisma.user.findUniqueOrThrow({
+        where: { id: staffId },
+      });
+      expect(customerAfter.loyaltyPoints).toBe(10);
+      expect(staffAfter.loyaltyPoints).toBe(0);
+
+      const txs = await prisma.loyaltyTransaction.findMany({
+        where: { orderId },
+        orderBy: { createdAt: 'asc' },
+      });
+      const refundTx = txs.find((t) => t.type === LoyaltyType.REFUND);
+      const revokeTx = txs.find((t) => t.type === LoyaltyType.REVOKE);
+
+      expect(refundTx).toMatchObject({
+        userId: customerId,
+        orderId,
+        type: LoyaltyType.REFUND,
+        points: 10,
+      });
+      expect(revokeTx).toMatchObject({
+        userId: customerId,
+        orderId,
+        type: LoyaltyType.REVOKE,
+        points: -6,
+      });
+    });
+
+    it('(f) & (g) hủy lần hai trả 409, không có dòng điểm mới, điểm không đổi; hủy đơn PREPARING trả 409, điểm không đổi', async () => {
+      // (f) Tạo đơn PAID có pointsUsed = 10, pointsEarned = 6, hủy lần 1 thành công, hủy lần 2 (cả khách lẫn nhân viên) trả 409 và không thêm dòng điểm
+      await prisma.user.update({
+        where: { id: customerId },
+        data: { loyaltyPoints: 10 },
+      });
+
+      const createRes = await request(app.getHttpServer())
+        .post('/orders')
+        .set('Authorization', `Bearer ${customerToken}`)
+        .send({
+          usePoints: true,
+          items: [{ productId: PRODUCT_DRINK_ID, quantity: 2, size: Size.S }],
+        })
+        .expect(201);
+      const orderId = (createRes.body as { id: string }).id;
+
+      await payOrderViaHttp(
+        orderId,
+        '0900000001',
+        'idem-v11-case-f-double-cancel',
+        customerToken,
+      );
+
+      // Hủy lần 1
+      await request(app.getHttpServer())
+        .post(`/orders/${orderId}/cancel`)
+        .set('Authorization', `Bearer ${customerToken}`)
+        .expect(200);
+
+      const txCountAfterFirstCancel = await prisma.loyaltyTransaction.count({
+        where: { orderId },
+      });
+      expect(txCountAfterFirstCancel).toBe(4); // REDEEM (-10), EARN (+6), REFUND (+10), REVOKE (-6)
+
+      // Hủy lần 2 bởi khách -> 409
+      await request(app.getHttpServer())
+        .post(`/orders/${orderId}/cancel`)
+        .set('Authorization', `Bearer ${customerToken}`)
+        .expect(409);
+
+      // Hủy lần 2 bởi nhân viên -> 409
+      await request(app.getHttpServer())
+        .patch(`/orders/${orderId}/status`)
+        .set('Authorization', `Bearer ${staffToken}`)
+        .send({ status: OrderStatus.CANCELLED })
+        .expect(409);
+
+      const userAfterSecondCancel = await prisma.user.findUniqueOrThrow({
+        where: { id: customerId },
+      });
+      expect(userAfterSecondCancel.loyaltyPoints).toBe(10);
+
+      const txCountAfterSecondCancel = await prisma.loyaltyTransaction.count({
+        where: { orderId },
+      });
+      expect(txCountAfterSecondCancel).toBe(4);
+
+      // (g) Đơn đã chuyển sang PREPARING -> hủy trả 409, điểm không đổi
+      const prepOrderCreate = await request(app.getHttpServer())
+        .post('/orders')
+        .set('Authorization', `Bearer ${customerToken}`)
+        .send({
+          usePoints: true,
+          items: [{ productId: PRODUCT_DRINK_ID, quantity: 2, size: Size.S }],
+        })
+        .expect(201);
+      const prepOrderId = (prepOrderCreate.body as { id: string }).id;
+
+      await payOrderViaHttp(
+        prepOrderId,
+        '0900000001',
+        'idem-v11-case-g-preparing',
+        customerToken,
+      );
+
+      await request(app.getHttpServer())
+        .patch(`/orders/${prepOrderId}/status`)
+        .set('Authorization', `Bearer ${staffToken}`)
+        .send({ status: OrderStatus.PREPARING })
+        .expect(200);
+
+      const pointsWhilePreparing = (
+        await prisma.user.findUniqueOrThrow({ where: { id: customerId } })
+      ).loyaltyPoints;
+      expect(pointsWhilePreparing).toBe(6);
+
+      await request(app.getHttpServer())
+        .post(`/orders/${prepOrderId}/cancel`)
+        .set('Authorization', `Bearer ${customerToken}`)
+        .expect(409);
+
+      await request(app.getHttpServer())
+        .patch(`/orders/${prepOrderId}/status`)
+        .set('Authorization', `Bearer ${staffToken}`)
+        .send({ status: OrderStatus.CANCELLED })
+        .expect(409);
+
+      const pointsAfterPreparingCancelAttempt = (
+        await prisma.user.findUniqueOrThrow({ where: { id: customerId } })
+      ).loyaltyPoints;
+      expect(pointsAfterPreparingCancelAttempt).toBe(6);
+
+      const prepRefundOrRevokeCount = await prisma.loyaltyTransaction.count({
+        where: {
+          orderId: prepOrderId,
+          type: { in: [LoyaltyType.REFUND, LoyaltyType.REVOKE] },
+        },
+      });
+      expect(prepRefundOrRevokeCount).toBe(0);
+    });
+
+    it('(h) đường hủy của khách (POST /orders/:id/cancel) và của nhân viên (PATCH /orders/:id/status) cho cùng kết quả điểm', async () => {
+      // 1. Luồng khách hủy: bắt đầu với 10 điểm, dùng 10 điểm ở đơn 70.000 (còn 0 điểm, total 60.000), thanh toán cộng 6 điểm (lên 6 điểm), hủy đơn -> hoàn 10, thu hồi 6 -> kết thúc ở 10 điểm
+      await prisma.user.update({
+        where: { id: customerId },
+        data: { loyaltyPoints: 10 },
+      });
+
+      const custOrdRes = await request(app.getHttpServer())
+        .post('/orders')
+        .set('Authorization', `Bearer ${customerToken}`)
+        .send({
+          usePoints: true,
+          items: [{ productId: PRODUCT_DRINK_ID, quantity: 2, size: Size.S }],
+        })
+        .expect(201);
+      const custOrdId = (custOrdRes.body as { id: string }).id;
+
+      await payOrderViaHttp(
+        custOrdId,
+        '0900000001',
+        'idem-v11-case-h-cust',
+        customerToken,
+      );
+      await request(app.getHttpServer())
+        .post(`/orders/${custOrdId}/cancel`)
+        .set('Authorization', `Bearer ${customerToken}`)
+        .expect(200);
+
+      const custFinalPoints = (
+        await prisma.user.findUniqueOrThrow({ where: { id: customerId } })
+      ).loyaltyPoints;
+      const custTxs = await prisma.loyaltyTransaction.findMany({
+        where: {
+          orderId: custOrdId,
+          type: { in: [LoyaltyType.REFUND, LoyaltyType.REVOKE] },
+        },
+        orderBy: { points: 'desc' },
+      });
+
+      // 2. Luồng nhân viên hủy trên otherCustomer: bắt đầu với 10 điểm, cùng đơn, cùng thanh toán, nhân viên PATCH CANCELLED
+      await prisma.user.update({
+        where: { id: otherCustomerId },
+        data: { loyaltyPoints: 10 },
+      });
+
+      const staffOrdRes = await request(app.getHttpServer())
+        .post('/orders')
+        .set('Authorization', `Bearer ${otherCustomerToken}`)
+        .send({
+          usePoints: true,
+          items: [{ productId: PRODUCT_DRINK_ID, quantity: 2, size: Size.S }],
+        })
+        .expect(201);
+      const staffOrdId = (staffOrdRes.body as { id: string }).id;
+
+      await payOrderViaHttp(
+        staffOrdId,
+        '0900000001',
+        'idem-v11-case-h-staff',
+        otherCustomerToken,
+      );
+      await request(app.getHttpServer())
+        .patch(`/orders/${staffOrdId}/status`)
+        .set('Authorization', `Bearer ${staffToken}`)
+        .send({ status: OrderStatus.CANCELLED })
+        .expect(200);
+
+      const otherCustFinalPoints = (
+        await prisma.user.findUniqueOrThrow({ where: { id: otherCustomerId } })
+      ).loyaltyPoints;
+      const staffTxs = await prisma.loyaltyTransaction.findMany({
+        where: {
+          orderId: staffOrdId,
+          type: { in: [LoyaltyType.REFUND, LoyaltyType.REVOKE] },
+        },
+        orderBy: { points: 'desc' },
+      });
+
+      expect(custFinalPoints).toBe(10);
+      expect(otherCustFinalPoints).toBe(10);
+      expect(custTxs.map((t) => ({ type: t.type, points: t.points }))).toEqual(
+        staffTxs.map((t) => ({ type: t.type, points: t.points })),
+      );
+      expect(custTxs.map((t) => ({ type: t.type, points: t.points }))).toEqual([
+        { type: LoyaltyType.REFUND, points: 10 },
+        { type: LoyaltyType.REVOKE, points: -6 },
+      ]);
+    });
   });
 });
