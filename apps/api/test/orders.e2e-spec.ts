@@ -1392,4 +1392,414 @@ describe('Orders Integration (POST /orders)', () => {
       });
     });
   });
+
+  describe('VIỆC 13 - Rà soát cuối BE: Luồng đầy đủ, đặt đồng thời & dùng điểm đồng thời', () => {
+    let codePercent10Cap15k: string;
+    const concurrentCustomerTokens: string[] = [];
+
+    beforeAll(async () => {
+      const suffix = String(Date.now()).slice(-6);
+      codePercent10Cap15k = `V13_BREW10_${suffix}`;
+      createdPromotionCodes.push(codePercent10Cap15k);
+
+      await prisma.promotion.create({
+        data: {
+          code: codePercent10Cap15k,
+          type: PromotionType.PERCENT,
+          value: 10,
+          maxDiscount: 15000,
+          isActive: true,
+        },
+      });
+
+      const passwordHash = await bcrypt.hash('Password123@', 10);
+      for (let i = 1; i <= 5; i++) {
+        const email = `cust.v13.concurrent.${i}.${Date.now()}@example.com`;
+        createdUserEmails.push(email);
+        await prisma.user.create({
+          data: {
+            email,
+            passwordHash,
+            displayName: `Khách Đồng Thời ${i}`,
+            role: Role.CUSTOMER,
+            isActive: true,
+            loyaltyPoints: 0,
+          },
+        });
+        const loginRes = await request(app.getHttpServer())
+          .post('/auth/login')
+          .send({ email, password: 'Password123@' })
+          .expect(200);
+        concurrentCustomerTokens.push(
+          (loginRes.body as { accessToken: string }).accessToken,
+        );
+      }
+    });
+
+    it('1. Luồng đầy đủ (a -> b -> c -> d -> e nối tiếp): đặt đơn có mã + usePoints -> thanh toán + replay Idempotency-Key -> GET /loyalty/me -> hủy đơn PAID (hoàn kho, REFUND, REVOKE) -> hủy lần 2 trả 409', async () => {
+      // Khởi tạo trạng thái ban đầu: khách có sẵn 20 điểm, món Trà sữa có stock = 10
+      await prisma.user.update({
+        where: { id: userId },
+        data: { loyaltyPoints: 20 },
+      });
+
+      // (a) Đặt đơn 2 ly Trà sữa size M (35.000 + 6.000 + topping 5.000 = 46.000 x 2 = 92.000)
+      // Mã PERCENT 10% (trần 15.000) -> discountAmount = floor(92.000 * 10 / 100) = 9.200
+      // Khách có 20 điểm, usePoints = true -> pointsUsed = min(20, floor((92.000 - 9.200 - 1.000) / 1.000)) = min(20, 81) = 20
+      // totalAmount = 92.000 - 9.200 - 20.000 = 62.800 (>= 1.000)
+      const orderRes = await request(app.getHttpServer())
+        .post('/orders')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({
+          receiveType: ReceiveType.TAKE_AWAY,
+          promotionCode: codePercent10Cap15k,
+          usePoints: true,
+          items: [
+            {
+              productId: PRODUCT_TEA_ID,
+              quantity: 2,
+              size: Size.M,
+              toppingIds: [TOPPING_PEARL_ID],
+            },
+          ],
+        })
+        .expect(201);
+
+      const createdOrder = orderRes.body as {
+        id: string;
+        orderNumber: number;
+        status: OrderStatus;
+        subtotalAmount: number;
+        discountAmount: number;
+        promotionCode: string | null;
+        pointsUsed: number;
+        pointsEarned: number;
+        totalAmount: number;
+      };
+
+      expect(createdOrder).toMatchObject({
+        status: OrderStatus.PENDING,
+        subtotalAmount: 92000,
+        discountAmount: 9200,
+        promotionCode: codePercent10Cap15k,
+        pointsUsed: 20,
+        pointsEarned: 0,
+        totalAmount: 62800,
+      });
+      expect(createdOrder.totalAmount).toBeGreaterThanOrEqual(1000);
+
+      // Kiểm tra sau bước (a): kho giảm đúng (10 - 2 = 8), điểm giảm đúng (20 - 20 = 0), có dòng REDEEM (-20)
+      const teaAfterStepA = await prisma.product.findUniqueOrThrow({
+        where: { id: PRODUCT_TEA_ID },
+      });
+      expect(teaAfterStepA.stock).toBe(8);
+
+      const userAfterStepA = await prisma.user.findUniqueOrThrow({
+        where: { id: userId },
+      });
+      expect(userAfterStepA.loyaltyPoints).toBe(0);
+
+      const txsAfterStepA = await prisma.loyaltyTransaction.findMany({
+        where: { userId, orderId: createdOrder.id },
+      });
+      expect(txsAfterStepA).toHaveLength(1);
+      expect(txsAfterStepA[0]).toMatchObject({
+        userId,
+        orderId: createdOrder.id,
+        type: LoyaltyType.REDEEM,
+        points: -20,
+      });
+
+      // (b) Thanh toán thành công với totalAmount = 62.800 -> pointsEarned = floor(62800 / 10000) = 6
+      const idemKey = `idem-v13-full-flow-${Date.now()}`;
+      const payRes1 = await request(app.getHttpServer())
+        .post('/payments')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .set('Idempotency-Key', idemKey)
+        .send({
+          orderId: createdOrder.id,
+          method: 'WALLET',
+          accountNumber: '0900000001',
+        })
+        .expect(201);
+
+      expect(payRes1.body).toMatchObject({
+        orderId: createdOrder.id,
+        amount: 62800,
+        accountLast4: '0001',
+        status: 'SUCCESS',
+        order: {
+          id: createdOrder.id,
+          orderNumber: createdOrder.orderNumber,
+          status: OrderStatus.PAID,
+          pointsEarned: 6,
+        },
+      });
+
+      const userAfterPay1 = await prisma.user.findUniqueOrThrow({
+        where: { id: userId },
+      });
+      expect(userAfterPay1.loyaltyPoints).toBe(6);
+
+      const earnTxsAfterPay1 = await prisma.loyaltyTransaction.findMany({
+        where: { userId, orderId: createdOrder.id, type: LoyaltyType.EARN },
+      });
+      expect(earnTxsAfterPay1).toHaveLength(1);
+      expect(earnTxsAfterPay1[0]).toMatchObject({
+        userId,
+        orderId: createdOrder.id,
+        type: LoyaltyType.EARN,
+        points: 6,
+      });
+
+      // Gửi lại cùng Idempotency-Key -> trả 200 OK, điểm không tăng thêm, không tạo thêm dòng EARN
+      const payResReplay = await request(app.getHttpServer())
+        .post('/payments')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .set('Idempotency-Key', idemKey)
+        .send({
+          orderId: createdOrder.id,
+          method: 'WALLET',
+          accountNumber: '0900000001',
+        })
+        .expect(200);
+
+      expect(payResReplay.body).toEqual(payRes1.body);
+
+      const userAfterReplay = await prisma.user.findUniqueOrThrow({
+        where: { id: userId },
+      });
+      expect(userAfterReplay.loyaltyPoints).toBe(6);
+
+      const earnTxsAfterReplay = await prisma.loyaltyTransaction.findMany({
+        where: { userId, orderId: createdOrder.id, type: LoyaltyType.EARN },
+      });
+      expect(earnTxsAfterReplay).toHaveLength(1);
+
+      // (c) GET /loyalty/me: loyaltyPoints = 6 và danh sách giao dịch khớp (EARN +6, REDEEM -20)
+      const loyaltyAfterPayRes = await request(app.getHttpServer())
+        .get('/loyalty/me')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .expect(200);
+
+      const loyaltyAfterPay = loyaltyAfterPayRes.body as {
+        loyaltyPoints: number;
+        transactions: Array<{
+          id: string;
+          type: LoyaltyType;
+          points: number;
+          orderNumber: number | null;
+          createdAt: string;
+        }>;
+      };
+      expect(loyaltyAfterPay.loyaltyPoints).toBe(6);
+      expect(loyaltyAfterPay.transactions).toHaveLength(2);
+      expect(loyaltyAfterPay.transactions[0]).toMatchObject({
+        type: LoyaltyType.EARN,
+        points: 6,
+        orderNumber: createdOrder.orderNumber,
+      });
+      expect(loyaltyAfterPay.transactions[1]).toMatchObject({
+        type: LoyaltyType.REDEEM,
+        points: -20,
+        orderNumber: createdOrder.orderNumber,
+      });
+
+      // (d) Hủy đơn PAID: đơn thành CANCELLED, kho hoàn đúng (8 + 2 = 10), điểm hoàn REFUND (+20), thu hồi REVOKE (-6), điểm cuối = 20 (>= 0)
+      const cancelRes1 = await request(app.getHttpServer())
+        .post(`/orders/${createdOrder.id}/cancel`)
+        .set('Authorization', `Bearer ${accessToken}`)
+        .expect(200);
+
+      expect(cancelRes1.body).toMatchObject({
+        id: createdOrder.id,
+        orderNumber: createdOrder.orderNumber,
+        status: OrderStatus.CANCELLED,
+        subtotalAmount: 92000,
+        discountAmount: 9200,
+        promotionCode: codePercent10Cap15k,
+        pointsUsed: 20,
+        pointsEarned: 6,
+        totalAmount: 62800,
+      });
+
+      const teaAfterCancel = await prisma.product.findUniqueOrThrow({
+        where: { id: PRODUCT_TEA_ID },
+      });
+      expect(teaAfterCancel.stock).toBe(10);
+
+      const userAfterCancel = await prisma.user.findUniqueOrThrow({
+        where: { id: userId },
+      });
+      expect(userAfterCancel.loyaltyPoints).toBe(20);
+      expect(userAfterCancel.loyaltyPoints).toBeGreaterThanOrEqual(0);
+
+      const loyaltyAfterCancelRes = await request(app.getHttpServer())
+        .get('/loyalty/me')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .expect(200);
+
+      const loyaltyAfterCancel = loyaltyAfterCancelRes.body as {
+        loyaltyPoints: number;
+        transactions: Array<{
+          id: string;
+          type: LoyaltyType;
+          points: number;
+          orderNumber: number | null;
+          createdAt: string;
+        }>;
+      };
+      expect(loyaltyAfterCancel.loyaltyPoints).toBe(20);
+      expect(loyaltyAfterCancel.transactions).toHaveLength(4);
+
+      const txMapByType = new Map(
+        loyaltyAfterCancel.transactions.map((t) => [t.type, t.points]),
+      );
+      expect(txMapByType.get(LoyaltyType.REDEEM)).toBe(-20);
+      expect(txMapByType.get(LoyaltyType.EARN)).toBe(6);
+      expect(txMapByType.get(LoyaltyType.REFUND)).toBe(20);
+      expect(txMapByType.get(LoyaltyType.REVOKE)).toBe(-6);
+      for (const tx of loyaltyAfterCancel.transactions) {
+        expect(tx.orderNumber).toBe(createdOrder.orderNumber);
+      }
+
+      // (e) Hủy lần hai trả 409 và không thay đổi gì thêm
+      const cancelRes2 = await request(app.getHttpServer())
+        .post(`/orders/${createdOrder.id}/cancel`)
+        .set('Authorization', `Bearer ${accessToken}`)
+        .expect(409);
+
+      expect(cancelRes2.body).toMatchObject({
+        statusCode: 409,
+        message: 'Không thể hủy đơn ở trạng thái hiện tại',
+      });
+
+      const teaAfterSecondCancel = await prisma.product.findUniqueOrThrow({
+        where: { id: PRODUCT_TEA_ID },
+      });
+      expect(teaAfterSecondCancel.stock).toBe(10);
+
+      const userAfterSecondCancel = await prisma.user.findUniqueOrThrow({
+        where: { id: userId },
+      });
+      expect(userAfterSecondCancel.loyaltyPoints).toBe(20);
+
+      const txCountAfterSecondCancel = await prisma.loyaltyTransaction.count({
+        where: { userId, orderId: createdOrder.id },
+      });
+      expect(txCountAfterSecondCancel).toBe(4);
+    });
+
+    it('2. Đặt đồng thời (3 vòng liên tiếp): món còn stock = 3, gửi đồng thời 5 request POST /orders (mỗi request 1 ly) bằng Promise.all -> đúng 3 đơn 201, 2 request 409, stock cuối = 0', async () => {
+      // Làm ấm kết nối trong pool trước khi bắn đồng thời
+      await Promise.all(
+        Array.from({ length: 5 }, () => prisma.$queryRaw`SELECT 1`),
+      );
+
+      for (let round = 1; round <= 3; round++) {
+        // Đặt lại stock = 3 trước mỗi vòng
+        await prisma.product.update({
+          where: { id: PRODUCT_TEA_ID },
+          data: { stock: 3 },
+        });
+
+        const responses = await Promise.all(
+          concurrentCustomerTokens.map((token) =>
+            request(app.getHttpServer())
+              .post('/orders')
+              .set('Authorization', `Bearer ${token}`)
+              .send({
+                items: [{ productId: PRODUCT_TEA_ID, quantity: 1 }],
+              }),
+          ),
+        );
+
+        const successResponses = responses.filter((r) => r.status === 201);
+        const conflictResponses = responses.filter((r) => r.status === 409);
+
+        expect(successResponses).toHaveLength(3);
+        expect(conflictResponses).toHaveLength(2);
+
+        for (const conflictRes of conflictResponses) {
+          expect(conflictRes.body).toMatchObject({
+            statusCode: 409,
+            error: 'Conflict',
+          });
+        }
+
+        const productAfterRound = await prisma.product.findUniqueOrThrow({
+          where: { id: PRODUCT_TEA_ID },
+        });
+        expect(productAfterRound.stock).toBe(0);
+      }
+    });
+
+    it('3. Hai đơn dùng điểm đồng thời của cùng một khách chỉ đủ điểm cho 1 đơn: không bao giờ làm điểm âm; đơn thứ hai hoặc được trừ ít điểm hơn theo đúng công thức, hoặc trả 409 "Số điểm không đủ, vui lòng thử lại"', async () => {
+      await Promise.all(
+        Array.from({ length: 4 }, () => prisma.$queryRaw`SELECT 1`),
+      );
+
+      for (let round = 1; round <= 3; round++) {
+        // Khách chỉ có 20 điểm; mỗi đơn là 1 bánh 30.000đ (nếu đủ điểm có thể dùng tối đa 29 điểm)
+        await prisma.user.update({
+          where: { id: userId },
+          data: { loyaltyPoints: 20 },
+        });
+        await prisma.product.update({
+          where: { id: PRODUCT_CAKE_ID },
+          data: { stock: 10 },
+        });
+
+        const [res1, res2] = await Promise.all([
+          request(app.getHttpServer())
+            .post('/orders')
+            .set('Authorization', `Bearer ${accessToken}`)
+            .send({
+              usePoints: true,
+              items: [{ productId: PRODUCT_CAKE_ID, quantity: 1 }],
+            }),
+          request(app.getHttpServer())
+            .post('/orders')
+            .set('Authorization', `Bearer ${accessToken}`)
+            .send({
+              usePoints: true,
+              items: [{ productId: PRODUCT_CAKE_ID, quantity: 1 }],
+            }),
+        ]);
+
+        const statuses = [res1.status, res2.status].sort((a, b) => a - b);
+        const userAfterRound = await prisma.user.findUniqueOrThrow({
+          where: { id: userId },
+        });
+
+        // Điểm không bao giờ âm; đúng hết 20 điểm đã được trừ tổng cộng
+        expect(userAfterRound.loyaltyPoints).toBe(0);
+        expect(userAfterRound.loyaltyPoints).toBeGreaterThanOrEqual(0);
+
+        if (statuses[0] === 201 && statuses[1] === 409) {
+          // Trường hợp 2 request cùng đọc thấy 20 điểm: 1 đơn thắng trừ 20 điểm, đơn kia bị chặn bởi updateMany (loyaltyPoints >= 20) -> 409
+          const winner = res1.status === 201 ? res1 : res2;
+          const loser = res1.status === 409 ? res1 : res2;
+
+          expect(winner.body).toMatchObject({
+            subtotalAmount: 30000,
+            pointsUsed: 20,
+            totalAmount: 10000,
+          });
+          expect(loser.body).toMatchObject({
+            statusCode: 409,
+            message: 'Số điểm không đủ, vui lòng thử lại',
+          });
+        } else {
+          // Trường hợp request 2 đọc sau khi request 1 đã trừ 20 điểm: đơn 1 dùng 20 điểm, đơn 2 dùng 0 điểm
+          expect(statuses).toEqual([201, 201]);
+          const pointsUsedList = [
+            (res1.body as { pointsUsed: number }).pointsUsed,
+            (res2.body as { pointsUsed: number }).pointsUsed,
+          ].sort((a, b) => a - b);
+          expect(pointsUsedList).toEqual([0, 20]);
+        }
+      }
+    });
+  });
 });

@@ -57,83 +57,98 @@ $ npm run test:e2e
 $ npm run test:cov
 ```
 
-## Endpoints Sản phẩm (Sprint 1, Việc 5 & Việc 6)
+## Biến môi trường cần có (khối `# --- API (BE) ---` trong `.env.example`)
 
+Cấu hình trong file `.env` ở thư mục gốc của repo (đối chiếu từ `.env.example`):
+
+- `PORT`: Cổng chạy server API (mặc định `3001`).
+- `DATABASE_URL`: Chuỗi kết nối PostgreSQL chính cho Prisma (ví dụ: `"postgresql://brewlite:brewlite@localhost:5432/brewlite?schema=public"`).
+- `CORS_ORIGIN`: Địa chỉ Frontend được phép gọi CORS (mặc định `http://localhost:3000`).
+- `JWT_SECRET`: Chuỗi bí mật ký/xác thực JWT (bắt buộc khi chạy ứng dụng).
+- `TEST_DATABASE_URL`: Chuỗi kết nối PostgreSQL dành riêng cho E2E/Integration test, tên database bắt buộc kết thúc bằng hậu tố `_test` (ví dụ: `"postgresql://brewlite:brewlite@127.0.0.1:5432/brewlite_test?schema=public"`).
+- `DEMO_USER_PASSWORD`: Mật khẩu khởi tạo cho 5 tài khoản demo khi chạy `npm.cmd run seed` (tối thiểu 6 ký tự; mẫu trong `.env.example` là `demo123@`).
+
+## Danh sách 23 Endpoint (Hợp đồng API Bản 3)
+
+### Hệ thống & Sản phẩm (`AppController`, `ProductsController`)
+- `GET /health`: Kiểm tra trạng thái server (`{ "status": "ok" }`).
 - `GET /products`: Lấy danh sách món đang hiển thị (`isVisible = true`), sắp xếp theo `category` rồi `name`. Hỗ trợ query tùy chọn `category` (`TEA`, `COFFEE`, `MILK_TEA`, `CAKE`) và `q` (tìm theo tên không phân biệt hoa/thường, có dấu).
-- `GET /products/:id`: Xem chi tiết một sản phẩm theo UUID kèm cấu hình `sizes`, `sugarLevels`, `iceLevels` và `toppings` (lấy các topping `isVisible = true` từ bảng `Topping`, sắp xếp theo `id` tăng dần; riêng món `CAKE` trả 4 mảng rỗng `[]`).
 - `GET /products/manage` (cần Bearer JWT `STAFF` hoặc `ADMIN`): Trả toàn bộ sản phẩm kể cả món đang ẩn (`isVisible = false`), sắp xếp theo `category` rồi `name`.
-- `PATCH /products/:id/availability` (cần Bearer JWT `STAFF` hoặc `ADMIN`): Bật/tắt trạng thái đang bán (`isAvailable: true` -> `stock = 999`) hoặc tạm hết (`isAvailable: false` -> `stock = 0`).
-- `POST /products` (chỉ `ADMIN`): Thêm món mới (`name` 1–100 ký tự, `category`, `basePrice` nguyên 1.000–1.000.000, `imageUrl` tùy chọn `http://`/`https://` tối đa 500 ký tự; bỏ trống hoặc rỗng sẽ dùng ảnh mặc định `DEFAULT_PRODUCT_IMAGE_URL`). Tự sinh UUID, mặc định `stock = 999`, `isVisible = true`.
-- `PATCH /products/:id` (chỉ `ADMIN`): Cập nhật thông tin hoặc ẩn/hiện món (`name`, `category`, `basePrice`, `imageUrl`, `isVisible`; cần ít nhất 1 trường, không sửa `stock` qua endpoint này).
-- **Dữ liệu mẫu (Seed):** Nạp 12 sản phẩm (`Product`) và 4 topping (`Topping`: Trân châu đen, Thạch dừa, Pudding, Kem cheese) bằng `upsert` theo UUID cố định. Chạy lệnh seed từ thư mục `apps/api`: `npm.cmd run seed`.
+- `POST /products` (chỉ `ADMIN`): Thêm món mới (`name` 1–100 ký tự, `category`, `basePrice` nguyên 1.000–1.000.000, `imageUrl` tùy chọn, `stock` tùy chọn 0–9999 mặc định `50`).
+- `GET /products/:id`: Xem chi tiết một sản phẩm theo UUID kèm `sizes`, `sugarLevels`, `iceLevels` và `toppings` (riêng món `CAKE` trả 4 mảng rỗng `[]`).
+- `PATCH /products/:id` (chỉ `ADMIN`): Cập nhật thông tin hoặc ẩn/hiện món (`name`, `category`, `basePrice`, `imageUrl`, `isVisible`; không sửa `stock` ở endpoint này).
+- `PATCH /products/:id/availability` (cần Bearer JWT `STAFF` hoặc `ADMIN`): Bật/tắt trạng thái đang bán (`isAvailable: true` bắt buộc gửi kèm `stock` nguyên 1–9999; `isAvailable: false` đặt `stock = 0`).
 
-## Logic nghiệp vụ Đơn hàng (`src/orders`, chưa mở endpoint)
+### Xác thực (`AuthController`)
+- `POST /auth/register`: Đăng ký tài khoản khách hàng (`CUSTOMER`), băm mật khẩu bcrypt (10 vòng), chuẩn hóa email chữ thường.
+- `POST /auth/login`: Đăng nhập bằng `email` và `password`. Trả `{ accessToken, user: { id, email, displayName, role } }` (JWT có hạn 24 giờ; tài khoản `isActive = false` bị chặn với `403` `"Tài khoản đã bị khóa"`).
 
-- `validateTransition(from, to)` (`order-status.ts`): Kiểm tra chuyển đổi trạng thái đơn hàng theo máy trạng thái hợp đồng; ném `409 Conflict` nếu chuyển không hợp lệ.
-- `calculateOrderTotal(items)` (`order-pricing.ts`): Tính `unitPrice`, `lineTotal` từng dòng và `totalAmount` toàn đơn (dùng hằng số phụ thu size từ `products.constants.ts`).
+### Đơn hàng & Thanh toán (`OrdersController`, `PaymentsController`)
+Mọi Order object trả về đều có đủ 5 trường Bản 3: `subtotalAmount`, `discountAmount`, `promotionCode`, `pointsUsed`, `pointsEarned` cùng `totalAmount = subtotalAmount - discountAmount - pointsUsed * 1000` (luôn `>= 1000`).
+- `POST /orders` (cần Bearer JWT): Tạo đơn hàng trong một transaction duy nhất (trừ tồn kho thật có điều kiện `stock >= số lượng cần`, áp mã giảm giá `promotionCode`, trừ điểm `usePoints` và ghi dòng `REDEEM`).
+- `GET /orders` (cần Bearer JWT `STAFF` hoặc `ADMIN`): Lấy toàn bộ đơn hàng của mọi khách (hỗ trợ lọc query `status`), kèm thông tin `customer`.
+- `GET /orders/me` (cần Bearer JWT): Lấy danh sách đơn hàng của chính người dùng đang đăng nhập.
+- `GET /orders/:id` (cần Bearer JWT, chủ đơn): Xem chi tiết một đơn hàng kèm lịch sử `payments[]`.
+- `POST /orders/:id/cancel` (cần Bearer JWT, chủ đơn): Khách hủy đơn ở trạng thái `PENDING`, `PAYMENT_FAILED` hoặc `PAID` (dùng hàm hủy chung: hoàn kho, hoàn điểm `REFUND`, thu hồi điểm `REVOKE` không làm âm điểm).
+- `PATCH /orders/:id/status` (cần Bearer JWT `STAFF` hoặc `ADMIN`): Nhân viên chuyển trạng thái đơn (`PREPARING`, `READY`, `COMPLETED`, `CANCELLED`; khi `CANCELLED` dùng chung hàm hủy đơn).
+- `POST /payments` (cần Bearer JWT và header `Idempotency-Key` 8–100 ký tự): Thanh toán đơn qua cổng mô phỏng (`method`: `WALLET` hoặc `CARD`; số tài khoản đuôi `0000` thất bại `FAILED`, còn lại `SUCCESS`; chỉ lưu 4 số cuối `accountLast4`). Khi `SUCCESS`, chuyển đơn sang `PAID` và cộng `pointsEarned = floor(totalAmount / 10000)` điểm (ghi dòng `EARN`) trong cùng transaction; gửi lại cùng `Idempotency-Key` trả `200 OK` và không cộng điểm lần nữa.
 
-Chạy unit test trên PowerShell (từ thư mục `apps/api`):
-```powershell
-npm.cmd run test
-```
+### Quản lý nhân viên (`StaffController`)
+- `GET /staff` (chỉ `ADMIN`): Lấy danh sách tài khoản `role = STAFF`.
+- `PATCH /staff/:id/status` (chỉ `ADMIN`): Khóa/mở khóa tài khoản `STAFF` (`isActive: true/false`), có hiệu lực ngay ở mọi request tiếp theo.
 
-## Database Migration (Prisma)
+### Khuyến mãi & Điểm thưởng (`PromotionsController`, `LoyaltyController`)
+- `GET /promotions` (chỉ `ADMIN`): Lấy danh sách tất cả mã giảm giá (mới nhất trước).
+- `POST /promotions` (chỉ `ADMIN`): Tạo mã giảm giá mới (`code` 3–20 ký tự tự chuyển chữ hoa, `type` là `PERCENT` hoặc `FIXED`, `value`, `maxDiscount` tùy chọn cho `PERCENT`, `isActive`).
+- `POST /promotions/validate` (chỉ `CUSTOMER`): Xem trước số tiền giảm (`discountAmount`) theo `code` và `subtotal`.
+- `PATCH /promotions/:id` (chỉ `ADMIN`): Cập nhật `type`, `value`, `maxDiscount`, `isActive` của mã giảm giá (không cho sửa `code`).
+- `GET /loyalty/me` (chỉ `CUSTOMER`): Xem số dư `loyaltyPoints` hiện tại và tối đa 50 giao dịch điểm mới nhất (`EARN`, `REDEEM`, `REFUND`, `REVOKE`) kèm `orderNumber` (hoặc `null` nếu không gắn với đơn).
 
-- Chạy migration ở môi trường dev (từ `apps/api`): `npm.cmd run prisma -- migrate dev` (hoặc `npx.cmd prisma migrate dev` / `npx.cmd prisma migrate deploy` nếu đã cấu hình biến `DATABASE_URL` trong `apps/api/.env`).
-- **Lưu ý khi pull code mới về:** Bắt buộc chạy `npm.cmd run prisma -- migrate dev` (hoặc `npx.cmd prisma migrate deploy`) và `npx.cmd prisma generate` trong thư mục `apps/api` để cập nhật 6 bảng mới (`User`, `Topping`, `Order`, `OrderItem`, `OrderItemTopping`, `Payment`) vào database.
+## Database Migration & Seed (Prisma)
 
-## Dựng lại database từ đầu
+Khi khởi tạo hoặc dựng lại database dev từ đầu (sau khi đã bật PostgreSQL bằng `docker compose up -d` và cấu hình `.env` ở thư mục gốc), chạy từ thư mục `apps/api`:
 
-Khi khởi tạo database mới trên máy local (sau khi đã bật PostgreSQL bằng `docker compose up -d` và cấu hình `.env` ở thư mục gốc), chạy theo đúng thứ tự từ thư mục `apps/api`:
 ```powershell
 cd apps/api
 npm.cmd run prisma -- migrate deploy
 npm.cmd run prisma -- generate
 npm.cmd run seed
 ```
-- **Tài khoản demo (5 tài khoản chuẩn theo Hợp đồng API Mục 8.3):** Khi biến môi trường `DEMO_USER_PASSWORD` trong `.env` được đặt (mặc định `demo123@`), lệnh `npm.cmd run seed` sẽ tạo/cập nhật 5 tài khoản demo:
-  - `quanly@example.com` (`role: ADMIN`, `displayName: "Quản lý"`)
-  - `nhanvien1@example.com` (`role: STAFF`, `displayName: "Nhân viên 1"`)
-  - `nhanvien2@example.com` (`role: STAFF`, `displayName: "Nhân viên 2"`)
-  - `nhanvien3@example.com` (`role: STAFF`, `displayName: "Nhân viên 3"`, phục vụ kiểm thử Khóa/Mở khóa trên `/staff/employees`)
-  - `khach@example.com` (`role: CUSTOMER`, `displayName: "Khách demo"`)
-  Nếu biến này để trống hoặc ngắn hơn 6 ký tự, seed sẽ tự động bỏ qua bước tạo tài khoản demo.
 
-## Endpoints Xác thực (Sprint 2 - Việc 4b)
+Dữ liệu được nạp bởi `npm.cmd run seed` (dùng `upsert` theo UUID cố định, chạy lại nhiều lần không nhân đôi):
+- **12 sản phẩm (`Product`)** và **4 topping (`Topping`)**.
+- **3 mã giảm giá mẫu (`Promotion`)**:
+  - `BREW10` (`PERCENT`, giảm 10%, trần `15000`, `isActive: true`)
+  - `GIAM20K` (`FIXED`, giảm `20000`, `isActive: true`)
+  - `TAMNGUNG` (`PERCENT`, giảm 15%, trần `20000`, `isActive: false`)
+- **5 tài khoản demo (`User`)** khi biến `DEMO_USER_PASSWORD` trong `.env` có độ dài từ 6 ký tự trở lên:
+  - `quanly@example.com` (`ADMIN`, `"Quản lý"`)
+  - `nhanvien1@example.com`, `nhanvien2@example.com`, `nhanvien3@example.com` (`STAFF`)
+  - `khach@example.com` (`CUSTOMER`, `"Khách demo"`)
+- **Điểm chào mừng (tặng đúng 1 lần)**: Tạo giao dịch `EARN` `+50` điểm (`id = 99999999-0000-0000-0000-000000000001`, `orderId = null`) và cộng `50` điểm cho `khach@example.com` nếu giao dịch này chưa tồn tại.
 
-- Biến môi trường bắt buộc trong `.env`: `JWT_SECRET=<chuỗi-bí-mật>` (nếu thiếu ứng dụng sẽ báo lỗi ngay khi khởi động).
-- `POST /auth/register`: Đăng ký tài khoản khách hàng (`CUSTOMER`), băm mật khẩu bcrypt (10 vòng), chuẩn hóa email chữ thường. Trả `201 Created` gồm `{ id, email, displayName, role }`; trùng email trả `409 Conflict` (`"Email này đã được sử dụng"`).
-- `POST /auth/login`: Đăng nhập bằng `email` và `password`. Trả `200 OK` gồm `{ accessToken, user: { id, email, displayName, role } }` (JWT có hạn 24 giờ); sai email hoặc mật khẩu trả `401 Unauthorized` (`"Email hoặc mật khẩu không chính xác"`).
+## Chạy Lint, Unit Test, E2E Test (trên `brewlite_test`) và Build
 
-## Endpoints Đơn hàng & Thanh toán (Sprint 2 - Việc 6, 7, 8)
-
-- `POST /orders` (cần Bearer JWT): Khởi tạo đơn hàng từ giỏ, server tự tính tiền và kiểm tra/trừ tồn kho cộng gộp theo món trong một transaction.
-- `POST /payments` (cần Bearer JWT và header `Idempotency-Key` 8–100 ký tự): Thanh toán đơn hàng qua cổng mô phỏng (đuôi `0000` thất bại `FAILED`, còn lại `SUCCESS`; chỉ lưu 4 số cuối `accountLast4`).
-- `GET /orders/me` (cần Bearer JWT): Lấy danh sách đơn hàng của người dùng đang đăng nhập, sắp xếp `createdAt` giảm dần rồi `orderNumber` giảm dần, kèm `items[]` và `toppings[]` (không bao gồm `payments`).
-- `GET /orders/:id` (cần Bearer JWT): Xem chi tiết một đơn hàng của chính người dùng kèm lịch sử `payments[]` (sắp xếp `createdAt` giảm dần, có `failureReason: null` hoặc lý do lỗi). Đơn không tồn tại, của người khác hoặc `id` không phải UUID đều trả `404 Not Found` (`"Không tìm thấy đơn hàng"`).
-
-## Chạy Integration Test (Database PostgreSQL thật - Việc 9a)
-
-Integration test kết nối tới database PostgreSQL riêng biệt thông qua biến môi trường `TEST_DATABASE_URL`. Để bảo vệ dữ liệu dev, khóa an toàn bắt buộc tên database trong `TEST_DATABASE_URL` phải kết thúc bằng hậu tố `_test` (nếu thiếu biến hoặc tên database không kết thúc bằng `_test`, bộ test sẽ từ chối chạy ngay).
-
-Các bước chuẩn bị và chạy trên Windows PowerShell (khi container `brewlite-postgres` của Docker Compose đang chạy):
+Các lệnh chạy từ thư mục `apps/api` trên Windows PowerShell:
 
 ```powershell
-# 1. Tạo database test riêng (chỉ cần chạy 1 lần; nếu đã có sẽ báo already exists, có thể bỏ qua)
-docker exec brewlite-postgres psql -U brewlite -d postgres -c "CREATE DATABASE brewlite_test;"
-
-# 2. Di chuyển vào thư mục apps/api
 cd apps/api
 
-# 3. Đặt biến TEST_DATABASE_URL và tạm trỏ DATABASE_URL sang database test trong cửa sổ PowerShell hiện tại để chạy migration
+# 1. Kiểm tra lint
+npm.cmd run lint
+
+# 2. Chạy unit test
+npm.cmd run test
+
+# 3. Chuẩn bị database brewlite_test và chạy E2E test
+docker exec brewlite-postgres psql -U brewlite -d postgres -c "CREATE DATABASE brewlite_test;"
 $env:TEST_DATABASE_URL = "postgresql://brewlite:brewlite@127.0.0.1:5432/brewlite_test?schema=public"
 $env:DATABASE_URL = $env:TEST_DATABASE_URL
-
-# 4. Chạy migration lên database test
 ./node_modules/.bin/prisma.cmd migrate deploy
+npm.cmd run test:e2e -- --runInBand
 
-# 5. Chạy integration test tuần tự (--runInBand) cho POST /orders và POST /payments
-npm.cmd run test:integration
+# 4. Build ứng dụng
+npm.cmd run build
 ```
 
 ## Deployment
