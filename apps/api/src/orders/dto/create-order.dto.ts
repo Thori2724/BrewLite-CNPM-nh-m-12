@@ -5,6 +5,7 @@ import {
   ArrayMinSize,
   ArrayUnique,
   IsArray,
+  IsBoolean,
   IsEnum,
   IsInt,
   IsObject,
@@ -74,6 +75,10 @@ export class CreateOrderDto {
   @IsString()
   @Length(1, 30)
   promotionCode?: string;
+
+  @ValidateIf((_obj: CreateOrderDto, value: unknown) => value !== undefined)
+  @IsBoolean()
+  usePoints?: boolean;
 
   @IsArray()
   @ArrayMinSize(1)

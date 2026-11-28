@@ -8,6 +8,7 @@ import {
 import {
   Category,
   IceLevel,
+  LoyaltyType,
   OrderStatus,
   PaymentMethod,
   PaymentStatus,
@@ -43,6 +44,7 @@ export const ORDER_CANNOT_CANCEL_MESSAGE =
   'Không thể hủy đơn ở trạng thái hiện tại';
 export const ORDER_STATUS_CHANGED_MESSAGE =
   'Trạng thái đơn đã thay đổi, vui lòng tải lại';
+export const INSUFFICIENT_POINTS_MESSAGE = 'Số điểm không đủ, vui lòng thử lại';
 export { ORDER_NOT_FOUND_MESSAGE };
 
 export const ORDER_STATUS_LABELS: Readonly<Record<OrderStatus, string>> = {
@@ -128,6 +130,14 @@ export class OrdersService {
         ]);
       }
       normalizedPromotionCode = trimmedCode;
+    }
+
+    let usePoints = false;
+    if (dto.usePoints !== undefined) {
+      if (typeof dto.usePoints !== 'boolean') {
+        throw new BadRequestException(['usePoints must be a boolean value']);
+      }
+      usePoints = dto.usePoints;
     }
 
     const uniqueProductIds = Array.from(
@@ -343,9 +353,38 @@ export class OrdersService {
             )
           : 0;
         const promotionCode = matchedPromotion ? matchedPromotion.code : null;
-        const pointsUsed = 0;
+
+        let pointsUsed = 0;
+        if (usePoints) {
+          const customer = await tx.user.findUnique({
+            where: { id: userId },
+            select: { loyaltyPoints: true },
+          });
+          const loyaltyPoints = customer?.loyaltyPoints ?? 0;
+          const maxPointsByAmount = Math.floor(
+            (subtotalAmount - discountAmount - 1000) / 1000,
+          );
+          pointsUsed = Math.max(0, Math.min(loyaltyPoints, maxPointsByAmount));
+        }
+
         const pointsEarned = 0;
         const totalAmount = subtotalAmount - discountAmount - pointsUsed * 1000;
+
+        if (pointsUsed > 0) {
+          const deducted = await tx.user.updateMany({
+            where: {
+              id: userId,
+              loyaltyPoints: { gte: pointsUsed },
+            },
+            data: {
+              loyaltyPoints: { decrement: pointsUsed },
+            },
+          });
+
+          if (deducted.count === 0) {
+            throw new ConflictException(INSUFFICIENT_POINTS_MESSAGE);
+          }
+        }
 
         const createdOrder = await tx.order.create({
           data: {
@@ -361,6 +400,17 @@ export class OrdersService {
             totalAmount,
           },
         });
+
+        if (pointsUsed > 0) {
+          await tx.loyaltyTransaction.create({
+            data: {
+              userId,
+              orderId: createdOrder.id,
+              type: LoyaltyType.REDEEM,
+              points: -pointsUsed,
+            },
+          });
+        }
 
         const createdItems: OrderItemRecord[] = [];
 
