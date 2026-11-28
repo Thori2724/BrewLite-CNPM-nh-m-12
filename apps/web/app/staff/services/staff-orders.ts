@@ -8,6 +8,7 @@ import {
 } from '../../../services/order-contract';
 import { getAllOrdersApi, updateOrderStatusApi } from '../../../services/orders';
 import { isAccountLockedError } from '../../../utils/auth';
+import { POINT_VALUE_VND } from '../../../utils/checkout';
 import {
   getMockStaffOrders,
   isStaffOrdersMockEnabled,
@@ -150,6 +151,67 @@ export function getStaffOrderActionStates(
 export function formatStaffVnd(amount: number): string {
   const safe = Number.isFinite(amount) ? Math.max(0, Math.round(amount)) : 0;
   return `${safe.toLocaleString('vi-VN')}đ`;
+}
+
+export interface StaffOrderPaymentSummary {
+  subtotalAmount: number;
+  promotionCode: string | null;
+  showPromotionCode: boolean;
+  discountAmount: number;
+  showDiscount: boolean;
+  pointsUsed: number;
+  showPointsUsed: boolean;
+  pointsDiscountAmount: number;
+  pointsEarned: number;
+  pointsEarnedLabel: string;
+  totalAmount: number;
+}
+
+function toSafeNonNegativeInt(value: unknown, fallback = 0): number {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return Math.max(0, Math.floor(value));
+  }
+  return fallback;
+}
+
+/**
+ * Đọc thẳng các trường tóm tiền & khuyến mãi/điểm từ dữ liệu GET /orders
+ * để hiển thị chỉ-xem ở /staff; xử lý an toàn khi dữ liệu cũ thiếu trường.
+ */
+export function getStaffOrderPaymentSummary(
+  order: Partial<OrderResponse> | null | undefined
+): StaffOrderPaymentSummary {
+  const totalAmount = toSafeNonNegativeInt(order?.totalAmount, 0);
+  const subtotalAmount = toSafeNonNegativeInt(order?.subtotalAmount, totalAmount);
+  const promotionCode =
+    typeof order?.promotionCode === 'string' && order.promotionCode.trim().length > 0
+      ? order.promotionCode.trim()
+      : null;
+  const discountAmount = toSafeNonNegativeInt(order?.discountAmount, 0);
+  const pointsUsed = toSafeNonNegativeInt(order?.pointsUsed, 0);
+  const pointsDiscountAmount = pointsUsed * POINT_VALUE_VND;
+  const pointsEarned = toSafeNonNegativeInt(order?.pointsEarned, 0);
+  const isUnpaidOrder = order?.status === 'PENDING' || order?.status === 'PAYMENT_FAILED';
+  const pointsEarnedLabel =
+    pointsEarned > 0
+      ? `+${pointsEarned} điểm`
+      : isUnpaidOrder
+        ? 'Chưa cộng'
+        : '0 điểm';
+
+  return {
+    subtotalAmount,
+    promotionCode,
+    showPromotionCode: promotionCode !== null,
+    discountAmount,
+    showDiscount: discountAmount > 0,
+    pointsUsed,
+    showPointsUsed: pointsUsed > 0,
+    pointsDiscountAmount,
+    pointsEarned,
+    pointsEarnedLabel,
+    totalAmount,
+  };
 }
 
 export async function fetchStaffOrders(

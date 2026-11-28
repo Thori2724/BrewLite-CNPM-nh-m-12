@@ -20,6 +20,7 @@ import {
   formatStaffVnd,
   getNextStaffOrderStatus,
   getStaffOrderActionStates,
+  getStaffOrderPaymentSummary,
   ParsedStaffOrderError,
   parseStaffOrderError,
   STAFF_ORDER_FILTER_OPTIONS,
@@ -505,6 +506,9 @@ export default function StaffOrdersView() {
                     ? 'Thu gọn chi tiết đơn hàng'
                     : actionStates.detail.reason;
                   const customerName = order.customer?.displayName?.trim() || 'Khách hàng';
+                  const paymentSummary = isExpanded
+                    ? getStaffOrderPaymentSummary(order)
+                    : null;
 
                   return (
                     <React.Fragment key={order.id}>
@@ -724,6 +728,67 @@ export default function StaffOrdersView() {
                                   })}
                                 </ul>
                               </div>
+
+                              {paymentSummary && (
+                                <div
+                                  data-testid={`staff-order-summary-${order.orderNumber}`}
+                                  className="rounded-control border border-tan/60 bg-bone/50 px-4 py-3 space-y-1.5 text-sm"
+                                >
+                                  <h3 className="text-xs font-bold uppercase tracking-wide text-noir/70 pb-1 border-b border-tan/50">
+                                    Chi tiết thanh toán
+                                  </h3>
+                                  <div className="flex items-center justify-between gap-4 text-noir/80">
+                                    <span>Tạm tính</span>
+                                    <span className="font-medium text-noir">
+                                      {formatStaffVnd(paymentSummary.subtotalAmount)}
+                                    </span>
+                                  </div>
+                                  {paymentSummary.showPromotionCode &&
+                                    paymentSummary.promotionCode && (
+                                      <div className="flex items-center justify-between gap-4 text-noir/80">
+                                        <span>Mã giảm giá</span>
+                                        <span className="font-semibold text-kombu">
+                                          {paymentSummary.promotionCode}
+                                        </span>
+                                      </div>
+                                    )}
+                                  {paymentSummary.showDiscount && (
+                                    <div className="flex items-center justify-between gap-4 text-noir/80">
+                                      <span>Giảm giá</span>
+                                      <span className="font-semibold text-kombu">
+                                        -{formatStaffVnd(paymentSummary.discountAmount)}
+                                      </span>
+                                    </div>
+                                  )}
+                                  {paymentSummary.showPointsUsed && (
+                                    <div className="flex items-center justify-between gap-4 text-noir/80">
+                                      <span>Điểm đã dùng</span>
+                                      <span className="font-semibold text-kombu">
+                                        {paymentSummary.pointsUsed} điểm (-
+                                        {formatStaffVnd(paymentSummary.pointsDiscountAmount)})
+                                      </span>
+                                    </div>
+                                  )}
+                                  <div className="flex items-center justify-between gap-4 text-noir/80">
+                                    <span>Điểm đã cộng</span>
+                                    <span
+                                      className={
+                                        paymentSummary.pointsEarned > 0
+                                          ? 'font-semibold text-kombu'
+                                          : 'text-noir/65'
+                                      }
+                                    >
+                                      {paymentSummary.pointsEarnedLabel}
+                                    </span>
+                                  </div>
+                                  <div className="flex items-baseline justify-between gap-4 border-t border-tan/60 pt-2">
+                                    <span className="font-bold text-noir">Tổng thanh toán</span>
+                                    <span className="font-display text-base font-bold text-kombu">
+                                      {formatStaffVnd(paymentSummary.totalAmount)}
+                                    </span>
+                                  </div>
+                                </div>
+                              )}
                             </div>
                           </td>
                         </tr>

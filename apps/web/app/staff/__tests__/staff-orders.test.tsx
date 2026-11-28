@@ -12,7 +12,10 @@ import {
 } from '../../../utils/auth';
 import { resetRedirectFlag } from '../../../services/auth';
 import StaffOrdersPage from '../page';
-import { getStaffOrderActionStates } from '../services/staff-orders';
+import {
+  getStaffOrderActionStates,
+  getStaffOrderPaymentSummary,
+} from '../services/staff-orders';
 import {
   MOCK_STAFF_ORDERS_SEED,
   resetMockStaffOrders,
@@ -665,5 +668,207 @@ describe('Dòng 25 - Hàm thuần getStaffOrderActionStates (mục 5.7 & 5.8 h�
       });
     }
   );
+});
+
+describe('Dòng 26 - Chi tiết tóm tiền, mã giảm giá và điểm ở /staff', () => {
+  const originalFetch = globalThis.fetch;
+  const originalEnv = process.env;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    localStorage.clear();
+    resetRedirectFlag();
+    resetMockStaffOrders();
+    process.env = { ...originalEnv };
+    process.env.NEXT_PUBLIC_USE_MOCK = 'false';
+    delete process.env.NEXT_PUBLIC_USE_MOCK_ORDERS;
+    delete process.env.NEXT_PUBLIC_USE_MOCK_STAFF_ORDERS;
+    process.env.NEXT_PUBLIC_API_URL = 'http://localhost:3001';
+    setStaffAuthSession('STAFF');
+  });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+    process.env = originalEnv;
+  });
+
+  it('1. Hàm getStaffOrderPaymentSummary đọc thẳng số liệu từ đơn và quyết định ẩn/hiện đúng quy tắc', () => {
+    const baseOrder = cloneSeedOrders()[0];
+
+    const withPromoAndPoints = getStaffOrderPaymentSummary({
+      ...baseOrder,
+      status: 'PAID',
+      subtotalAmount: 100000,
+      promotionCode: '  GIAM15K  ',
+      discountAmount: 15000,
+      pointsUsed: 10,
+      pointsEarned: 7,
+      totalAmount: 75000,
+    });
+    expect(withPromoAndPoints).toEqual({
+      subtotalAmount: 100000,
+      promotionCode: 'GIAM15K',
+      showPromotionCode: true,
+      discountAmount: 15000,
+      showDiscount: true,
+      pointsUsed: 10,
+      showPointsUsed: true,
+      pointsDiscountAmount: 10000,
+      pointsEarned: 7,
+      pointsEarnedLabel: '+7 điểm',
+      totalAmount: 75000,
+    });
+
+    const unpaidOrder = getStaffOrderPaymentSummary({
+      ...baseOrder,
+      status: 'PENDING',
+      subtotalAmount: 29000,
+      promotionCode: null,
+      discountAmount: 0,
+      pointsUsed: 0,
+      pointsEarned: 0,
+      totalAmount: 29000,
+    });
+    expect(unpaidOrder).toEqual({
+      subtotalAmount: 29000,
+      promotionCode: null,
+      showPromotionCode: false,
+      discountAmount: 0,
+      showDiscount: false,
+      pointsUsed: 0,
+      showPointsUsed: false,
+      pointsDiscountAmount: 0,
+      pointsEarned: 0,
+      pointsEarnedLabel: 'Chưa cộng',
+      totalAmount: 29000,
+    });
+
+    const paidZeroPoints = getStaffOrderPaymentSummary({
+      ...baseOrder,
+      status: 'PAID',
+      subtotalAmount: 5000,
+      promotionCode: null,
+      discountAmount: 0,
+      pointsUsed: 0,
+      pointsEarned: 0,
+      totalAmount: 5000,
+    });
+    expect(paidZeroPoints.pointsEarnedLabel).toBe('0 điểm');
+
+    // Dữ liệu cũ thiếu trường (undefined/null) không gây lỗi và fallback subtotalAmount = totalAmount
+    const legacyOrder = getStaffOrderPaymentSummary({
+      id: baseOrder.id,
+      orderNumber: 1999,
+      status: 'COMPLETED',
+      receiveType: 'AT_COUNTER',
+      totalAmount: 45000,
+      createdAt: baseOrder.createdAt,
+      items: baseOrder.items,
+    } as Partial<OrderResponse>);
+    expect(legacyOrder).toEqual({
+      subtotalAmount: 45000,
+      promotionCode: null,
+      showPromotionCode: false,
+      discountAmount: 0,
+      showDiscount: false,
+      pointsUsed: 0,
+      showPointsUsed: false,
+      pointsDiscountAmount: 0,
+      pointsEarned: 0,
+      pointsEarnedLabel: '0 điểm',
+      totalAmount: 45000,
+    });
+  });
+
+  it('2. Chi tiết đơn có mã giảm giá + dùng điểm hiển thị đủ khối tóm tiền chỉ-xem', async () => {
+    const user = userEvent.setup();
+    const baseOrder = cloneSeedOrders()[0];
+    const discountedOrder: OrderResponse = {
+      ...baseOrder,
+      orderNumber: 2010,
+      status: 'PAID',
+      subtotalAmount: 100000,
+      promotionCode: 'BREW15',
+      discountAmount: 15000,
+      pointsUsed: 10,
+      pointsEarned: 7,
+      totalAmount: 75000,
+    };
+
+    globalThis.fetch = vi.fn().mockResolvedValueOnce(mockJsonResponse(200, [discountedOrder]));
+
+    renderStaffOrdersPage();
+    const row = await screen.findByTestId('staff-order-row-2010');
+    await user.click(row);
+
+    const summaryBox = await screen.findByTestId('staff-order-summary-2010');
+    expect(within(summaryBox).getByText('Tạm tính')).toBeInTheDocument();
+    expect(within(summaryBox).getByText('100.000đ')).toBeInTheDocument();
+    expect(within(summaryBox).getByText('Mã giảm giá')).toBeInTheDocument();
+    expect(within(summaryBox).getByText('BREW15')).toBeInTheDocument();
+    expect(within(summaryBox).getByText('Giảm giá')).toBeInTheDocument();
+    expect(within(summaryBox).getByText('-15.000đ')).toBeInTheDocument();
+    expect(within(summaryBox).getByText('Điểm đã dùng')).toBeInTheDocument();
+    expect(within(summaryBox).getByText('10 điểm (-10.000đ)')).toBeInTheDocument();
+    expect(within(summaryBox).getByText('Điểm đã cộng')).toBeInTheDocument();
+    expect(within(summaryBox).getByText('+7 điểm')).toBeInTheDocument();
+    expect(within(summaryBox).getByText('Tổng thanh toán')).toBeInTheDocument();
+    expect(within(summaryBox).getByText('75.000đ')).toBeInTheDocument();
+
+    // Chỉ xem: không có nút hay ô nhập nào trong khối tóm tiền
+    expect(within(summaryBox).queryAllByRole('button')).toHaveLength(0);
+    expect(within(summaryBox).queryAllByRole('textbox')).toHaveLength(0);
+  });
+
+  it('3. Chi tiết đơn không dùng mã/điểm và đơn cũ thiếu trường xử lý ẩn dòng và hiển thị an toàn', async () => {
+    const user = userEvent.setup();
+    const seed = cloneSeedOrders();
+    const pendingOrder: OrderResponse = {
+      ...seed.find((o) => o.status === 'PENDING')!,
+      orderNumber: 2011,
+      subtotalAmount: 29000,
+      promotionCode: null,
+      discountAmount: 0,
+      pointsUsed: 0,
+      pointsEarned: 0,
+      totalAmount: 29000,
+    };
+    const legacyOrder = {
+      ...seed.find((o) => o.status === 'COMPLETED')!,
+      orderNumber: 2012,
+      totalAmount: 60000,
+      subtotalAmount: undefined,
+      promotionCode: undefined,
+      discountAmount: undefined,
+      pointsUsed: undefined,
+      pointsEarned: undefined,
+    } as unknown as OrderResponse;
+
+    globalThis.fetch = vi
+      .fn()
+      .mockResolvedValueOnce(mockJsonResponse(200, [pendingOrder, legacyOrder]));
+
+    renderStaffOrdersPage();
+
+    // Đơn PENDING chưa thanh toán
+    await user.click(await screen.findByTestId('staff-order-row-2011'));
+    const pendingSummary = await screen.findByTestId('staff-order-summary-2011');
+    expect(within(pendingSummary).getByText('Tạm tính')).toBeInTheDocument();
+    expect(within(pendingSummary).queryByText('Mã giảm giá')).not.toBeInTheDocument();
+    expect(within(pendingSummary).queryByText('Giảm giá')).not.toBeInTheDocument();
+    expect(within(pendingSummary).queryByText('Điểm đã dùng')).not.toBeInTheDocument();
+    expect(within(pendingSummary).getByText('Chưa cộng')).toBeInTheDocument();
+    expect(within(pendingSummary).getByText('Tổng thanh toán')).toBeInTheDocument();
+    expect(within(pendingSummary).getAllByText('29.000đ')).toHaveLength(2);
+
+    // Đơn cũ thiếu trường
+    await user.click(screen.getByTestId('staff-order-row-2012'));
+    const legacySummary = await screen.findByTestId('staff-order-summary-2012');
+    expect(within(legacySummary).queryByText('Mã giảm giá')).not.toBeInTheDocument();
+    expect(within(legacySummary).queryByText('Giảm giá')).not.toBeInTheDocument();
+    expect(within(legacySummary).queryByText('Điểm đã dùng')).not.toBeInTheDocument();
+    expect(within(legacySummary).getByText('0 điểm')).toBeInTheDocument();
+    expect(within(legacySummary).getAllByText('60.000đ')).toHaveLength(2);
+  });
 });
 
