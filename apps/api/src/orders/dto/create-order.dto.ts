@@ -1,5 +1,5 @@
 import { IceLevel, ReceiveType, Size, SugarLevel } from '@prisma/client';
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
   ArrayMaxSize,
   ArrayMinSize,
@@ -10,10 +10,12 @@ import {
   IsObject,
   IsOptional,
   IsString,
+  Length,
   Matches,
   Max,
   MaxLength,
   Min,
+  ValidateIf,
   ValidateNested,
 } from 'class-validator';
 import { UUID_REGEX } from '../../products/products.constants';
@@ -64,6 +66,14 @@ export class CreateOrderDto {
   @IsString()
   @MaxLength(200)
   note?: string;
+
+  @ValidateIf((_obj: CreateOrderDto, value: unknown) => value !== undefined)
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim().toUpperCase() : value,
+  )
+  @IsString()
+  @Length(1, 30)
+  promotionCode?: string;
 
   @IsArray()
   @ArrayMinSize(1)

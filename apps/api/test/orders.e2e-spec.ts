@@ -4,10 +4,13 @@ import {
   Category,
   IceLevel,
   OrderStatus,
+  PromotionType,
   ReceiveType,
+  Role,
   Size,
   SugarLevel,
 } from '@prisma/client';
+import * as bcrypt from 'bcrypt';
 import request from 'supertest';
 import { App } from 'supertest/types';
 import { AppModule } from '../src/app.module';
@@ -53,15 +56,23 @@ describe('Orders Integration (POST /orders)', () => {
   let prisma: PrismaService;
   let accessToken: string;
   let userId: string;
+  let staffToken: string;
 
   const PRODUCT_TEA_ID = 'aaaaaaaa-0000-4000-8000-000000009a01';
   const PRODUCT_CAKE_ID = 'aaaaaaaa-0000-4000-8000-000000009a02';
   const PRODUCT_OOS_ID = 'aaaaaaaa-0000-4000-8000-000000009a03';
+  const PRODUCT_SMALL_ID = 'aaaaaaaa-0000-4000-8000-000000009a04';
   const TOPPING_PEARL_ID = 'bbbbbbbb-0000-4000-8000-000000009a01';
 
-  const SUITE_PRODUCT_IDS = [PRODUCT_TEA_ID, PRODUCT_CAKE_ID, PRODUCT_OOS_ID];
+  const SUITE_PRODUCT_IDS = [
+    PRODUCT_TEA_ID,
+    PRODUCT_CAKE_ID,
+    PRODUCT_OOS_ID,
+    PRODUCT_SMALL_ID,
+  ];
   const SUITE_TOPPING_IDS = [TOPPING_PEARL_ID];
   const createdUserEmails: string[] = [];
+  const createdPromotionCodes: string[] = [];
 
   async function cleanupSuiteData() {
     if (!prisma) {
@@ -126,6 +137,12 @@ describe('Orders Integration (POST /orders)', () => {
       where: { id: { in: SUITE_PRODUCT_IDS } },
     });
 
+    if (createdPromotionCodes.length > 0) {
+      await prisma.promotion.deleteMany({
+        where: { code: { in: createdPromotionCodes } },
+      });
+    }
+
     if (userIds.length > 0) {
       await prisma.payment.deleteMany({
         where: { userId: { in: userIds } },
@@ -177,6 +194,27 @@ describe('Orders Integration (POST /orders)', () => {
 
     const loginBody = loginRes.body as { accessToken: string };
     accessToken = loginBody.accessToken;
+
+    const staffEmail = `staff.orders.10a.${Date.now()}@example.com`;
+    createdUserEmails.push(staffEmail);
+    const passwordHash = await bcrypt.hash('Password123@', 10);
+    await prisma.user.create({
+      data: {
+        email: staffEmail,
+        passwordHash,
+        displayName: 'Nhân viên Orders E2E',
+        role: Role.STAFF,
+        isActive: true,
+      },
+    });
+    const staffLoginRes = await request(app.getHttpServer())
+      .post('/auth/login')
+      .send({
+        email: staffEmail,
+        password: 'Password123@',
+      })
+      .expect(200);
+    staffToken = (staffLoginRes.body as { accessToken: string }).accessToken;
   });
 
   beforeEach(async () => {
@@ -260,6 +298,27 @@ describe('Orders Integration (POST /orders)', () => {
         basePrice: 32000,
         imageUrl: 'https://example.com/oos-10a.jpg',
         stock: 0,
+        isVisible: true,
+      },
+    });
+
+    await prisma.product.upsert({
+      where: { id: PRODUCT_SMALL_ID },
+      update: {
+        name: 'Bánh quy nhỏ 15k',
+        category: Category.CAKE,
+        basePrice: 15000,
+        imageUrl: 'https://example.com/cookie-15k.jpg',
+        stock: 10,
+        isVisible: true,
+      },
+      create: {
+        id: PRODUCT_SMALL_ID,
+        name: 'Bánh quy nhỏ 15k',
+        category: Category.CAKE,
+        basePrice: 15000,
+        imageUrl: 'https://example.com/cookie-15k.jpg',
+        stock: 10,
         isVisible: true,
       },
     });
@@ -559,5 +618,303 @@ describe('Orders Integration (POST /orders)', () => {
       where: { userId },
     });
     expect(orderCount).toBe(0);
+  });
+
+  describe('VIỆC 8 - POST /orders áp mã giảm giá & 5 trường mới trên mọi endpoint trả đơn', () => {
+    let codePercentNoCap: string;
+    let codePercentCap15k: string;
+    let codeFixed20k: string;
+    let codeInactive: string;
+
+    beforeAll(async () => {
+      const suffix = String(Date.now()).slice(-6);
+      codePercentNoCap = `V8_PER10_${suffix}`;
+      codePercentCap15k = `V8_CAP15_${suffix}`;
+      codeFixed20k = `V8_FIX20_${suffix}`;
+      codeInactive = `V8_OFF_${suffix}`;
+
+      createdPromotionCodes.push(
+        codePercentNoCap,
+        codePercentCap15k,
+        codeFixed20k,
+        codeInactive,
+      );
+
+      await prisma.promotion.createMany({
+        data: [
+          {
+            code: codePercentNoCap,
+            type: PromotionType.PERCENT,
+            value: 10,
+            maxDiscount: null,
+            isActive: true,
+          },
+          {
+            code: codePercentCap15k,
+            type: PromotionType.PERCENT,
+            value: 20,
+            maxDiscount: 15000,
+            isActive: true,
+          },
+          {
+            code: codeFixed20k,
+            type: PromotionType.FIXED,
+            value: 20000,
+            maxDiscount: null,
+            isActive: true,
+          },
+          {
+            code: codeInactive,
+            type: PromotionType.PERCENT,
+            value: 15,
+            maxDiscount: null,
+            isActive: false,
+          },
+        ],
+      });
+    });
+
+    it('(a) & (j) Không gửi mã & client gửi kèm totalAmount/discountAmount/subtotalAmount: bị bỏ qua, subtotalAmount = totalAmount, discountAmount = 0, promotionCode = null, pointsUsed = 0, pointsEarned = 0', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/orders')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({
+          subtotalAmount: 1000,
+          discountAmount: 50000,
+          totalAmount: 1000,
+          pointsUsed: 10,
+          pointsEarned: 100,
+          items: [{ productId: PRODUCT_CAKE_ID, quantity: 2 }],
+        })
+        .expect(201);
+
+      expect(res.body).toMatchObject({
+        subtotalAmount: 60000,
+        discountAmount: 0,
+        promotionCode: null,
+        pointsUsed: 0,
+        pointsEarned: 0,
+        totalAmount: 60000,
+      });
+    });
+
+    it('(b), (c), (d), (g) Áp mã PERCENT không trần, PERCENT có trần, FIXED, chuẩn hóa mã viết thường có khoảng trắng thành chữ HOA, và mức giảm không làm totalAmount dưới 1.000đ', async () => {
+      // (b) & (d) PERCENT 10% không trần + mã viết thường có khoảng trắng trên đơn 2 bánh (60.000) -> discount 6.000, total 54.000
+      const resNoCap = await request(app.getHttpServer())
+        .post('/orders')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({
+          promotionCode: `  ${codePercentNoCap.toLowerCase()}  `,
+          items: [{ productId: PRODUCT_CAKE_ID, quantity: 2 }],
+        })
+        .expect(201);
+
+      expect(resNoCap.body).toMatchObject({
+        subtotalAmount: 60000,
+        discountAmount: 6000,
+        promotionCode: codePercentNoCap,
+        pointsUsed: 0,
+        pointsEarned: 0,
+        totalAmount: 54000,
+      });
+
+      // (b) PERCENT 20% có trần 15.000 trên đơn 3 bánh (90.000) -> raw 18.000, trần 15.000 -> total 75.000
+      const resCap = await request(app.getHttpServer())
+        .post('/orders')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({
+          promotionCode: codePercentCap15k,
+          items: [{ productId: PRODUCT_CAKE_ID, quantity: 3 }],
+        })
+        .expect(201);
+
+      expect(resCap.body).toMatchObject({
+        subtotalAmount: 90000,
+        discountAmount: 15000,
+        promotionCode: codePercentCap15k,
+        pointsUsed: 0,
+        pointsEarned: 0,
+        totalAmount: 75000,
+      });
+
+      // (c) FIXED 20.000 trên đơn 2 trà sữa size S (70.000) -> discount 20.000, total 50.000
+      const resFixed = await request(app.getHttpServer())
+        .post('/orders')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({
+          promotionCode: codeFixed20k,
+          items: [{ productId: PRODUCT_TEA_ID, quantity: 2, size: Size.S }],
+        })
+        .expect(201);
+
+      expect(resFixed.body).toMatchObject({
+        subtotalAmount: 70000,
+        discountAmount: 20000,
+        promotionCode: codeFixed20k,
+        pointsUsed: 0,
+        pointsEarned: 0,
+        totalAmount: 50000,
+      });
+
+      // (g) FIXED 20.000 trên đơn 15.000 (1 bánh quy nhỏ 15k) -> discountAmount = 14.000, totalAmount = 1.000
+      const resFloor = await request(app.getHttpServer())
+        .post('/orders')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({
+          promotionCode: codeFixed20k,
+          items: [{ productId: PRODUCT_SMALL_ID, quantity: 1 }],
+        })
+        .expect(201);
+
+      expect(resFloor.body).toMatchObject({
+        subtotalAmount: 15000,
+        discountAmount: 14000,
+        promotionCode: codeFixed20k,
+        pointsUsed: 0,
+        pointsEarned: 0,
+        totalAmount: 1000,
+      });
+    });
+
+    it('(e) & (f) Mã không tồn tại -> 404 "Mã giảm giá không tồn tại", mã tắt -> 409 "Mã giảm giá đã ngừng áp dụng", không tạo đơn và kho không đổi; promotionCode rỗng/quá 30 ký tự -> 400 mảng chuỗi tiếng Anh', async () => {
+      // promotionCode rỗng sau khi trim hoặc quá 30 ký tự -> 400
+      for (const badCode of ['', '   ', 'A'.repeat(31), 12345, null]) {
+        const res400 = await request(app.getHttpServer())
+          .post('/orders')
+          .set('Authorization', `Bearer ${accessToken}`)
+          .send({
+            promotionCode: badCode,
+            items: [{ productId: PRODUCT_TEA_ID, quantity: 1 }],
+          })
+          .expect(400);
+        expect(
+          Array.isArray((res400.body as { message: unknown }).message),
+        ).toBe(true);
+      }
+
+      // (e) Mã không tồn tại -> 404 và kho vẫn nguyên 10
+      const res404 = await request(app.getHttpServer())
+        .post('/orders')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({
+          promotionCode: 'MA_KHONG_TON_TAI_V8',
+          items: [{ productId: PRODUCT_TEA_ID, quantity: 2 }],
+        })
+        .expect(404);
+      expect(res404.body).toMatchObject({
+        statusCode: 404,
+        message: 'Mã giảm giá không tồn tại',
+      });
+
+      const teaAfter404 = await prisma.product.findUniqueOrThrow({
+        where: { id: PRODUCT_TEA_ID },
+      });
+      expect(teaAfter404.stock).toBe(10);
+
+      // (f) Mã đang tắt -> 409 và kho vẫn nguyên 10
+      const res409 = await request(app.getHttpServer())
+        .post('/orders')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({
+          promotionCode: ` ${codeInactive.toLowerCase()} `,
+          items: [{ productId: PRODUCT_TEA_ID, quantity: 2 }],
+        })
+        .expect(409);
+      expect(res409.body).toMatchObject({
+        statusCode: 409,
+        message: 'Mã giảm giá đã ngừng áp dụng',
+      });
+
+      const teaAfter409 = await prisma.product.findUniqueOrThrow({
+        where: { id: PRODUCT_TEA_ID },
+      });
+      expect(teaAfter409.stock).toBe(10);
+
+      const orderCount = await prisma.order.count({ where: { userId } });
+      expect(orderCount).toBe(0);
+    });
+
+    it('(h) & (i) 5 trường mới xuất hiện trên cả 6 endpoint trả đơn (POST /orders, GET /orders/me, GET /orders/:id, GET /orders, PATCH /orders/:id/status, POST /orders/:id/cancel) và hủy đơn không làm đổi discountAmount/promotionCode', async () => {
+      const expectedPromoFields = {
+        subtotalAmount: 60000,
+        discountAmount: 6000,
+        promotionCode: codePercentNoCap,
+        pointsUsed: 0,
+        pointsEarned: 0,
+        totalAmount: 54000,
+      };
+
+      // 1. POST /orders
+      const createRes = await request(app.getHttpServer())
+        .post('/orders')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({
+          promotionCode: codePercentNoCap,
+          items: [{ productId: PRODUCT_CAKE_ID, quantity: 2 }],
+        })
+        .expect(201);
+      const orderId = (createRes.body as { id: string }).id;
+      expect(createRes.body).toMatchObject(expectedPromoFields);
+
+      // 2. GET /orders/me
+      const meRes = await request(app.getHttpServer())
+        .get('/orders/me')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .expect(200);
+      const myList = meRes.body as Array<{ id: string }>;
+      expect(myList.find((o) => o.id === orderId)).toMatchObject(
+        expectedPromoFields,
+      );
+
+      // 3. GET /orders/:id
+      const detailRes = await request(app.getHttpServer())
+        .get(`/orders/${orderId}`)
+        .set('Authorization', `Bearer ${accessToken}`)
+        .expect(200);
+      expect(detailRes.body).toMatchObject(expectedPromoFields);
+
+      // 4. GET /orders (STAFF)
+      const staffListRes = await request(app.getHttpServer())
+        .get('/orders')
+        .set('Authorization', `Bearer ${staffToken}`)
+        .expect(200);
+      const staffList = staffListRes.body as Array<{ id: string }>;
+      expect(staffList.find((o) => o.id === orderId)).toMatchObject(
+        expectedPromoFields,
+      );
+
+      // 5. POST /orders/:id/cancel & (i) giữ nguyên discountAmount và promotionCode
+      const cancelRes = await request(app.getHttpServer())
+        .post(`/orders/${orderId}/cancel`)
+        .set('Authorization', `Bearer ${accessToken}`)
+        .expect(200);
+      expect(cancelRes.body).toMatchObject({
+        id: orderId,
+        status: OrderStatus.CANCELLED,
+        ...expectedPromoFields,
+      });
+
+      // 6. PATCH /orders/:id/status (tạo thêm 1 đơn có mã rồi chuyển trạng thái qua STAFF)
+      const createRes2 = await request(app.getHttpServer())
+        .post('/orders')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({
+          promotionCode: codePercentNoCap,
+          items: [{ productId: PRODUCT_CAKE_ID, quantity: 2 }],
+        })
+        .expect(201);
+      const order2Id = (createRes2.body as { id: string }).id;
+
+      const patchStatusRes = await request(app.getHttpServer())
+        .patch(`/orders/${order2Id}/status`)
+        .set('Authorization', `Bearer ${staffToken}`)
+        .send({ status: OrderStatus.CANCELLED })
+        .expect(200);
+      expect(patchStatusRes.body).toMatchObject({
+        id: order2Id,
+        status: OrderStatus.CANCELLED,
+        ...expectedPromoFields,
+      });
+    });
   });
 });

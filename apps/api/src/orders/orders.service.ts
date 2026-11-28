@@ -21,6 +21,11 @@ import {
   PRODUCT_NOT_FOUND_MESSAGE,
   UUID_REGEX,
 } from '../products/products.constants';
+import { calculatePromotionDiscount } from '../promotions/promotion-discount.util';
+import {
+  PROMOTION_CODE_NOT_FOUND_MESSAGE,
+  PROMOTION_INACTIVE_MESSAGE,
+} from '../promotions/promotions.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 import {
   STAFF_ALLOWED_ORDER_STATUSES,
@@ -77,6 +82,11 @@ interface OrderRecord {
   status: OrderStatus;
   receiveType: ReceiveType;
   note: string | null;
+  subtotalAmount?: number;
+  discountAmount?: number;
+  promotionCode?: string | null;
+  pointsUsed?: number;
+  pointsEarned?: number;
   totalAmount: number;
   createdAt: Date;
   items: OrderItemRecord[];
@@ -106,6 +116,20 @@ export class OrdersService {
   constructor(private readonly prisma: PrismaService) {}
 
   async create(userId: string, dto: CreateOrderDto) {
+    let normalizedPromotionCode: string | null = null;
+    if (dto.promotionCode !== undefined) {
+      if (typeof dto.promotionCode !== 'string') {
+        throw new BadRequestException(['promotionCode must be a string']);
+      }
+      const trimmedCode = dto.promotionCode.trim().toUpperCase();
+      if (trimmedCode.length < 1 || trimmedCode.length > 30) {
+        throw new BadRequestException([
+          'promotionCode must be between 1 and 30 characters',
+        ]);
+      }
+      normalizedPromotionCode = trimmedCode;
+    }
+
     const uniqueProductIds = Array.from(
       new Set(dto.items.map((item) => item.productId)),
     );
@@ -227,9 +251,39 @@ export class OrdersService {
 
     const receiveType = dto.receiveType ?? ReceiveType.AT_COUNTER;
     const orderNote = dto.note ?? null;
+    const subtotalAmount = pricing.totalAmount;
 
     return this.prisma.$transaction(
       async (tx) => {
+        let matchedPromotion: {
+          code: string;
+          type: import('@prisma/client').PromotionType;
+          value: number;
+          maxDiscount: number | null;
+          isActive: boolean;
+        } | null = null;
+
+        if (normalizedPromotionCode !== null) {
+          matchedPromotion = await tx.promotion.findUnique({
+            where: { code: normalizedPromotionCode },
+            select: {
+              code: true,
+              type: true,
+              value: true,
+              maxDiscount: true,
+              isActive: true,
+            },
+          });
+
+          if (!matchedPromotion) {
+            throw new NotFoundException(PROMOTION_CODE_NOT_FOUND_MESSAGE);
+          }
+
+          if (!matchedPromotion.isActive) {
+            throw new ConflictException(PROMOTION_INACTIVE_MESSAGE);
+          }
+        }
+
         const failedProductIds: string[] = [];
 
         for (const [productId, requiredQty] of requestedByProduct.entries()) {
@@ -280,13 +334,31 @@ export class OrdersService {
           });
         }
 
+        const discountAmount = matchedPromotion
+          ? calculatePromotionDiscount(
+              matchedPromotion.type,
+              matchedPromotion.value,
+              matchedPromotion.maxDiscount,
+              subtotalAmount,
+            )
+          : 0;
+        const promotionCode = matchedPromotion ? matchedPromotion.code : null;
+        const pointsUsed = 0;
+        const pointsEarned = 0;
+        const totalAmount = subtotalAmount - discountAmount - pointsUsed * 1000;
+
         const createdOrder = await tx.order.create({
           data: {
             userId,
             status: OrderStatus.PENDING,
             receiveType,
             note: orderNote,
-            totalAmount: pricing.totalAmount,
+            subtotalAmount,
+            discountAmount,
+            promotionCode,
+            pointsUsed,
+            pointsEarned,
+            totalAmount,
           },
         });
 
@@ -614,6 +686,11 @@ export class OrdersService {
       status: order.status,
       receiveType: order.receiveType,
       note: order.note,
+      subtotalAmount: order.subtotalAmount ?? order.totalAmount,
+      discountAmount: order.discountAmount ?? 0,
+      promotionCode: order.promotionCode ?? null,
+      pointsUsed: order.pointsUsed ?? 0,
+      pointsEarned: order.pointsEarned ?? 0,
       totalAmount: order.totalAmount,
       createdAt: order.createdAt,
       items: order.items.map((item) => ({
