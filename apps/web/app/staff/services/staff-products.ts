@@ -33,6 +33,8 @@ export const PRODUCT_NAME_MAX_LENGTH = 100;
 export const PRODUCT_BASE_PRICE_MIN = 1000;
 export const PRODUCT_BASE_PRICE_MAX = 1000000;
 export const PRODUCT_IMAGE_URL_MAX_LENGTH = 500;
+export const PRODUCT_STOCK_MIN = 1;
+export const PRODUCT_STOCK_MAX = 9999;
 
 export const STAFF_PRODUCT_CATEGORY_OPTIONS: {
   value: ProductCategory;
@@ -78,18 +80,67 @@ export async function fetchStaffProducts(forceMock = false): Promise<ProductMana
 
 /**
  * Gạt trạng thái Đang bán / Tạm hết qua PATCH /products/:id/availability.
- * Chỉ gửi duy nhất trường `isAvailable`.
+ * Khi isAvailable = true bắt buộc kèm stock (1..9999); khi false không gửi stock.
  */
 export async function updateStaffProductAvailability(
   productId: string,
   isAvailable: boolean,
-  forceMock = false
+  forceMock = false,
+  stock?: number
 ): Promise<ProductManage> {
   if (forceMock || isStaffProductsMockEnabled()) {
-    return updateMockStaffProductAvailability(productId, isAvailable);
+    return updateMockStaffProductAvailability(productId, isAvailable, stock);
   }
 
-  return updateProductAvailabilityApi(productId, { isAvailable });
+  if (isAvailable) {
+    return updateProductAvailabilityApi(productId, { isAvailable: true, stock });
+  }
+
+  return updateProductAvailabilityApi(productId, { isAvailable: false });
+}
+
+export function validateProductStock(stockInput: string | number): FieldValidationResult {
+  if (typeof stockInput === 'number') {
+    if (
+      !Number.isInteger(stockInput) ||
+      stockInput < PRODUCT_STOCK_MIN ||
+      stockInput > PRODUCT_STOCK_MAX
+    ) {
+      return {
+        isValid: false,
+        error: 'Số lượng phải là số nguyên từ 1 đến 9999.',
+      };
+    }
+    return { isValid: true };
+  }
+
+  const trimmed = (stockInput ?? '').trim();
+  if (!trimmed) {
+    return {
+      isValid: false,
+      error: 'Vui lòng nhập số lượng còn lại (từ 1 đến 9999).',
+    };
+  }
+  if (!/^\d+$/.test(trimmed)) {
+    return {
+      isValid: false,
+      error: 'Số lượng phải là số nguyên từ 1 đến 9999.',
+    };
+  }
+
+  const numericValue = Number(trimmed);
+  if (
+    !Number.isSafeInteger(numericValue) ||
+    numericValue < PRODUCT_STOCK_MIN ||
+    numericValue > PRODUCT_STOCK_MAX
+  ) {
+    return {
+      isValid: false,
+      error: 'Số lượng phải là số nguyên từ 1 đến 9999.',
+    };
+  }
+
+  return { isValid: true };
 }
 
 /**
@@ -514,5 +565,82 @@ export function parseStaffProductFormError(err: unknown): ParsedStaffProductForm
   }
 
   return { ...base, fieldErrors };
+}
+
+export function parseStaffProductStockError(err: unknown): ParsedStaffProductError {
+  const base = parseStaffProductError(err);
+  let rawMessage: unknown;
+
+  if (err && typeof err === 'object') {
+    rawMessage = (err as { message?: unknown }).message;
+  }
+
+  if (base.isAccountLocked) {
+    return { ...base, message: AUTH_ERROR_MESSAGES.ACCOUNT_LOCKED };
+  }
+
+  if (base.isUnauthorized) {
+    return { ...base, message: AUTH_ERROR_MESSAGES.SESSION_EXPIRED };
+  }
+
+  if (base.statusCode === 400) {
+    if (Array.isArray(rawMessage)) {
+      const mentionsStock = rawMessage.some(
+        (item) => typeof item === 'string' && item.toLowerCase().includes('stock')
+      );
+      return {
+        ...base,
+        message: mentionsStock
+          ? 'Số lượng phải là số nguyên từ 1 đến 9999.'
+          : AUTH_ERROR_MESSAGES.VALIDATION_ERROR,
+      };
+    }
+
+    if (typeof rawMessage === 'string' && rawMessage.trim()) {
+      if (isRawEnglishHttpText(rawMessage)) {
+        return {
+          ...base,
+          message: rawMessage.toLowerCase().includes('stock')
+            ? 'Số lượng phải là số nguyên từ 1 đến 9999.'
+            : AUTH_ERROR_MESSAGES.VALIDATION_ERROR,
+        };
+      }
+      return { ...base, message: rawMessage.trim() };
+    }
+
+    return { ...base, message: 'Số lượng phải là số nguyên từ 1 đến 9999.' };
+  }
+
+  if (base.statusCode === 403) {
+    return {
+      ...base,
+      message: isRawEnglishHttpText(base.message)
+        ? AUTH_ERROR_MESSAGES.FORBIDDEN
+        : base.message,
+    };
+  }
+
+  if (base.statusCode === 404) {
+    return {
+      ...base,
+      message: isRawEnglishHttpText(base.message)
+        ? STAFF_PRODUCT_ERROR_MESSAGES.NOT_FOUND
+        : base.message,
+    };
+  }
+
+  if (base.statusCode >= 500) {
+    return { ...base, message: STAFF_PRODUCT_ERROR_MESSAGES.SERVER_ERROR };
+  }
+
+  if (base.statusCode === 0) {
+    return { ...base, message: STAFF_PRODUCT_ERROR_MESSAGES.NETWORK_ERROR };
+  }
+
+  if (isRawEnglishHttpText(base.message)) {
+    return { ...base, message: STAFF_PRODUCT_ERROR_MESSAGES.UNKNOWN_ERROR };
+  }
+
+  return base;
 }
 

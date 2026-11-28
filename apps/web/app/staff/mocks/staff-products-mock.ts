@@ -41,7 +41,7 @@ export const MOCK_STAFF_PRODUCTS_SEED: ProductManage[] = [
     category: 'CAKE',
     basePrice: 30000,
     imageUrl: 'https://images.unsplash.com/photo-1555507036-ab1f4038808a?w=500',
-    stock: 20,
+    stock: 3,
     isVisible: true,
   },
   {
@@ -77,7 +77,7 @@ export const MOCK_STAFF_PRODUCTS_SEED: ProductManage[] = [
     category: 'MILK_TEA',
     basePrice: 35000,
     imageUrl: 'https://images.unsplash.com/photo-1558857563-b371033873b8?w=500',
-    stock: 40,
+    stock: 5,
     isVisible: true,
   },
   {
@@ -125,14 +125,29 @@ export async function getMockStaffProducts(): Promise<ProductManage[]> {
 
 export async function updateMockStaffProductAvailability(
   productId: string,
-  isAvailable: boolean
+  isAvailable: boolean,
+  stock?: number
 ): Promise<ProductManage> {
   await new Promise((resolve) => setTimeout(resolve, 30));
 
+  const errors: string[] = [];
   if (typeof isAvailable !== 'boolean') {
+    errors.push('isAvailable must be a boolean value');
+  } else if (isAvailable) {
+    if (
+      typeof stock !== 'number' ||
+      !Number.isInteger(stock) ||
+      stock < 1 ||
+      stock > 9999
+    ) {
+      errors.push('stock must be an integer between 1 and 9999');
+    }
+  }
+
+  if (errors.length > 0) {
     throw new ApiHttpError({
       statusCode: 400,
-      message: ['isAvailable must be a boolean value'],
+      message: errors,
       error: 'Bad Request',
     });
   }
@@ -146,7 +161,7 @@ export async function updateMockStaffProductAvailability(
     });
   }
 
-  target.stock = isAvailable ? 999 : 0;
+  target.stock = isAvailable ? (stock as number) : 0;
   return { ...target };
 }
 
