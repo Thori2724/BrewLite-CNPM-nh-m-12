@@ -11,6 +11,38 @@ export const LOYALTY_TYPE_LABELS: Record<LoyaltyType, string> = {
   REVOKE: 'Thu hồi điểm',
 };
 
+/**
+ * Đổi mã loại giao dịch điểm thưởng (`EARN`, `REDEEM`, `REFUND`, `REVOKE`) sang nhãn tiếng Việt.
+ */
+export function getLoyaltyTypeLabel(type: LoyaltyType | string): string {
+  return LOYALTY_TYPE_LABELS[type as LoyaltyType] ?? type;
+}
+
+/**
+ * Định dạng số điểm có dấu (`+N` cho số dương, `-N` cho số âm, `0` khi bằng 0).
+ */
+export function formatSignedLoyaltyPoints(points: number): string {
+  const safePoints =
+    typeof points === 'number' && Number.isFinite(points) ? Math.trunc(points) : 0;
+  if (safePoints > 0) {
+    return `+${safePoints}`;
+  }
+  if (safePoints < 0) {
+    return `-${Math.abs(safePoints)}`;
+  }
+  return '0';
+}
+
+/**
+ * Định dạng mã đơn trong lịch sử điểm (`#1042`, hoặc `—` khi `orderNumber` là `null`).
+ */
+export function formatLoyaltyOrderNumber(orderNumber: number | null | undefined): string {
+  if (typeof orderNumber === 'number' && Number.isFinite(orderNumber)) {
+    return `#${Math.trunc(orderNumber)}`;
+  }
+  return '—';
+}
+
 export interface LoyaltyTransaction {
   id: string;
   type: LoyaltyType;
