@@ -357,14 +357,14 @@ describe('Dòng 20 — Kiểm thử Giỏ hàng và Luồng Thanh toán (A1–A1
       });
 
       // Xóa dòng Trà sữa truyền thống -> còn 1 bánh, tổng 30.000đ
-      await user.click(screen.getByRole('button', { name: 'Xóa Trà sữa truyền thống' }));
+      await user.click(screen.getByRole('button', { name: 'Xóa Trà sữa truyền thống khỏi giỏ' }));
       await waitFor(() => {
         expect(screen.getByRole('link', { name: /giỏ hàng, 1 món/i })).toBeInTheDocument();
         expect(screen.getAllByText('30.000đ').length).toBeGreaterThan(0);
       });
 
       // Xóa nốt dòng Bánh Croissant -> giỏ rỗng, hiện trạng thái empty và ẩn nút đặt đơn
-      await user.click(screen.getByRole('button', { name: 'Xóa Bánh Croissant' }));
+      await user.click(screen.getByRole('button', { name: 'Xóa Bánh Croissant khỏi giỏ' }));
       await waitFor(() => {
         expect(screen.getByRole('link', { name: /giỏ hàng, trống/i })).toBeInTheDocument();
         expect(screen.getByText('Giỏ hàng của bạn đang trống')).toBeInTheDocument();

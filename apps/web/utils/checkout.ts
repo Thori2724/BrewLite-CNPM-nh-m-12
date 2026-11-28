@@ -161,6 +161,8 @@ export function buildCreateOrderPayload(
   receiveType: ReceiveType,
   extra?: {
     note?: string;
+    promotionCode?: string;
+    usePoints?: boolean;
   }
 ): CreateOrderDto {
   const items: CreateOrderItemDto[] = cartItems.map((item) => {
@@ -196,6 +198,12 @@ export function buildCreateOrderPayload(
 
   if (extra?.note && extra.note.trim()) {
     payload.note = extra.note.trim().slice(0, 200);
+  }
+  if (extra?.promotionCode && extra.promotionCode.trim()) {
+    payload.promotionCode = extra.promotionCode.trim();
+  }
+  if (extra?.usePoints !== undefined) {
+    payload.usePoints = Boolean(extra.usePoints);
   }
 
   return payload;

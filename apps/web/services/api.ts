@@ -95,7 +95,7 @@ export const ORDER_STATUS_LABELS = {
 
 export const PAYMENT_METHOD_LABELS = {
   WALLET: 'Ví điện tử (ZaloPay/Momo)',
-  CARD: 'Thẻ ngân hàng',
+  CARD: 'Chuyển khoản ngân hàng',
 } as const;
 
 export const PRODUCT_STATUS_LABELS = {
@@ -140,6 +140,7 @@ export interface CreateProductDto {
   category: Category;
   basePrice: number;
   imageUrl?: string;
+  stock?: number;
 }
 
 export interface UpdateProductDto {
@@ -152,6 +153,8 @@ export interface UpdateProductDto {
 
 export interface UpdateProductAvailabilityDto {
   isAvailable: boolean;
+  /** Bắt buộc khi isAvailable = true (1..9999); bỏ qua khi isAvailable = false. */
+  stock?: number;
 }
 
 export const PRODUCT_ENDPOINTS = {
@@ -296,22 +299,27 @@ export async function updateProductApi(
 }
 
 /**
- * Gạt trạng thái đang bán / tạm hết của món (stock = 999 hoặc 0).
+ * Gạt trạng thái đang bán / tạm hết của món kèm số lượng tồn kho (1..9999 khi isAvailable = true).
  * Endpoint: PATCH /products/:id/availability (STAFF, ADMIN)
  */
 export async function updateProductAvailabilityApi(
   id: string,
-  isAvailableOrDto: boolean | UpdateProductAvailabilityDto
+  isAvailableOrDto: boolean | UpdateProductAvailabilityDto,
+  stockArg?: number
 ): Promise<ProductManage> {
   const isAvailable =
     typeof isAvailableOrDto === 'boolean' ? isAvailableOrDto : isAvailableOrDto.isAvailable;
+  const stock = typeof isAvailableOrDto === 'boolean' ? stockArg : isAvailableOrDto.stock;
 
   if (isMockProductsActive()) {
-    return mockUpdateProductAvailability(id, isAvailable);
+    return mockUpdateProductAvailability(id, isAvailable, stock);
   }
+
+  const body: UpdateProductAvailabilityDto =
+    isAvailable && stock !== undefined ? { isAvailable, stock } : { isAvailable };
 
   return apiRequest<ProductManage>(PRODUCT_ENDPOINTS.AVAILABILITY(id), {
     method: 'PATCH',
-    body: JSON.stringify({ isAvailable }),
+    body: JSON.stringify(body),
   });
 }

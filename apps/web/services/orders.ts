@@ -92,6 +92,8 @@ function sanitizeCreateOrderDto(dto: CreateOrderDto): CreateOrderDto {
   };
   if (dto.receiveType !== undefined) cleanDto.receiveType = dto.receiveType;
   if (dto.note !== undefined) cleanDto.note = dto.note;
+  if (dto.promotionCode !== undefined) cleanDto.promotionCode = dto.promotionCode;
+  if (dto.usePoints !== undefined) cleanDto.usePoints = dto.usePoints;
   return cleanDto;
 }
 

@@ -11,6 +11,9 @@ import {
   resetMockOrdersDatabase,
   setMockNetworkSimulation,
 } from '../mocks/mock-orders';
+import { resetMockProductsDatabase } from '../mocks/mock-products';
+import { resetMockPromotionsDatabase } from '../mocks/mock-promotions';
+import { resetMockLoyaltyDatabase } from '../mocks/mock-loyalty';
 import {
   CreateOrderDto,
   ORDER_ERROR_MESSAGES,
@@ -23,6 +26,9 @@ describe('Lớp gọi API Đơn hàng và Thanh toán (services/orders.ts)', () 
   beforeEach(() => {
     vi.restoreAllMocks();
     resetMockOrdersDatabase();
+    resetMockProductsDatabase();
+    resetMockPromotionsDatabase();
+    resetMockLoyaltyDatabase();
     process.env = { ...originalEnv };
     process.env.NEXT_PUBLIC_USE_MOCK_ORDERS = 'true';
   });
@@ -85,7 +91,11 @@ describe('Lớp gọi API Đơn hàng và Thanh toán (services/orders.ts)', () 
         expect(orderErr.statusCode).toBe(409);
         expect(orderErr.message).toBe("Sản phẩm 'Trà đào cam sả' hiện đã tạm hết");
         expect(orderErr.details).toBeDefined();
-        expect(orderErr.details?.[0]).toEqual({ productId: '3', name: 'Trà đào cam sả' });
+        expect(orderErr.details?.[0]).toEqual({
+          productId: '3',
+          name: 'Trà đào cam sả',
+          available: 0,
+        });
       }
     });
 
@@ -111,6 +121,7 @@ describe('Lớp gọi API Đơn hàng và Thanh toán (services/orders.ts)', () 
           {
             productId: '11111111-0000-0000-0000-000000000001',
             name: 'Cà phê sữa đá',
+            available: 0,
           },
         ]);
         expect(orderErr.errorData).toEqual({
@@ -121,6 +132,7 @@ describe('Lớp gọi API Đơn hàng và Thanh toán (services/orders.ts)', () 
             {
               productId: '11111111-0000-0000-0000-000000000001',
               name: 'Cà phê sữa đá',
+              available: 0,
             },
           ],
         });
@@ -142,6 +154,7 @@ describe('Lớp gọi API Đơn hàng và Thanh toán (services/orders.ts)', () 
           {
             productId: '11111111-0000-0000-0000-000000000010',
             name: 'Bánh Croissant',
+            available: 0,
           },
         ]);
       }
@@ -386,6 +399,11 @@ describe('Lớp gọi API Đơn hàng và Thanh toán (services/orders.ts)', () 
           orderNumber: 2001,
           status: 'PENDING',
           receiveType: 'AT_COUNTER',
+          subtotalAmount: 50000,
+          discountAmount: 0,
+          promotionCode: null,
+          pointsUsed: 0,
+          pointsEarned: 0,
           totalAmount: 50000,
           items: [],
           createdAt: new Date().toISOString(),
@@ -431,6 +449,7 @@ describe('Lớp gọi API Đơn hàng và Thanh toán (services/orders.ts)', () 
             id: 'server-order-1',
             orderNumber: 2001,
             status: 'PAID',
+            pointsEarned: 5,
           },
         }),
       });
@@ -468,6 +487,11 @@ describe('Lớp gọi API Đơn hàng và Thanh toán (services/orders.ts)', () 
           orderNumber: 2001,
           status: 'PAID',
           receiveType: 'AT_COUNTER',
+          subtotalAmount: 50000,
+          discountAmount: 0,
+          promotionCode: null,
+          pointsUsed: 0,
+          pointsEarned: 5,
           totalAmount: 50000,
           items: [],
           createdAt: new Date().toISOString(),

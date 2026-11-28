@@ -17,12 +17,13 @@ Kịch bản kiểm tra tự động 4 chỉ số quan trọng trên môi trư�
 
 ### Cách chạy Smoke Test:
 ```powershell
-# Chạy với địa chỉ Render mặc định
-.\tests\smoke-test.ps1
+# Chạy với địa chỉ Render mặc định (khuyên dùng -ExecutionPolicy Bypass trên Windows)
+powershell -ExecutionPolicy Bypass -File .\tests\smoke-test.ps1
 
 # Hoặc tùy biến URL
-.\tests\smoke-test.ps1 -ApiUrl "https://brewlite-api.onrender.com" -WebUrl "https://brewlite-web.onrender.com"
+powershell -ExecutionPolicy Bypass -File .\tests\smoke-test.ps1 -ApiUrl "https://brewlite-api-aj31.onrender.com" -WebUrl "https://brewlite-web-6sml.onrender.com"
 ```
+> **Lưu ý trên Windows:** Nếu gặp thông báo `File ... cannot be loaded because running scripts is disabled on this system`, tiền tố `powershell -ExecutionPolicy Bypass -File` sẽ giải quyết dứt điểm vấn đề này.
 
 ---
 
@@ -33,7 +34,7 @@ Kịch bản kiểm tra tự động 4 chỉ số quan trọng trên môi trư�
 
 ---
 
-## 2. Các kịch bản được kiểm thử (12 kịch bản)
+## 2. Các kịch bản được kiểm thử (16 kịch bản)
 
 | STT | Kịch bản kiểm thử | Endpoint & Phương thức | Mã nghiệp vụ / Truy vết |
 |---|---|---|---|
@@ -61,10 +62,10 @@ Kịch bản kiểm tra tự động 4 chỉ số quan trọng trên môi trư�
 ### Cách 1: Chạy trực tiếp bằng PowerShell (Khuyên dùng trên Windows)
 ```powershell
 # Chạy với API local mặc định (http://localhost:3001)
-.\tests\run-e2e.ps1
+powershell -ExecutionPolicy Bypass -File .\tests\run-e2e.ps1
 
 # Hoặc chạy kiểm thử trực tiếp trên môi trường production Render
-.\tests\run-e2e.ps1 -ApiUrl https://brewlite-api.onrender.com
+powershell -ExecutionPolicy Bypass -File .\tests\run-e2e.ps1 -ApiUrl https://brewlite-api-aj31.onrender.com
 ```
 
 ### Cách 2: Chạy bằng lệnh Node.js
@@ -73,7 +74,7 @@ Kịch bản kiểm tra tự động 4 chỉ số quan trọng trên môi trư�
 node --test tests/e2e-order-flow.test.mjs
 
 # Production
-$env:API_URL="https://brewlite-api.onrender.com"; node --test tests/e2e-order-flow.test.mjs
+$env:API_URL="https://brewlite-api-aj31.onrender.com"; node --test tests/e2e-order-flow.test.mjs
 ```
 
 ---

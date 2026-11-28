@@ -234,7 +234,7 @@ describe('Dòng 23 - Trang /staff/employees (Quản lý nhân viên - chỉ ADMI
     });
   });
 
-  it('3. Bấm Mở khóa khóa nút khi đang gọi, gửi PATCH /staff/:id/status { isActive: true }, cập nhật dòng và hiện thông báo', async () => {
+  it('3. Bấm Mở khóa mở ConfirmDialog với nội dung riêng; Quay lại không gọi API; xác nhận mới khóa nút khi đang gọi, gửi PATCH /staff/:id/status { isActive: true }, cập nhật dòng và hiện thông báo', async () => {
     const user = userEvent.setup();
     const employees = cloneSeedEmployees();
     const lockedTarget = employees[2]; // isActive: false
@@ -258,19 +258,47 @@ describe('Dòng 23 - Trang /staff/employees (Quản lý nhân viên - chỉ ADMI
       'staff-employee-row-55555555-0000-0000-0000-000000000001'
     );
 
+    // Bấm Mở khóa -> mở hộp xác nhận riêng, CHƯA gọi API PATCH
     await user.click(within(targetRow).getByRole('button', { name: 'Mở khóa' }));
+    const dialog = await screen.findByRole('dialog');
+    expect(
+      within(dialog).getByText(`Mở khóa tài khoản "${lockedTarget.displayName}"?`)
+    ).toBeInTheDocument();
+    expect(
+      within(dialog).getByText(/có thể đăng nhập lại/i)
+    ).toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: 'Quay lại' })).toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: 'Mở khóa' })).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    // Bấm Quay lại -> đóng hộp, không gọi API
+    await user.click(within(dialog).getByRole('button', { name: 'Quay lại' }));
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    // Mở lại và bấm Mở khóa trong hộp xác nhận -> mới gọi PATCH
+    await user.click(within(targetRow).getByRole('button', { name: 'Mở khóa' }));
+    const dialogAgain = await screen.findByRole('dialog');
+    await user.click(within(dialogAgain).getByRole('button', { name: 'Mở khóa' }));
 
     await waitFor(() => {
-      expect(within(targetRow).getByRole('button', { name: 'Đang mở khóa...' })).toBeDisabled();
+      expect(
+        within(dialogAgain).getByRole('button', { name: 'Đang mở khóa...' })
+      ).toBeDisabled();
     });
+    expect(within(dialogAgain).getByRole('button', { name: 'Quay lại' })).toBeDisabled();
+    expect(within(targetRow).getByRole('button', { name: 'Đang mở khóa...' })).toBeDisabled();
     expect(within(otherRow).getByRole('button', { name: 'Khóa' })).toBeDisabled();
     expect(screen.getByRole('button', { name: /tải lại/i })).toBeDisabled();
 
     resolvePatch(mockJsonResponse(200, unlockedRes));
 
     await waitFor(() => {
-      expect(within(targetRow).getByText('Hoạt động')).toBeInTheDocument();
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     });
+    expect(within(targetRow).getByText('Hoạt động')).toBeInTheDocument();
     expect(within(targetRow).getByRole('button', { name: 'Khóa' })).toBeInTheDocument();
     expect(screen.getByTestId('staff-employees-action-success')).toHaveTextContent(
       `Đã mở khóa tài khoản "${lockedTarget.displayName}".`
@@ -410,7 +438,7 @@ describe('Dòng 23 - Trang /staff/employees (Quản lý nhân viên - chỉ ADMI
     // 6b. 403 sai vai trò (giữ phiên) & 404 "Không tìm thấy nhân viên" khi thao tác
     setAuthSession('ADMIN');
     const employees = cloneSeedEmployees();
-    const targetLocked = employees[2]; // Đã khóa -> bấm Mở khóa trực tiếp
+    const targetLocked = employees[2]; // Đã khóa -> bấm Mở khóa rồi xác nhận trong hộp
     const remainingEmployees = employees.slice(0, 2);
 
     globalThis.fetch = vi
@@ -437,12 +465,16 @@ describe('Dòng 23 - Trang /staff/employees (Quản lý nhân viên - chỉ ADMI
 
     // 403 sai vai trò
     await user.click(within(row).getByRole('button', { name: 'Mở khóa' }));
+    const unlockDialog403 = await screen.findByRole('dialog');
+    await user.click(within(unlockDialog403).getByRole('button', { name: 'Mở khóa' }));
     const actionForbidden = await screen.findByTestId('staff-employees-action-error');
     expect(actionForbidden).toHaveTextContent('Bạn không có quyền thực hiện thao tác này');
     expect(localStorage.getItem(AUTH_STORAGE_KEY)).not.toBeNull();
 
     // 404 Không tìm thấy nhân viên -> hiện thông báo và tải lại danh sách
     await user.click(within(row).getByRole('button', { name: 'Mở khóa' }));
+    const unlockDialog404 = await screen.findByRole('dialog');
+    await user.click(within(unlockDialog404).getByRole('button', { name: 'Mở khóa' }));
     const actionNotFound = await screen.findByTestId('staff-employees-action-error');
     expect(actionNotFound).toHaveTextContent('Không tìm thấy nhân viên');
     await waitFor(() => {
@@ -498,6 +530,8 @@ describe('Dòng 23 - Trang /staff/employees (Quản lý nhân viên - chỉ ADMI
 
     // Mở khóa Nhân viên 3 qua mock
     await user.click(within(row3).getByRole('button', { name: 'Mở khóa' }));
+    const unlockDialog = await screen.findByRole('dialog');
+    await user.click(within(unlockDialog).getByRole('button', { name: 'Mở khóa' }));
     await waitFor(() => {
       expect(within(row3).getByText('Hoạt động')).toBeInTheDocument();
     });

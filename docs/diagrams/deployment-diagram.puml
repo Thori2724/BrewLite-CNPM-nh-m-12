@@ -38,11 +38,11 @@ cloud "Render PaaS (Nền tảng Cloud)" as renderPaaS {
     }
 
     node "brewlite-web (Web Service)" as webService {
-        artifact "Container: brewlite-web\nNext.js 16 (Cổng 10000)\nhttps://brewlite-web.onrender.com" as webContainer
+        artifact "Container: brewlite-web\nNext.js 16 (Cổng 10000)\nhttps://brewlite-web-6sml.onrender.com" as webContainer
     }
 
     node "brewlite-api (Web Service)" as apiService {
-        artifact "Container: brewlite-api\nNestJS 11 (Cổng 10000)\nhttps://brewlite-api.onrender.com" as apiContainer
+        artifact "Container: brewlite-api\nNestJS 11 (Cổng 10000)\nhttps://brewlite-api-aj31.onrender.com" as apiContainer
     }
 
     node "brewlite-db (Managed PostgreSQL 16)" as dbNode {
