@@ -442,19 +442,7 @@ export class OrdersService {
       throw error;
     }
 
-    const updated = await this.prisma.order.updateMany({
-      where: {
-        id,
-        status: order.status,
-      },
-      data: {
-        status: OrderStatus.CANCELLED,
-      },
-    });
-
-    if (updated.count === 0) {
-      throw new ConflictException(ORDER_STATUS_CHANGED_MESSAGE);
-    }
+    await this.cancelOrderInTransaction(order);
 
     return this.formatOrderResponse({
       ...order,
@@ -542,24 +530,70 @@ export class OrdersService {
       throw error;
     }
 
-    const updated = await this.prisma.order.updateMany({
-      where: {
-        id,
-        status: order.status,
-      },
-      data: {
-        status: dto.status,
-      },
-    });
+    if (dto.status === OrderStatus.CANCELLED) {
+      await this.cancelOrderInTransaction(order);
+    } else {
+      const updated = await this.prisma.order.updateMany({
+        where: {
+          id,
+          status: order.status,
+        },
+        data: {
+          status: dto.status,
+        },
+      });
 
-    if (updated.count === 0) {
-      throw new ConflictException(ORDER_STATUS_CHANGED_MESSAGE);
+      if (updated.count === 0) {
+        throw new ConflictException(ORDER_STATUS_CHANGED_MESSAGE);
+      }
     }
 
     return this.formatOrderWithCustomerResponse({
       ...order,
       status: dto.status,
     });
+  }
+
+  private async cancelOrderInTransaction(order: {
+    id: string;
+    status: OrderStatus;
+    items: Array<{ productId: string; quantity: number }>;
+  }) {
+    const restockByProduct = new Map<string, number>();
+    for (const item of order.items) {
+      restockByProduct.set(
+        item.productId,
+        (restockByProduct.get(item.productId) ?? 0) + item.quantity,
+      );
+    }
+
+    await this.prisma.$transaction(
+      async (tx) => {
+        const updated = await tx.order.updateMany({
+          where: {
+            id: order.id,
+            status: order.status,
+          },
+          data: {
+            status: OrderStatus.CANCELLED,
+          },
+        });
+
+        if (updated.count === 0) {
+          throw new ConflictException(ORDER_STATUS_CHANGED_MESSAGE);
+        }
+
+        for (const [productId, quantity] of restockByProduct.entries()) {
+          await tx.product.updateMany({
+            where: { id: productId },
+            data: {
+              stock: { increment: quantity },
+            },
+          });
+        }
+      },
+      { maxWait: 10000, timeout: 15000 },
+    );
   }
 
   private formatOrderWithCustomerResponse(order: OrderWithCustomerRecord) {

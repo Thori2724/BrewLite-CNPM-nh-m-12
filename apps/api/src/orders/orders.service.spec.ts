@@ -50,6 +50,7 @@ describe('Orders (OrdersService & CreateOrderDto)', () => {
     };
     order: {
       create: jest.Mock;
+      updateMany: jest.Mock;
     };
     orderItem: {
       create: jest.Mock;
@@ -139,6 +140,7 @@ describe('Orders (OrdersService & CreateOrderDto)', () => {
               updatedAt: new Date('2026-11-05T03:00:00.000Z'),
             }),
           ),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
       orderItem: {
         create: jest
@@ -1309,13 +1311,22 @@ describe('Orders (OrdersService & CreateOrderDto)', () => {
         prisma.order.findFirst.mockResolvedValueOnce(
           buildMockOrder(fromStatus),
         );
-        prisma.order.updateMany.mockResolvedValueOnce({ count: 1 });
+        if (toStatus === OrderStatus.CANCELLED) {
+          txMock.order.updateMany.mockResolvedValueOnce({ count: 1 });
+        } else {
+          prisma.order.updateMany.mockResolvedValueOnce({ count: 1 });
+        }
 
         const result = await controller.updateStatus(ORDER_ID, {
           status: toStatus,
         });
 
-        expect(prisma.order.updateMany).toHaveBeenLastCalledWith({
+        const targetOrderUpdateMock =
+          toStatus === OrderStatus.CANCELLED
+            ? txMock.order.updateMany
+            : prisma.order.updateMany;
+
+        expect(targetOrderUpdateMock).toHaveBeenLastCalledWith({
           where: {
             id: ORDER_ID,
             status: fromStatus,
@@ -1332,6 +1343,41 @@ describe('Orders (OrdersService & CreateOrderDto)', () => {
         });
         expect(result.customer).not.toHaveProperty('passwordHash');
       }
+    });
+
+    it('(b) nhân viên hủy đơn PAID qua PATCH /orders/:id/status hoàn đúng số lượng vào kho trong cùng transaction', async () => {
+      const paidOrder = {
+        ...buildMockOrder(OrderStatus.PAID),
+        items: [
+          {
+            ...buildMockOrder(OrderStatus.PAID).items[0],
+            quantity: 3,
+          },
+        ],
+      };
+      prisma.order.findFirst.mockResolvedValueOnce(paidOrder);
+      txMock.order.updateMany.mockResolvedValueOnce({ count: 1 });
+
+      const result = await controller.updateStatus(ORDER_ID, {
+        status: OrderStatus.CANCELLED,
+      });
+
+      expect(result.status).toBe(OrderStatus.CANCELLED);
+      expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+      expect(txMock.order.updateMany).toHaveBeenCalledWith({
+        where: {
+          id: ORDER_ID,
+          status: OrderStatus.PAID,
+        },
+        data: {
+          status: OrderStatus.CANCELLED,
+        },
+      });
+      expect(txMock.product.updateMany).toHaveBeenCalledTimes(1);
+      expect(txMock.product.updateMany).toHaveBeenCalledWith({
+        where: { id: mockMilkTea.id },
+        data: { stock: { increment: 3 } },
+      });
     });
 
     it('từ chối các chuyển sai (lùi, bỏ bước, từ COMPLETED/CANCELLED, hủy từ PREPARING/READY) bằng 409 kèm nhãn tiếng Việt mục 9.3', async () => {
@@ -1600,7 +1646,7 @@ describe('Orders (OrdersService & CreateOrderDto)', () => {
         prisma.order.findFirst.mockResolvedValueOnce(
           buildUserOrder(fromStatus),
         );
-        prisma.order.updateMany.mockResolvedValueOnce({ count: 1 });
+        txMock.order.updateMany.mockResolvedValueOnce({ count: 1 });
 
         const result = await controller.cancel(
           {
@@ -1626,7 +1672,7 @@ describe('Orders (OrdersService & CreateOrderDto)', () => {
             },
           },
         });
-        expect(prisma.order.updateMany).toHaveBeenLastCalledWith({
+        expect(txMock.order.updateMany).toHaveBeenLastCalledWith({
           where: {
             id: ORDER_ID,
             status: fromStatus,
@@ -1634,6 +1680,10 @@ describe('Orders (OrdersService & CreateOrderDto)', () => {
           data: {
             status: OrderStatus.CANCELLED,
           },
+        });
+        expect(txMock.product.updateMany).toHaveBeenLastCalledWith({
+          where: { id: mockMilkTea.id },
+          data: { stock: { increment: 1 } },
         });
         expect(result).toEqual({
           id: ORDER_ID,
@@ -1675,11 +1725,94 @@ describe('Orders (OrdersService & CreateOrderDto)', () => {
       }
     });
 
+    it('(a) khách hủy đơn PENDING hoàn đúng số lượng vào kho trong cùng transaction', async () => {
+      const pendingOrder = {
+        ...buildUserOrder(OrderStatus.PENDING),
+        items: [
+          {
+            ...buildUserOrder(OrderStatus.PENDING).items[0],
+            quantity: 4,
+          },
+        ],
+      };
+      prisma.order.findFirst.mockResolvedValueOnce(pendingOrder);
+      txMock.order.updateMany.mockResolvedValueOnce({ count: 1 });
+
+      const result = await service.cancelForUser(USER_ID, ORDER_ID);
+
+      expect(result.status).toBe(OrderStatus.CANCELLED);
+      expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+      expect(txMock.order.updateMany).toHaveBeenCalledWith({
+        where: {
+          id: ORDER_ID,
+          status: OrderStatus.PENDING,
+        },
+        data: {
+          status: OrderStatus.CANCELLED,
+        },
+      });
+      expect(txMock.product.updateMany).toHaveBeenCalledTimes(1);
+      expect(txMock.product.updateMany).toHaveBeenCalledWith({
+        where: { id: mockMilkTea.id },
+        data: { stock: { increment: 4 } },
+      });
+    });
+
+    it('(c) đơn có cùng món khác size ở nhiều dòng được gộp tổng số lượng theo productId khi hoàn kho', async () => {
+      const multiSizeOrder = {
+        ...buildUserOrder(OrderStatus.PENDING),
+        items: [
+          {
+            ...buildUserOrder(OrderStatus.PENDING).items[0],
+            id: '88888888-0000-0000-0000-000000000001',
+            productId: mockMilkTea.id,
+            size: Size.S,
+            quantity: 2,
+          },
+          {
+            ...buildUserOrder(OrderStatus.PENDING).items[0],
+            id: '88888888-0000-0000-0000-000000000002',
+            productId: mockMilkTea.id,
+            size: Size.L,
+            quantity: 3,
+          },
+          {
+            id: '88888888-0000-0000-0000-000000000003',
+            orderId: ORDER_ID,
+            productId: mockCake.id,
+            productName: mockCake.name,
+            size: null,
+            sugarLevel: null,
+            iceLevel: null,
+            quantity: 1,
+            unitPrice: 30000,
+            lineTotal: 30000,
+            note: null,
+            toppings: [],
+          },
+        ],
+      };
+      prisma.order.findFirst.mockResolvedValueOnce(multiSizeOrder);
+      txMock.order.updateMany.mockResolvedValueOnce({ count: 1 });
+
+      await service.cancelForUser(USER_ID, ORDER_ID);
+
+      expect(txMock.product.updateMany).toHaveBeenCalledTimes(2);
+      expect(txMock.product.updateMany).toHaveBeenNthCalledWith(1, {
+        where: { id: mockMilkTea.id },
+        data: { stock: { increment: 5 } },
+      });
+      expect(txMock.product.updateMany).toHaveBeenNthCalledWith(2, {
+        where: { id: mockCake.id },
+        data: { stock: { increment: 1 } },
+      });
+    });
+
     it('không thay đổi bảng Payment khi hủy đơn đang PAID (Payment vẫn giữ nguyên SUCCESS)', async () => {
       prisma.order.findFirst.mockResolvedValueOnce(
         buildUserOrder(OrderStatus.PAID),
       );
-      prisma.order.updateMany.mockResolvedValueOnce({ count: 1 });
+      txMock.order.updateMany.mockResolvedValueOnce({ count: 1 });
 
       const cancelResult = await service.cancelForUser(USER_ID, ORDER_ID);
       expect(cancelResult.status).toBe(OrderStatus.CANCELLED);
@@ -1736,10 +1869,11 @@ describe('Orders (OrdersService & CreateOrderDto)', () => {
           },
         }),
       );
-      expect(prisma.order.updateMany).not.toHaveBeenCalled();
+      expect(txMock.order.updateMany).not.toHaveBeenCalled();
+      expect(txMock.product.updateMany).not.toHaveBeenCalled();
     });
 
-    it('ném 409 "Không thể hủy đơn ở trạng thái hiện tại" khi đơn đang PREPARING, READY, COMPLETED hoặc CANCELLED', async () => {
+    it('(d & e) ném 409 "Không thể hủy đơn ở trạng thái hiện tại" và KHÔNG hoàn kho khi đơn đang PREPARING, READY, COMPLETED hoặc đã CANCELLED (hủy lần 2)', async () => {
       const nonCancellableStatuses: OrderStatus[] = [
         OrderStatus.PREPARING,
         OrderStatus.READY,
@@ -1755,20 +1889,21 @@ describe('Orders (OrdersService & CreateOrderDto)', () => {
         );
       }
 
-      expect(prisma.order.updateMany).not.toHaveBeenCalled();
+      expect(txMock.order.updateMany).not.toHaveBeenCalled();
+      expect(txMock.product.updateMany).not.toHaveBeenCalled();
     });
 
-    it('ném 409 "Trạng thái đơn đã thay đổi, vui lòng tải lại" khi cập nhật có điều kiện thất bại (count = 0)', async () => {
+    it('(d) ném 409 "Trạng thái đơn đã thay đổi, vui lòng tải lại" và dừng ngay không hoàn kho khi cập nhật có điều kiện thất bại (count = 0)', async () => {
       prisma.order.findFirst.mockResolvedValueOnce(
         buildUserOrder(OrderStatus.PAID),
       );
-      prisma.order.updateMany.mockResolvedValueOnce({ count: 0 });
+      txMock.order.updateMany.mockResolvedValueOnce({ count: 0 });
 
       await expect(service.cancelForUser(USER_ID, ORDER_ID)).rejects.toThrow(
         new ConflictException(ORDER_STATUS_CHANGED_MESSAGE),
       );
 
-      expect(prisma.order.updateMany).toHaveBeenCalledWith({
+      expect(txMock.order.updateMany).toHaveBeenCalledWith({
         where: {
           id: ORDER_ID,
           status: OrderStatus.PAID,
@@ -1777,6 +1912,7 @@ describe('Orders (OrdersService & CreateOrderDto)', () => {
           status: OrderStatus.CANCELLED,
         },
       });
+      expect(txMock.product.updateMany).not.toHaveBeenCalled();
     });
 
     it('ném 401 khi chưa đăng nhập (req.user thiếu id)', () => {
