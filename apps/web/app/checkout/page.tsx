@@ -4,7 +4,9 @@ import React, { Suspense, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useRequireAuth } from '../../context/useRequireAuth';
+import { useAuth } from '../../context/AuthContext';
 import { useCart } from '../../context/CartContext';
+import { AUTH_ERROR_MESSAGES } from '../../services/auth-contract';
 import {
   ReceiveType,
   OrderResponse,
@@ -27,6 +29,17 @@ import {
   OrderApiError,
 } from '../../services/orders';
 import {
+  PROMOTION_ERROR_MESSAGES,
+  validatePromotionApi,
+  ValidatePromotionResponse,
+} from '../../services/promotions';
+import {
+  clearAuthSession,
+  isAccountLockedError,
+  loadAuthSession,
+  notifyAccountLocked,
+} from '../../utils/auth';
+import {
   buildCreateOrderPayload,
   clearPendingOrder,
   generateIdempotencyKey,
@@ -35,6 +48,7 @@ import {
   savePendingOrder,
 } from '../../utils/checkout';
 import {
+  classifyApiError,
   formatVnd,
   validateNote,
   validateOrderCart,
@@ -60,6 +74,7 @@ function CheckoutContent() {
   const searchParams = useSearchParams();
   const queryOrderId = (searchParams?.get('orderId') || '').trim();
   const { isChecking, isReady } = useRequireAuth();
+  const { logout } = useAuth();
   const { items, totalAmount, clearAll, isHydrated } = useCart();
 
   // Trạng thái các bước trên trang
@@ -91,6 +106,14 @@ function CheckoutContent() {
   const [selectedBank, setSelectedBank] = useState<QrBankProvider>(DEFAULT_QR_BANK);
   const [qrAutoStart, setQrAutoStart] = useState<boolean>(false);
 
+  // Trạng thái mã giảm giá (chỉ dùng ở Bước 1 khi đặt đơn mới từ giỏ hàng; tối đa 1 mã/đơn)
+  const [promoCodeInput, setPromoCodeInput] = useState<string>('');
+  const [appliedPromotion, setAppliedPromotion] = useState<ValidatePromotionResponse | null>(null);
+  const [appliedPromoSubtotal, setAppliedPromoSubtotal] = useState<number | null>(null);
+  const [isValidatingPromo, setIsValidatingPromo] = useState<boolean>(false);
+  const [promoError, setPromoError] = useState<string | null>(null);
+  const [promoNotice, setPromoNotice] = useState<string | null>(null);
+
   // Trạng thái đặt đơn hàng
   const [isCreatingOrder, setIsCreatingOrder] = useState<boolean>(false);
   const [createOrderError, setCreateOrderError] = useState<string | null>(null);
@@ -100,6 +123,31 @@ function CheckoutContent() {
   const [isCreateOrderNotFoundError, setIsCreateOrderNotFoundError] = useState<boolean>(false);
   const [showHistoryLinkInOrderError, setShowHistoryLinkInOrderError] = useState<boolean>(false);
   const [noteError, setNoteError] = useState<string | null>(null);
+
+  const cartSubtotal = Math.max(0, Math.floor(totalAmount));
+  const cartSubtotalRef = React.useRef<number>(cartSubtotal);
+  const isValidatingPromoRef = React.useRef<boolean>(false);
+
+  useEffect(() => {
+    cartSubtotalRef.current = cartSubtotal;
+  }, [cartSubtotal]);
+
+  // Tự động gỡ mã nếu tạm tính của giỏ thay đổi sau khi đã áp mã
+  useEffect(() => {
+    if (
+      step === 'order' &&
+      appliedPromotion &&
+      appliedPromoSubtotal !== null &&
+      appliedPromoSubtotal !== cartSubtotal
+    ) {
+      queueMicrotask(() => {
+        setAppliedPromotion(null);
+        setAppliedPromoSubtotal(null);
+        setPromoError(null);
+        setPromoNotice('Giỏ hàng đã thay đổi, vui lòng áp dụng lại mã');
+      });
+    }
+  }, [step, appliedPromotion, appliedPromoSubtotal, cartSubtotal]);
 
   const cartSignature = React.useMemo(
     () =>
@@ -313,6 +361,111 @@ function CheckoutContent() {
     );
   }
 
+  // Kiểm tra và áp dụng mã giảm giá (POST /promotions/validate)
+  const handleApplyPromotion = async () => {
+    if (appliedPromotion || isValidatingPromoRef.current || isCreatingOrder) return;
+
+    const normalizedCode = promoCodeInput.trim().toUpperCase();
+    setPromoNotice(null);
+
+    if (
+      createOrderError === PROMOTION_ERROR_MESSAGES.NOT_FOUND ||
+      createOrderError === PROMOTION_ERROR_MESSAGES.INACTIVE
+    ) {
+      setCreateOrderError(null);
+    }
+
+    if (!normalizedCode) {
+      setPromoError('Vui lòng nhập mã giảm giá');
+      return;
+    }
+
+    if (normalizedCode.length > 30) {
+      setPromoError('Mã giảm giá tối đa 30 ký tự');
+      return;
+    }
+
+    if (cartSubtotal < 1000) {
+      setPromoError('Tạm tính tối thiểu 1.000đ để áp dụng mã giảm giá');
+      return;
+    }
+
+    isValidatingPromoRef.current = true;
+    setIsValidatingPromo(true);
+    setPromoError(null);
+    const requestSubtotal = cartSubtotal;
+
+    try {
+      const result = await validatePromotionApi({
+        code: normalizedCode,
+        subtotal: requestSubtotal,
+      });
+
+      if (cartSubtotalRef.current !== requestSubtotal) {
+        setAppliedPromotion(null);
+        setAppliedPromoSubtotal(null);
+        setPromoNotice('Giỏ hàng đã thay đổi, vui lòng áp dụng lại mã');
+        return;
+      }
+
+      setAppliedPromotion(result);
+      setAppliedPromoSubtotal(requestSubtotal);
+      setPromoCodeInput(result.code);
+      setPromoError(null);
+      setPromoNotice(null);
+    } catch (err: unknown) {
+      const statusCode =
+        err && typeof err === 'object' && 'statusCode' in err
+          ? Number((err as { statusCode?: unknown }).statusCode)
+          : 0;
+
+      if (statusCode === 401) {
+        clearAuthSession();
+        router.push(`/login?redirect=${encodeURIComponent('/checkout')}&expired=true`);
+        return;
+      }
+
+      if (isAccountLockedError(err)) {
+        if (loadAuthSession() !== null) {
+          notifyAccountLocked(AUTH_ERROR_MESSAGES.ACCOUNT_LOCKED);
+        }
+        logout();
+        setPromoError(AUTH_ERROR_MESSAGES.ACCOUNT_LOCKED);
+        return;
+      }
+
+      if (statusCode === 404) {
+        const classified = classifyApiError(err, PROMOTION_ERROR_MESSAGES.NOT_FOUND);
+        setPromoError(classified.message || PROMOTION_ERROR_MESSAGES.NOT_FOUND);
+        return;
+      }
+
+      if (statusCode === 409) {
+        const classified = classifyApiError(err, PROMOTION_ERROR_MESSAGES.INACTIVE);
+        setPromoError(classified.message || PROMOTION_ERROR_MESSAGES.INACTIVE);
+        return;
+      }
+
+      const classified = classifyApiError(
+        err,
+        'Không thể kiểm tra mã giảm giá. Vui lòng thử lại.'
+      );
+      setPromoError(classified.message);
+    } finally {
+      isValidatingPromoRef.current = false;
+      setIsValidatingPromo(false);
+    }
+  };
+
+  const handleRemovePromotion = () => {
+    if (isCreatingOrder) return;
+    setAppliedPromotion(null);
+    setAppliedPromoSubtotal(null);
+    setPromoCodeInput('');
+    setPromoError(null);
+    setPromoNotice(null);
+  };
+
   // Xử lý tạo đơn hàng POST /orders
   const submitCreateOrder = async () => {
     if (isCreatingOrder) return;
@@ -344,7 +497,10 @@ function CheckoutContent() {
     setIsCreatingOrder(true);
 
     try {
-      const payload = buildCreateOrderPayload(items, receiveType, { note });
+      const payload = buildCreateOrderPayload(items, receiveType, {
+        note,
+        ...(appliedPromotion ? { promotionCode: appliedPromotion.code } : {}),
+      });
       const order = await createOrderApi(payload);
       const idempotencyKey = generateIdempotencyKey();
 
@@ -368,12 +524,35 @@ function CheckoutContent() {
       setStep('payment');
       router.replace(`/checkout?orderId=${encodeURIComponent(order.id)}`);
     } catch (err: unknown) {
+      if (isAccountLockedError(err)) {
+        if (loadAuthSession() !== null) {
+          notifyAccountLocked(AUTH_ERROR_MESSAGES.ACCOUNT_LOCKED);
+        }
+        logout();
+        setCreateOrderError(AUTH_ERROR_MESSAGES.ACCOUNT_LOCKED);
+        return;
+      }
+
       if (err instanceof OrderApiError) {
         if (err.statusCode === 401) {
           router.push(`/login?redirect=${encodeURIComponent('/checkout')}&expired=true`);
           return;
         }
         if (err.statusCode === 409) {
+          const isPromoInactiveError =
+            err.message === PROMOTION_ERROR_MESSAGES.INACTIVE &&
+            (!err.details || err.details.length === 0);
+
+          if (isPromoInactiveError) {
+            setAppliedPromotion(null);
+            setAppliedPromoSubtotal(null);
+            setPromoCodeInput('');
+            setPromoError(null);
+            setPromoNotice(null);
+            setCreateOrderError(err.message);
+            return;
+          }
+
           // Lỗi món tạm hết 409 (chỉ nêu tên món từ message và details[], không hiện số lượng tồn kho)
           const details = err.details || [];
           const outOfStockNames = details.map((d) => d.name).filter(Boolean);
@@ -386,6 +565,15 @@ function CheckoutContent() {
                 : ORDER_ERROR_MESSAGES.OUT_OF_STOCK)
           );
         } else if (err.statusCode === 404) {
+          if (err.message === PROMOTION_ERROR_MESSAGES.NOT_FOUND) {
+            setAppliedPromotion(null);
+            setAppliedPromoSubtotal(null);
+            setPromoCodeInput('');
+            setPromoError(null);
+            setPromoNotice(null);
+            setCreateOrderError(err.message);
+            return;
+          }
           setIsCreateOrderNotFoundError(true);
           setCreateOrderError(err.message || 'Không tìm thấy sản phẩm hoặc topping trong giỏ hàng');
         } else if (err.statusCode === 0 || err.statusCode >= 500) {
@@ -429,6 +617,11 @@ function CheckoutContent() {
     outOfStockCartSignature !== null && outOfStockCartSignature !== cartSignature;
   const visibleCreateOrderError = isStaleOutOfStockError ? null : createOrderError;
   const visibleOutOfStockDetails = isStaleOutOfStockError ? [] : outOfStockDetails;
+
+  const previewDiscount = appliedPromotion
+    ? Math.max(0, Math.floor(appliedPromotion.discountAmount))
+    : 0;
+  const previewTotal = Math.max(1000, Math.floor(cartSubtotal - previewDiscount));
 
   return (
     <div className="max-w-5xl mx-auto space-y-6">
@@ -724,16 +917,121 @@ function CheckoutContent() {
                 })}
               </div>
 
-              {/* Tính tổng & Tổng cộng */}
-              <div className="border-t border-tan/60 pt-3 space-y-1 text-sm">
+              {/* Mã giảm giá (chỉ ở Bước 1; mỗi đơn tối đa 1 mã, gỡ mã cũ trước khi áp mã mới) */}
+              <div className="border-t border-tan/60 pt-3.5 space-y-2.5">
+                <label htmlFor="promotionCode" className="block text-xs font-bold text-noir">
+                  Mã giảm giá
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    id="promotionCode"
+                    type="text"
+                    value={promoCodeInput}
+                    onChange={(e) => {
+                      setPromoCodeInput(e.target.value);
+                      if (promoError) setPromoError(null);
+                      if (promoNotice) setPromoNotice(null);
+                      if (
+                        createOrderError === PROMOTION_ERROR_MESSAGES.NOT_FOUND ||
+                        createOrderError === PROMOTION_ERROR_MESSAGES.INACTIVE
+                      ) {
+                        setCreateOrderError(null);
+                      }
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        if (!appliedPromotion && !isValidatingPromo && !isCreatingOrder) {
+                          void handleApplyPromotion();
+                        }
+                      }
+                    }}
+                    disabled={Boolean(appliedPromotion) || isValidatingPromo || isCreatingOrder}
+                    placeholder="Nhập mã (vd: BREW10)"
+                    className={`flex-1 min-w-0 px-3 py-2 rounded-control border text-sm uppercase outline-none transition placeholder:normal-case placeholder:text-noir/45 disabled:opacity-60 disabled:bg-tan/20 ${
+                      promoError
+                        ? 'border-error bg-error/10 text-noir focus:border-error focus:ring-2 focus:ring-error/30'
+                        : 'border-tan bg-bone text-noir focus:border-moss focus:ring-2 focus:ring-moss/30'
+                    }`}
+                    aria-invalid={Boolean(promoError)}
+                    aria-describedby={
+                      promoError
+                        ? 'promotion-code-error'
+                        : promoNotice
+                          ? 'promotion-code-notice'
+                          : undefined
+                    }
+                  />
+                  <button
+                    type="button"
+                    onClick={() => void handleApplyPromotion()}
+                    disabled={Boolean(appliedPromotion) || isValidatingPromo || isCreatingOrder}
+                    className="shrink-0 px-4 py-2 rounded-control bg-kombu hover:bg-noir text-bone text-xs sm:text-sm font-semibold transition shadow-soft disabled:opacity-45 disabled:cursor-not-allowed cursor-pointer"
+                  >
+                    {isValidatingPromo ? 'Đang kiểm tra...' : 'Áp dụng'}
+                  </button>
+                </div>
+
+                {appliedPromotion && (
+                  <div className="flex items-center justify-between gap-2 rounded-control border border-moss/50 bg-moss/15 px-3 py-2 text-xs">
+                    <div className="min-w-0">
+                      <span className="font-bold text-kombu">
+                        Đã áp dụng mã {appliedPromotion.code}
+                      </span>
+                      <span className="text-noir/75 ml-1.5">
+                        (giảm {formatVnd(appliedPromotion.discountAmount)})
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleRemovePromotion}
+                      disabled={isCreatingOrder}
+                      className="shrink-0 px-2.5 py-1 rounded-control border border-tan bg-cream hover:bg-tan/30 text-noir font-semibold transition disabled:opacity-45 cursor-pointer"
+                    >
+                      Gỡ mã
+                    </button>
+                  </div>
+                )}
+
+                {promoError && (
+                  <p
+                    id="promotion-code-error"
+                    role="alert"
+                    className="text-xs font-semibold text-error"
+                  >
+                    {promoError}
+                  </p>
+                )}
+
+                {!promoError && promoNotice && (
+                  <p
+                    id="promotion-code-notice"
+                    className="text-xs font-semibold text-noir bg-warning/15 border border-warning/40 rounded-control px-2.5 py-1.5"
+                  >
+                    {promoNotice}
+                  </p>
+                )}
+              </div>
+
+              {/* Tạm tính / Giảm giá / Tổng */}
+              <div
+                data-testid="checkout-summary-box"
+                className="border-t border-tan/60 pt-3 space-y-1.5 text-sm"
+              >
                 <div className="flex justify-between text-noir/70">
-                  <span>Tính tổng:</span>
-                  <span>{formatVnd(totalAmount)}</span>
+                  <span>Tạm tính:</span>
+                  <span>{formatVnd(cartSubtotal)}</span>
+                </div>
+                <div className="flex justify-between text-noir/70">
+                  <span>Giảm giá:</span>
+                  <span className={previewDiscount > 0 ? 'font-semibold text-kombu' : ''}>
+                    {previewDiscount > 0 ? `-${formatVnd(previewDiscount)}` : formatVnd(0)}
+                  </span>
                 </div>
                 <div className="flex justify-between items-baseline pt-2 border-t border-tan/40">
-                  <span className="font-bold text-noir">Tổng cộng:</span>
+                  <span className="font-bold text-noir">Tổng:</span>
                   <span className="font-display text-xl font-bold text-kombu">
-                    {formatVnd(totalAmount)}
+                    {formatVnd(previewTotal)}
                   </span>
                 </div>
               </div>
@@ -746,7 +1044,7 @@ function CheckoutContent() {
               >
                 {isCreatingOrder
                   ? 'Đang tạo đơn hàng...'
-                  : `Xác nhận đặt đơn hàng (${formatVnd(totalAmount)})`}
+                  : `Xác nhận đặt đơn hàng (${formatVnd(previewTotal)})`}
               </button>
             </div>
           </div>
@@ -755,33 +1053,66 @@ function CheckoutContent() {
 
       {/* ======================= BƯỚC 2: THANH TOÁN QR ======================= */}
       {step === 'payment' && (
-        <QrPaymentScreen
-          orderId={queryOrderId || createdOrder?.id || pendingOrder?.orderId || ''}
-          initialOrder={
-            createdOrder &&
-            createdOrder.id === (queryOrderId || createdOrder.id)
-              ? createdOrder
-              : null
-          }
-          initialMethod={
-            sessionCreatedOrderId === (queryOrderId || createdOrder?.id || pendingOrder?.orderId || '')
-              ? selectedMethod
-              : pendingOrder &&
-                  pendingOrder.orderId === (queryOrderId || createdOrder?.id || pendingOrder.orderId) &&
-                  pendingOrder.method
-                ? pendingOrder.method
-                : selectedMethod
-          }
-          initialWallet={selectedWallet}
-          initialBank={selectedBank}
-          autoStartQr={qrAutoStart}
-          createdFromCart={
-            sessionCreatedOrderId === (queryOrderId || createdOrder?.id)
-              ? true
-              : undefined
-          }
-          onClearCart={clearAll}
-        />
+        <>
+          {createdOrder &&
+            typeof createdOrder.subtotalAmount === 'number' &&
+            (createdOrder.discountAmount > 0 || Boolean(createdOrder.promotionCode)) && (
+              <div
+                data-testid="created-order-summary"
+                className="max-w-2xl mx-auto rounded-card border border-tan/60 bg-cream p-4 sm:p-5 shadow-soft space-y-1.5 text-sm"
+              >
+                <div className="flex justify-between text-noir/70">
+                  <span>Tạm tính:</span>
+                  <span>{formatVnd(createdOrder.subtotalAmount)}</span>
+                </div>
+                <div className="flex justify-between text-noir/70">
+                  <span>
+                    Giảm giá
+                    {createdOrder.promotionCode ? ` (${createdOrder.promotionCode})` : ''}:
+                  </span>
+                  <span className={createdOrder.discountAmount > 0 ? 'font-semibold text-kombu' : ''}>
+                    {createdOrder.discountAmount > 0
+                      ? `-${formatVnd(createdOrder.discountAmount)}`
+                      : formatVnd(0)}
+                  </span>
+                </div>
+                <div className="flex justify-between items-baseline border-t border-tan/40 pt-2">
+                  <span className="font-bold text-noir">Tổng:</span>
+                  <span className="font-display text-lg font-bold text-kombu">
+                    {formatVnd(createdOrder.totalAmount)}
+                  </span>
+                </div>
+              </div>
+            )}
+
+          <QrPaymentScreen
+            orderId={queryOrderId || createdOrder?.id || pendingOrder?.orderId || ''}
+            initialOrder={
+              createdOrder &&
+              createdOrder.id === (queryOrderId || createdOrder.id)
+                ? createdOrder
+                : null
+            }
+            initialMethod={
+              sessionCreatedOrderId === (queryOrderId || createdOrder?.id || pendingOrder?.orderId || '')
+                ? selectedMethod
+                : pendingOrder &&
+                    pendingOrder.orderId === (queryOrderId || createdOrder?.id || pendingOrder.orderId) &&
+                    pendingOrder.method
+                  ? pendingOrder.method
+                  : selectedMethod
+            }
+            initialWallet={selectedWallet}
+            initialBank={selectedBank}
+            autoStartQr={qrAutoStart}
+            createdFromCart={
+              sessionCreatedOrderId === (queryOrderId || createdOrder?.id)
+                ? true
+                : undefined
+            }
+            onClearCart={clearAll}
+          />
+        </>
       )}
     </div>
   );
