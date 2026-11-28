@@ -2,10 +2,12 @@ import { INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import {
   Category,
+  LoyaltyType,
   OrderStatus,
   PaymentMethod,
   PaymentStatus,
   PrismaClient,
+  PromotionType,
   Size,
 } from '@prisma/client';
 import request from 'supertest';
@@ -36,6 +38,7 @@ describe('Payments Integration (POST /payments)', () => {
   const SUITE_PRODUCT_IDS = [PRODUCT_COFFEE_ID, PRODUCT_CAKE_ID];
   const SUITE_TOPPING_IDS = [TOPPING_CHEESE_ID];
   const createdUserEmails: string[] = [];
+  const createdPromotionCodes: string[] = [];
 
   async function cleanupSuiteData() {
     if (!prisma) {
@@ -63,6 +66,9 @@ describe('Payments Integration (POST /payments)', () => {
     const orderIds = orders.map((o) => o.id);
 
     if (orderIds.length > 0) {
+      await prisma.loyaltyTransaction.deleteMany({
+        where: { orderId: { in: orderIds } },
+      });
       await prisma.orderItemTopping.deleteMany({
         where: { orderItem: { orderId: { in: orderIds } } },
       });
@@ -78,8 +84,17 @@ describe('Payments Integration (POST /payments)', () => {
     }
 
     if (userIds.length > 0) {
+      await prisma.loyaltyTransaction.deleteMany({
+        where: { userId: { in: userIds } },
+      });
       await prisma.payment.deleteMany({
         where: { userId: { in: userIds } },
+      });
+    }
+
+    if (createdPromotionCodes.length > 0) {
+      await prisma.promotion.deleteMany({
+        where: { code: { in: createdPromotionCodes } },
       });
     }
 
@@ -205,6 +220,9 @@ describe('Payments Integration (POST /payments)', () => {
     const orderIds = existingOrders.map((o) => o.id);
 
     if (orderIds.length > 0) {
+      await prisma.loyaltyTransaction.deleteMany({
+        where: { orderId: { in: orderIds } },
+      });
       await prisma.orderItemTopping.deleteMany({
         where: { orderItem: { orderId: { in: orderIds } } },
       });
@@ -218,6 +236,14 @@ describe('Payments Integration (POST /payments)', () => {
         where: { id: { in: orderIds } },
       });
     }
+
+    await prisma.loyaltyTransaction.deleteMany({
+      where: { userId: { in: [userIdA, userIdB] } },
+    });
+    await prisma.user.updateMany({
+      where: { id: { in: [userIdA, userIdB] } },
+      data: { loyaltyPoints: 0 },
+    });
 
     await prisma.payment.deleteMany({
       where: { userId: { in: [userIdA, userIdB] } },
@@ -648,5 +674,472 @@ describe('Payments Integration (POST /payments)', () => {
     });
     expect(paymentsInDb).toHaveLength(1);
     expect(paymentsInDb[0].status).toBe(PaymentStatus.SUCCESS);
+  });
+
+  describe('VIỆC 10 - POST /payments cộng điểm (hợp đồng mục 6.1, 0.10)', () => {
+    let codeFixed10k: string;
+
+    beforeAll(async () => {
+      const suffix = String(Date.now()).slice(-6);
+      codeFixed10k = `V10_FIX10_${suffix}`;
+      createdPromotionCodes.push(codeFixed10k);
+
+      await prisma.promotion.create({
+        data: {
+          code: codeFixed10k,
+          type: PromotionType.FIXED,
+          value: 10000,
+          maxDiscount: null,
+          isActive: true,
+        },
+      });
+    });
+
+    it('(a) SUCCESS: đơn 60.000đ -> PAID, pointsEarned = 6, loyaltyPoints tăng 6, có đúng 1 dòng EARN (points = 6, đúng orderId), response order.pointsEarned = 6, GET /orders/:id cũng trả pointsEarned = 6', async () => {
+      await prisma.user.update({
+        where: { id: userIdA },
+        data: { loyaltyPoints: 50 },
+      });
+
+      // Đặt đơn 2 bánh Tiramisu (30.000 x 2 = 60.000đ)
+      const orderRes = await request(app.getHttpServer())
+        .post('/orders')
+        .set('Authorization', `Bearer ${accessTokenA}`)
+        .send({
+          items: [{ productId: PRODUCT_CAKE_ID, quantity: 2 }],
+        })
+        .expect(201);
+
+      const order = orderRes.body as {
+        id: string;
+        orderNumber: number;
+        totalAmount: number;
+      };
+      expect(order.totalAmount).toBe(60000);
+
+      const payRes = await request(app.getHttpServer())
+        .post('/payments')
+        .set('Authorization', `Bearer ${accessTokenA}`)
+        .set('Idempotency-Key', 'idem-v10-case-a-success')
+        .send({
+          orderId: order.id,
+          method: PaymentMethod.WALLET,
+          accountNumber: '0900000001',
+        })
+        .expect(201);
+
+      expect(payRes.body).toMatchObject({
+        orderId: order.id,
+        amount: 60000,
+        status: PaymentStatus.SUCCESS,
+        order: {
+          id: order.id,
+          orderNumber: order.orderNumber,
+          status: OrderStatus.PAID,
+          pointsEarned: 6,
+        },
+      });
+
+      const userInDb = await prisma.user.findUniqueOrThrow({
+        where: { id: userIdA },
+      });
+      expect(userInDb.loyaltyPoints).toBe(56);
+
+      const earnTxs = await prisma.loyaltyTransaction.findMany({
+        where: { userId: userIdA, type: LoyaltyType.EARN },
+      });
+      expect(earnTxs).toHaveLength(1);
+      expect(earnTxs[0]).toMatchObject({
+        userId: userIdA,
+        orderId: order.id,
+        type: LoyaltyType.EARN,
+        points: 6,
+      });
+
+      const orderDetailRes = await request(app.getHttpServer())
+        .get(`/orders/${order.id}`)
+        .set('Authorization', `Bearer ${accessTokenA}`)
+        .expect(200);
+      expect(orderDetailRes.body).toMatchObject({
+        id: order.id,
+        status: OrderStatus.PAID,
+        pointsEarned: 6,
+      });
+    });
+
+    it('(b) FAILED (accountNumber đuôi 0000): PAYMENT_FAILED, điểm không đổi, không có dòng EARN, response order.pointsEarned = 0', async () => {
+      await prisma.user.update({
+        where: { id: userIdA },
+        data: { loyaltyPoints: 50 },
+      });
+
+      const orderRes = await request(app.getHttpServer())
+        .post('/orders')
+        .set('Authorization', `Bearer ${accessTokenA}`)
+        .send({
+          items: [{ productId: PRODUCT_CAKE_ID, quantity: 2 }],
+        })
+        .expect(201);
+      const order = orderRes.body as { id: string; orderNumber: number };
+
+      const payRes = await request(app.getHttpServer())
+        .post('/payments')
+        .set('Authorization', `Bearer ${accessTokenA}`)
+        .set('Idempotency-Key', 'idem-v10-case-b-failed')
+        .send({
+          orderId: order.id,
+          method: PaymentMethod.WALLET,
+          accountNumber: '0900000000',
+        })
+        .expect(201);
+
+      expect(payRes.body).toMatchObject({
+        orderId: order.id,
+        status: PaymentStatus.FAILED,
+        order: {
+          id: order.id,
+          orderNumber: order.orderNumber,
+          status: OrderStatus.PAYMENT_FAILED,
+          pointsEarned: 0,
+        },
+      });
+
+      const userInDb = await prisma.user.findUniqueOrThrow({
+        where: { id: userIdA },
+      });
+      expect(userInDb.loyaltyPoints).toBe(50);
+
+      const earnTxs = await prisma.loyaltyTransaction.findMany({
+        where: { userId: userIdA },
+      });
+      expect(earnTxs).toHaveLength(0);
+    });
+
+    it('(c) gửi lại cùng Idempotency-Key sau khi SUCCESS: 200, điểm không tăng thêm, vẫn đúng 1 dòng EARN, pointsEarned trong response vẫn là 6', async () => {
+      await prisma.user.update({
+        where: { id: userIdA },
+        data: { loyaltyPoints: 10 },
+      });
+
+      const orderRes = await request(app.getHttpServer())
+        .post('/orders')
+        .set('Authorization', `Bearer ${accessTokenA}`)
+        .send({
+          items: [{ productId: PRODUCT_CAKE_ID, quantity: 2 }],
+        })
+        .expect(201);
+      const order = orderRes.body as { id: string; orderNumber: number };
+      const idemKey = 'idem-v10-case-c-replay';
+
+      const firstRes = await request(app.getHttpServer())
+        .post('/payments')
+        .set('Authorization', `Bearer ${accessTokenA}`)
+        .set('Idempotency-Key', idemKey)
+        .send({
+          orderId: order.id,
+          method: PaymentMethod.WALLET,
+          accountNumber: '0900000001',
+        })
+        .expect(201);
+
+      expect(firstRes.body).toMatchObject({
+        order: {
+          id: order.id,
+          status: OrderStatus.PAID,
+          pointsEarned: 6,
+        },
+      });
+
+      const secondRes = await request(app.getHttpServer())
+        .post('/payments')
+        .set('Authorization', `Bearer ${accessTokenA}`)
+        .set('Idempotency-Key', idemKey)
+        .send({
+          orderId: order.id,
+          method: PaymentMethod.WALLET,
+          accountNumber: '0900000001',
+        })
+        .expect(200);
+
+      expect(secondRes.body).toEqual(firstRes.body);
+      expect(
+        (secondRes.body as { order: { pointsEarned: number } }).order
+          .pointsEarned,
+      ).toBe(6);
+
+      const userInDb = await prisma.user.findUniqueOrThrow({
+        where: { id: userIdA },
+      });
+      expect(userInDb.loyaltyPoints).toBe(16);
+
+      const earnTxs = await prisma.loyaltyTransaction.findMany({
+        where: { userId: userIdA, type: LoyaltyType.EARN },
+      });
+      expect(earnTxs).toHaveLength(1);
+      expect(earnTxs[0].points).toBe(6);
+    });
+
+    it('(d) FAILED rồi thử lại bằng key mới thành công: cộng điểm đúng một lần', async () => {
+      await prisma.user.update({
+        where: { id: userIdA },
+        data: { loyaltyPoints: 20 },
+      });
+
+      const orderRes = await request(app.getHttpServer())
+        .post('/orders')
+        .set('Authorization', `Bearer ${accessTokenA}`)
+        .send({
+          items: [{ productId: PRODUCT_CAKE_ID, quantity: 2 }],
+        })
+        .expect(201);
+      const order = orderRes.body as { id: string; orderNumber: number };
+
+      // Lần 1: FAILED
+      await request(app.getHttpServer())
+        .post('/payments')
+        .set('Authorization', `Bearer ${accessTokenA}`)
+        .set('Idempotency-Key', 'idem-v10-case-d-fail')
+        .send({
+          orderId: order.id,
+          method: PaymentMethod.WALLET,
+          accountNumber: '0900000000',
+        })
+        .expect(201);
+
+      const userAfterFail = await prisma.user.findUniqueOrThrow({
+        where: { id: userIdA },
+      });
+      expect(userAfterFail.loyaltyPoints).toBe(20);
+
+      // Lần 2: key mới -> SUCCESS
+      const retryRes = await request(app.getHttpServer())
+        .post('/payments')
+        .set('Authorization', `Bearer ${accessTokenA}`)
+        .set('Idempotency-Key', 'idem-v10-case-d-retry')
+        .send({
+          orderId: order.id,
+          method: PaymentMethod.WALLET,
+          accountNumber: '0900000001',
+        })
+        .expect(201);
+
+      expect(retryRes.body).toMatchObject({
+        status: PaymentStatus.SUCCESS,
+        order: {
+          id: order.id,
+          status: OrderStatus.PAID,
+          pointsEarned: 6,
+        },
+      });
+
+      const userAfterRetry = await prisma.user.findUniqueOrThrow({
+        where: { id: userIdA },
+      });
+      expect(userAfterRetry.loyaltyPoints).toBe(26);
+
+      const earnTxs = await prisma.loyaltyTransaction.findMany({
+        where: { userId: userIdA, type: LoyaltyType.EARN },
+      });
+      expect(earnTxs).toHaveLength(1);
+      expect(earnTxs[0]).toMatchObject({
+        orderId: order.id,
+        points: 6,
+      });
+    });
+
+    it('(e) đơn dưới 10.000đ (totalAmount = 9.000): PAID, pointsEarned = 0, không có dòng EARN', async () => {
+      // Khách có 21 điểm, đặt 1 bánh 30.000đ với usePoints = true -> pointsUsed = 21 -> totalAmount = 9.000đ
+      await prisma.user.update({
+        where: { id: userIdA },
+        data: { loyaltyPoints: 21 },
+      });
+
+      const orderRes = await request(app.getHttpServer())
+        .post('/orders')
+        .set('Authorization', `Bearer ${accessTokenA}`)
+        .send({
+          usePoints: true,
+          items: [{ productId: PRODUCT_CAKE_ID, quantity: 1 }],
+        })
+        .expect(201);
+
+      const order = orderRes.body as {
+        id: string;
+        orderNumber: number;
+        totalAmount: number;
+      };
+      expect(order.totalAmount).toBe(9000);
+
+      const payRes = await request(app.getHttpServer())
+        .post('/payments')
+        .set('Authorization', `Bearer ${accessTokenA}`)
+        .set('Idempotency-Key', 'idem-v10-case-e-under10k')
+        .send({
+          orderId: order.id,
+          method: PaymentMethod.WALLET,
+          accountNumber: '0900000001',
+        })
+        .expect(201);
+
+      expect(payRes.body).toMatchObject({
+        orderId: order.id,
+        amount: 9000,
+        status: PaymentStatus.SUCCESS,
+        order: {
+          id: order.id,
+          orderNumber: order.orderNumber,
+          status: OrderStatus.PAID,
+          pointsEarned: 0,
+        },
+      });
+
+      const userInDb = await prisma.user.findUniqueOrThrow({
+        where: { id: userIdA },
+      });
+      expect(userInDb.loyaltyPoints).toBe(0);
+
+      const earnTxs = await prisma.loyaltyTransaction.findMany({
+        where: { userId: userIdA, type: LoyaltyType.EARN },
+      });
+      expect(earnTxs).toHaveLength(0);
+    });
+
+    it('(f) đơn có mã giảm và dùng điểm: Payment.amount bằng totalAmount (sau giảm), điểm cộng tính trên totalAmount chứ không phải subtotalAmount', async () => {
+      // Đơn 3 bánh = 90.000đ, mã FIXED 10.000đ, khách dùng 20 điểm (20.000đ) -> totalAmount = 60.000đ
+      await prisma.user.update({
+        where: { id: userIdA },
+        data: { loyaltyPoints: 20 },
+      });
+
+      const orderRes = await request(app.getHttpServer())
+        .post('/orders')
+        .set('Authorization', `Bearer ${accessTokenA}`)
+        .send({
+          promotionCode: codeFixed10k,
+          usePoints: true,
+          items: [{ productId: PRODUCT_CAKE_ID, quantity: 3 }],
+        })
+        .expect(201);
+
+      const order = orderRes.body as {
+        id: string;
+        orderNumber: number;
+        subtotalAmount: number;
+        discountAmount: number;
+        pointsUsed: number;
+        totalAmount: number;
+      };
+      expect(order).toMatchObject({
+        subtotalAmount: 90000,
+        discountAmount: 10000,
+        pointsUsed: 20,
+        totalAmount: 60000,
+      });
+
+      const payRes = await request(app.getHttpServer())
+        .post('/payments')
+        .set('Authorization', `Bearer ${accessTokenA}`)
+        .set('Idempotency-Key', 'idem-v10-case-f-promo-points')
+        .send({
+          orderId: order.id,
+          method: PaymentMethod.WALLET,
+          accountNumber: '0900000001',
+        })
+        .expect(201);
+
+      // Điểm cộng tính trên totalAmount = 60.000 -> pointsEarned = 6 (chứ không phải 9 từ subtotalAmount 90.000)
+      expect(payRes.body).toMatchObject({
+        orderId: order.id,
+        amount: 60000,
+        status: PaymentStatus.SUCCESS,
+        order: {
+          id: order.id,
+          orderNumber: order.orderNumber,
+          status: OrderStatus.PAID,
+          pointsEarned: 6,
+        },
+      });
+
+      const paymentInDb = await prisma.payment.findFirstOrThrow({
+        where: { orderId: order.id },
+      });
+      expect(paymentInDb.amount).toBe(60000);
+
+      const userInDb = await prisma.user.findUniqueOrThrow({
+        where: { id: userIdA },
+      });
+      expect(userInDb.loyaltyPoints).toBe(6);
+
+      const earnTxs = await prisma.loyaltyTransaction.findMany({
+        where: { userId: userIdA, type: LoyaltyType.EARN },
+      });
+      expect(earnTxs).toHaveLength(1);
+      expect(earnTxs[0]).toMatchObject({
+        userId: userIdA,
+        orderId: order.id,
+        type: LoyaltyType.EARN,
+        points: 6,
+      });
+    });
+
+    it('(g) hai request thanh toán đồng thời cho cùng đơn với 2 key khác nhau: chỉ 1 request thắng (201), request kia 409, và điểm chỉ cộng đúng một lần', async () => {
+      await prisma.user.update({
+        where: { id: userIdA },
+        data: { loyaltyPoints: 0 },
+      });
+
+      const orderRes = await request(app.getHttpServer())
+        .post('/orders')
+        .set('Authorization', `Bearer ${accessTokenA}`)
+        .send({
+          items: [{ productId: PRODUCT_CAKE_ID, quantity: 2 }],
+        })
+        .expect(201);
+      const order = orderRes.body as { id: string; totalAmount: number };
+      expect(order.totalAmount).toBe(60000);
+
+      await Promise.all([
+        ...Array.from({ length: 4 }, () => testPrisma.$queryRaw`SELECT 1`),
+        ...Array.from({ length: 4 }, () => prisma.$queryRaw`SELECT 1`),
+      ]);
+
+      const [res1, res2] = await Promise.all([
+        request(app.getHttpServer())
+          .post('/payments')
+          .set('Authorization', `Bearer ${accessTokenA}`)
+          .set('Idempotency-Key', 'idem-v10-case-g-concurrent-1')
+          .send({
+            orderId: order.id,
+            method: PaymentMethod.WALLET,
+            accountNumber: '0900000001',
+          }),
+        request(app.getHttpServer())
+          .post('/payments')
+          .set('Authorization', `Bearer ${accessTokenA}`)
+          .set('Idempotency-Key', 'idem-v10-case-g-concurrent-2')
+          .send({
+            orderId: order.id,
+            method: PaymentMethod.CARD,
+            accountNumber: '0900000002',
+          }),
+      ]);
+
+      const statuses = [res1.status, res2.status].sort((a, b) => a - b);
+      expect(statuses).toEqual([201, 409]);
+
+      const userInDb = await prisma.user.findUniqueOrThrow({
+        where: { id: userIdA },
+      });
+      expect(userInDb.loyaltyPoints).toBe(6);
+
+      const earnTxs = await prisma.loyaltyTransaction.findMany({
+        where: { userId: userIdA, type: LoyaltyType.EARN },
+      });
+      expect(earnTxs).toHaveLength(1);
+      expect(earnTxs[0]).toMatchObject({
+        orderId: order.id,
+        points: 6,
+      });
+    });
   });
 });

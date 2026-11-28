@@ -7,6 +7,7 @@ import { OrdersModule } from './orders/orders.module';
 import { PaymentsModule } from './payments/payments.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { ProductsModule } from './products/products.module';
+import { PromotionsModule } from './promotions/promotions.module';
 import { StaffModule } from './staff/staff.module';
 
 @Module({
@@ -21,6 +22,7 @@ import { StaffModule } from './staff/staff.module';
     OrdersModule,
     PaymentsModule,
     StaffModule,
+    PromotionsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

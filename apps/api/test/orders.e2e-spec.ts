@@ -3,11 +3,15 @@ import { Test, TestingModule } from '@nestjs/testing';
 import {
   Category,
   IceLevel,
+  LoyaltyType,
   OrderStatus,
+  PromotionType,
   ReceiveType,
+  Role,
   Size,
   SugarLevel,
 } from '@prisma/client';
+import * as bcrypt from 'bcrypt';
 import request from 'supertest';
 import { App } from 'supertest/types';
 import { AppModule } from '../src/app.module';
@@ -53,15 +57,23 @@ describe('Orders Integration (POST /orders)', () => {
   let prisma: PrismaService;
   let accessToken: string;
   let userId: string;
+  let staffToken: string;
 
   const PRODUCT_TEA_ID = 'aaaaaaaa-0000-4000-8000-000000009a01';
   const PRODUCT_CAKE_ID = 'aaaaaaaa-0000-4000-8000-000000009a02';
   const PRODUCT_OOS_ID = 'aaaaaaaa-0000-4000-8000-000000009a03';
+  const PRODUCT_SMALL_ID = 'aaaaaaaa-0000-4000-8000-000000009a04';
   const TOPPING_PEARL_ID = 'bbbbbbbb-0000-4000-8000-000000009a01';
 
-  const SUITE_PRODUCT_IDS = [PRODUCT_TEA_ID, PRODUCT_CAKE_ID, PRODUCT_OOS_ID];
+  const SUITE_PRODUCT_IDS = [
+    PRODUCT_TEA_ID,
+    PRODUCT_CAKE_ID,
+    PRODUCT_OOS_ID,
+    PRODUCT_SMALL_ID,
+  ];
   const SUITE_TOPPING_IDS = [TOPPING_PEARL_ID];
   const createdUserEmails: string[] = [];
+  const createdPromotionCodes: string[] = [];
 
   async function cleanupSuiteData() {
     if (!prisma) {
@@ -89,6 +101,11 @@ describe('Orders Integration (POST /orders)', () => {
     const orderIds = orders.map((o) => o.id);
 
     if (orderIds.length > 0) {
+      await prisma.loyaltyTransaction.deleteMany({
+        where: {
+          orderId: { in: orderIds },
+        },
+      });
       await prisma.orderItemTopping.deleteMany({
         where: {
           orderItem: {
@@ -113,6 +130,12 @@ describe('Orders Integration (POST /orders)', () => {
       });
     }
 
+    if (userIds.length > 0) {
+      await prisma.loyaltyTransaction.deleteMany({
+        where: { userId: { in: userIds } },
+      });
+    }
+
     await prisma.orderItemTopping.deleteMany({
       where: { toppingId: { in: SUITE_TOPPING_IDS } },
     });
@@ -125,6 +148,12 @@ describe('Orders Integration (POST /orders)', () => {
     await prisma.product.deleteMany({
       where: { id: { in: SUITE_PRODUCT_IDS } },
     });
+
+    if (createdPromotionCodes.length > 0) {
+      await prisma.promotion.deleteMany({
+        where: { code: { in: createdPromotionCodes } },
+      });
+    }
 
     if (userIds.length > 0) {
       await prisma.payment.deleteMany({
@@ -177,6 +206,27 @@ describe('Orders Integration (POST /orders)', () => {
 
     const loginBody = loginRes.body as { accessToken: string };
     accessToken = loginBody.accessToken;
+
+    const staffEmail = `staff.orders.10a.${Date.now()}@example.com`;
+    createdUserEmails.push(staffEmail);
+    const passwordHash = await bcrypt.hash('Password123@', 10);
+    await prisma.user.create({
+      data: {
+        email: staffEmail,
+        passwordHash,
+        displayName: 'Nhân viên Orders E2E',
+        role: Role.STAFF,
+        isActive: true,
+      },
+    });
+    const staffLoginRes = await request(app.getHttpServer())
+      .post('/auth/login')
+      .send({
+        email: staffEmail,
+        password: 'Password123@',
+      })
+      .expect(200);
+    staffToken = (staffLoginRes.body as { accessToken: string }).accessToken;
   });
 
   beforeEach(async () => {
@@ -187,6 +237,9 @@ describe('Orders Integration (POST /orders)', () => {
     const orderIds = existingOrders.map((o) => o.id);
 
     if (orderIds.length > 0) {
+      await prisma.loyaltyTransaction.deleteMany({
+        where: { orderId: { in: orderIds } },
+      });
       await prisma.orderItemTopping.deleteMany({
         where: { orderItem: { orderId: { in: orderIds } } },
       });
@@ -200,6 +253,14 @@ describe('Orders Integration (POST /orders)', () => {
         where: { id: { in: orderIds } },
       });
     }
+
+    await prisma.loyaltyTransaction.deleteMany({
+      where: { userId },
+    });
+    await prisma.user.update({
+      where: { id: userId },
+      data: { loyaltyPoints: 0 },
+    });
 
     await prisma.product.upsert({
       where: { id: PRODUCT_TEA_ID },
@@ -260,6 +321,27 @@ describe('Orders Integration (POST /orders)', () => {
         basePrice: 32000,
         imageUrl: 'https://example.com/oos-10a.jpg',
         stock: 0,
+        isVisible: true,
+      },
+    });
+
+    await prisma.product.upsert({
+      where: { id: PRODUCT_SMALL_ID },
+      update: {
+        name: 'Bánh quy nhỏ 15k',
+        category: Category.CAKE,
+        basePrice: 15000,
+        imageUrl: 'https://example.com/cookie-15k.jpg',
+        stock: 10,
+        isVisible: true,
+      },
+      create: {
+        id: PRODUCT_SMALL_ID,
+        name: 'Bánh quy nhỏ 15k',
+        category: Category.CAKE,
+        basePrice: 15000,
+        imageUrl: 'https://example.com/cookie-15k.jpg',
+        stock: 10,
         isVisible: true,
       },
     });
@@ -559,5 +641,755 @@ describe('Orders Integration (POST /orders)', () => {
       where: { userId },
     });
     expect(orderCount).toBe(0);
+  });
+
+  describe('VIỆC 8 - POST /orders áp mã giảm giá & 5 trường mới trên mọi endpoint trả đơn', () => {
+    let codePercentNoCap: string;
+    let codePercentCap15k: string;
+    let codeFixed20k: string;
+    let codeInactive: string;
+
+    beforeAll(async () => {
+      const suffix = String(Date.now()).slice(-6);
+      codePercentNoCap = `V8_PER10_${suffix}`;
+      codePercentCap15k = `V8_CAP15_${suffix}`;
+      codeFixed20k = `V8_FIX20_${suffix}`;
+      codeInactive = `V8_OFF_${suffix}`;
+
+      createdPromotionCodes.push(
+        codePercentNoCap,
+        codePercentCap15k,
+        codeFixed20k,
+        codeInactive,
+      );
+
+      await prisma.promotion.createMany({
+        data: [
+          {
+            code: codePercentNoCap,
+            type: PromotionType.PERCENT,
+            value: 10,
+            maxDiscount: null,
+            isActive: true,
+          },
+          {
+            code: codePercentCap15k,
+            type: PromotionType.PERCENT,
+            value: 20,
+            maxDiscount: 15000,
+            isActive: true,
+          },
+          {
+            code: codeFixed20k,
+            type: PromotionType.FIXED,
+            value: 20000,
+            maxDiscount: null,
+            isActive: true,
+          },
+          {
+            code: codeInactive,
+            type: PromotionType.PERCENT,
+            value: 15,
+            maxDiscount: null,
+            isActive: false,
+          },
+        ],
+      });
+    });
+
+    it('(a) & (j) Không gửi mã & client gửi kèm totalAmount/discountAmount/subtotalAmount: bị bỏ qua, subtotalAmount = totalAmount, discountAmount = 0, promotionCode = null, pointsUsed = 0, pointsEarned = 0', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/orders')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({
+          subtotalAmount: 1000,
+          discountAmount: 50000,
+          totalAmount: 1000,
+          pointsUsed: 10,
+          pointsEarned: 100,
+          items: [{ productId: PRODUCT_CAKE_ID, quantity: 2 }],
+        })
+        .expect(201);
+
+      expect(res.body).toMatchObject({
+        subtotalAmount: 60000,
+        discountAmount: 0,
+        promotionCode: null,
+        pointsUsed: 0,
+        pointsEarned: 0,
+        totalAmount: 60000,
+      });
+    });
+
+    it('(b), (c), (d), (g) Áp mã PERCENT không trần, PERCENT có trần, FIXED, chuẩn hóa mã viết thường có khoảng trắng thành chữ HOA, và mức giảm không làm totalAmount dưới 1.000đ', async () => {
+      // (b) & (d) PERCENT 10% không trần + mã viết thường có khoảng trắng trên đơn 2 bánh (60.000) -> discount 6.000, total 54.000
+      const resNoCap = await request(app.getHttpServer())
+        .post('/orders')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({
+          promotionCode: `  ${codePercentNoCap.toLowerCase()}  `,
+          items: [{ productId: PRODUCT_CAKE_ID, quantity: 2 }],
+        })
+        .expect(201);
+
+      expect(resNoCap.body).toMatchObject({
+        subtotalAmount: 60000,
+        discountAmount: 6000,
+        promotionCode: codePercentNoCap,
+        pointsUsed: 0,
+        pointsEarned: 0,
+        totalAmount: 54000,
+      });
+
+      // (b) PERCENT 20% có trần 15.000 trên đơn 3 bánh (90.000) -> raw 18.000, trần 15.000 -> total 75.000
+      const resCap = await request(app.getHttpServer())
+        .post('/orders')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({
+          promotionCode: codePercentCap15k,
+          items: [{ productId: PRODUCT_CAKE_ID, quantity: 3 }],
+        })
+        .expect(201);
+
+      expect(resCap.body).toMatchObject({
+        subtotalAmount: 90000,
+        discountAmount: 15000,
+        promotionCode: codePercentCap15k,
+        pointsUsed: 0,
+        pointsEarned: 0,
+        totalAmount: 75000,
+      });
+
+      // (c) FIXED 20.000 trên đơn 2 trà sữa size S (70.000) -> discount 20.000, total 50.000
+      const resFixed = await request(app.getHttpServer())
+        .post('/orders')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({
+          promotionCode: codeFixed20k,
+          items: [{ productId: PRODUCT_TEA_ID, quantity: 2, size: Size.S }],
+        })
+        .expect(201);
+
+      expect(resFixed.body).toMatchObject({
+        subtotalAmount: 70000,
+        discountAmount: 20000,
+        promotionCode: codeFixed20k,
+        pointsUsed: 0,
+        pointsEarned: 0,
+        totalAmount: 50000,
+      });
+
+      // (g) FIXED 20.000 trên đơn 15.000 (1 bánh quy nhỏ 15k) -> discountAmount = 14.000, totalAmount = 1.000
+      const resFloor = await request(app.getHttpServer())
+        .post('/orders')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({
+          promotionCode: codeFixed20k,
+          items: [{ productId: PRODUCT_SMALL_ID, quantity: 1 }],
+        })
+        .expect(201);
+
+      expect(resFloor.body).toMatchObject({
+        subtotalAmount: 15000,
+        discountAmount: 14000,
+        promotionCode: codeFixed20k,
+        pointsUsed: 0,
+        pointsEarned: 0,
+        totalAmount: 1000,
+      });
+    });
+
+    it('(e) & (f) Mã không tồn tại -> 404 "Mã giảm giá không tồn tại", mã tắt -> 409 "Mã giảm giá đã ngừng áp dụng", không tạo đơn và kho không đổi; promotionCode rỗng/quá 30 ký tự -> 400 mảng chuỗi tiếng Anh', async () => {
+      // promotionCode rỗng sau khi trim hoặc quá 30 ký tự -> 400
+      for (const badCode of ['', '   ', 'A'.repeat(31), 12345, null]) {
+        const res400 = await request(app.getHttpServer())
+          .post('/orders')
+          .set('Authorization', `Bearer ${accessToken}`)
+          .send({
+            promotionCode: badCode,
+            items: [{ productId: PRODUCT_TEA_ID, quantity: 1 }],
+          })
+          .expect(400);
+        expect(
+          Array.isArray((res400.body as { message: unknown }).message),
+        ).toBe(true);
+      }
+
+      // (e) Mã không tồn tại -> 404 và kho vẫn nguyên 10
+      const res404 = await request(app.getHttpServer())
+        .post('/orders')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({
+          promotionCode: 'MA_KHONG_TON_TAI_V8',
+          items: [{ productId: PRODUCT_TEA_ID, quantity: 2 }],
+        })
+        .expect(404);
+      expect(res404.body).toMatchObject({
+        statusCode: 404,
+        message: 'Mã giảm giá không tồn tại',
+      });
+
+      const teaAfter404 = await prisma.product.findUniqueOrThrow({
+        where: { id: PRODUCT_TEA_ID },
+      });
+      expect(teaAfter404.stock).toBe(10);
+
+      // (f) Mã đang tắt -> 409 và kho vẫn nguyên 10
+      const res409 = await request(app.getHttpServer())
+        .post('/orders')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({
+          promotionCode: ` ${codeInactive.toLowerCase()} `,
+          items: [{ productId: PRODUCT_TEA_ID, quantity: 2 }],
+        })
+        .expect(409);
+      expect(res409.body).toMatchObject({
+        statusCode: 409,
+        message: 'Mã giảm giá đã ngừng áp dụng',
+      });
+
+      const teaAfter409 = await prisma.product.findUniqueOrThrow({
+        where: { id: PRODUCT_TEA_ID },
+      });
+      expect(teaAfter409.stock).toBe(10);
+
+      const orderCount = await prisma.order.count({ where: { userId } });
+      expect(orderCount).toBe(0);
+    });
+
+    it('(h) & (i) 5 trường mới xuất hiện trên cả 6 endpoint trả đơn (POST /orders, GET /orders/me, GET /orders/:id, GET /orders, PATCH /orders/:id/status, POST /orders/:id/cancel) và hủy đơn không làm đổi discountAmount/promotionCode', async () => {
+      const expectedPromoFields = {
+        subtotalAmount: 60000,
+        discountAmount: 6000,
+        promotionCode: codePercentNoCap,
+        pointsUsed: 0,
+        pointsEarned: 0,
+        totalAmount: 54000,
+      };
+
+      // 1. POST /orders
+      const createRes = await request(app.getHttpServer())
+        .post('/orders')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({
+          promotionCode: codePercentNoCap,
+          items: [{ productId: PRODUCT_CAKE_ID, quantity: 2 }],
+        })
+        .expect(201);
+      const orderId = (createRes.body as { id: string }).id;
+      expect(createRes.body).toMatchObject(expectedPromoFields);
+
+      // 2. GET /orders/me
+      const meRes = await request(app.getHttpServer())
+        .get('/orders/me')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .expect(200);
+      const myList = meRes.body as Array<{ id: string }>;
+      expect(myList.find((o) => o.id === orderId)).toMatchObject(
+        expectedPromoFields,
+      );
+
+      // 3. GET /orders/:id
+      const detailRes = await request(app.getHttpServer())
+        .get(`/orders/${orderId}`)
+        .set('Authorization', `Bearer ${accessToken}`)
+        .expect(200);
+      expect(detailRes.body).toMatchObject(expectedPromoFields);
+
+      // 4. GET /orders (STAFF)
+      const staffListRes = await request(app.getHttpServer())
+        .get('/orders')
+        .set('Authorization', `Bearer ${staffToken}`)
+        .expect(200);
+      const staffList = staffListRes.body as Array<{ id: string }>;
+      expect(staffList.find((o) => o.id === orderId)).toMatchObject(
+        expectedPromoFields,
+      );
+
+      // 5. POST /orders/:id/cancel & (i) giữ nguyên discountAmount và promotionCode
+      const cancelRes = await request(app.getHttpServer())
+        .post(`/orders/${orderId}/cancel`)
+        .set('Authorization', `Bearer ${accessToken}`)
+        .expect(200);
+      expect(cancelRes.body).toMatchObject({
+        id: orderId,
+        status: OrderStatus.CANCELLED,
+        ...expectedPromoFields,
+      });
+
+      // 6. PATCH /orders/:id/status (tạo thêm 1 đơn có mã rồi chuyển trạng thái qua STAFF)
+      const createRes2 = await request(app.getHttpServer())
+        .post('/orders')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({
+          promotionCode: codePercentNoCap,
+          items: [{ productId: PRODUCT_CAKE_ID, quantity: 2 }],
+        })
+        .expect(201);
+      const order2Id = (createRes2.body as { id: string }).id;
+
+      const patchStatusRes = await request(app.getHttpServer())
+        .patch(`/orders/${order2Id}/status`)
+        .set('Authorization', `Bearer ${staffToken}`)
+        .send({ status: OrderStatus.CANCELLED })
+        .expect(200);
+      expect(patchStatusRes.body).toMatchObject({
+        id: order2Id,
+        status: OrderStatus.CANCELLED,
+        ...expectedPromoFields,
+      });
+    });
+  });
+
+  describe('VIỆC 9 - POST /orders dùng điểm (hợp đồng mục 0.10, 5.2)', () => {
+    let codeFixed10k: string;
+    let codeFixed20k: string;
+
+    beforeAll(async () => {
+      const suffix = String(Date.now()).slice(-6);
+      codeFixed10k = `V9_FIX10_${suffix}`;
+      codeFixed20k = `V9_FIX20_${suffix}`;
+
+      createdPromotionCodes.push(codeFixed10k, codeFixed20k);
+
+      await prisma.promotion.createMany({
+        data: [
+          {
+            code: codeFixed10k,
+            type: PromotionType.FIXED,
+            value: 10000,
+            maxDiscount: null,
+            isActive: true,
+          },
+          {
+            code: codeFixed20k,
+            type: PromotionType.FIXED,
+            value: 20000,
+            maxDiscount: null,
+            isActive: true,
+          },
+        ],
+      });
+    });
+
+    it('(a) không gửi usePoints hoặc usePoints = false: pointsUsed = 0, điểm không đổi, không có dòng REDEEM', async () => {
+      await prisma.user.update({
+        where: { id: userId },
+        data: { loyaltyPoints: 50 },
+      });
+
+      // 1. Không gửi usePoints
+      const resOmitted = await request(app.getHttpServer())
+        .post('/orders')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({
+          items: [{ productId: PRODUCT_CAKE_ID, quantity: 1 }],
+        })
+        .expect(201);
+
+      expect(resOmitted.body).toMatchObject({
+        subtotalAmount: 30000,
+        discountAmount: 0,
+        pointsUsed: 0,
+        pointsEarned: 0,
+        totalAmount: 30000,
+      });
+
+      // 2. usePoints = false
+      const resFalse = await request(app.getHttpServer())
+        .post('/orders')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({
+          usePoints: false,
+          items: [{ productId: PRODUCT_CAKE_ID, quantity: 1 }],
+        })
+        .expect(201);
+
+      expect(resFalse.body).toMatchObject({
+        subtotalAmount: 30000,
+        discountAmount: 0,
+        pointsUsed: 0,
+        pointsEarned: 0,
+        totalAmount: 30000,
+      });
+
+      const userInDb = await prisma.user.findUniqueOrThrow({
+        where: { id: userId },
+      });
+      expect(userInDb.loyaltyPoints).toBe(50);
+
+      const redeemTxs = await prisma.loyaltyTransaction.findMany({
+        where: { userId, type: LoyaltyType.REDEEM },
+      });
+      expect(redeemTxs).toHaveLength(0);
+    });
+
+    it('(b) ví dụ hợp đồng: subtotal 80.000, mã FIXED 10.000, khách có 10 điểm, usePoints = true -> pointsUsed = 10, totalAmount = 60.000, loyaltyPoints còn 0, có đúng 1 dòng REDEEM points = -10 gắn đúng orderId', async () => {
+      // 1 Trà sữa size S có topping 5.000 (35.000 + 5.000 = 40.000) x 2 = 80.000
+      await prisma.user.update({
+        where: { id: userId },
+        data: { loyaltyPoints: 10 },
+      });
+
+      const res = await request(app.getHttpServer())
+        .post('/orders')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({
+          promotionCode: codeFixed10k,
+          usePoints: true,
+          items: [
+            {
+              productId: PRODUCT_TEA_ID,
+              quantity: 2,
+              size: Size.S,
+              toppingIds: [TOPPING_PEARL_ID],
+            },
+          ],
+        })
+        .expect(201);
+
+      const createdOrder = res.body as {
+        id: string;
+        subtotalAmount: number;
+        discountAmount: number;
+        promotionCode: string | null;
+        pointsUsed: number;
+        pointsEarned: number;
+        totalAmount: number;
+      };
+
+      expect(createdOrder).toMatchObject({
+        subtotalAmount: 80000,
+        discountAmount: 10000,
+        promotionCode: codeFixed10k,
+        pointsUsed: 10,
+        pointsEarned: 0,
+        totalAmount: 60000,
+      });
+
+      const userInDb = await prisma.user.findUniqueOrThrow({
+        where: { id: userId },
+      });
+      expect(userInDb.loyaltyPoints).toBe(0);
+
+      const redeemTxs = await prisma.loyaltyTransaction.findMany({
+        where: { userId },
+      });
+      expect(redeemTxs).toHaveLength(1);
+      expect(redeemTxs[0]).toMatchObject({
+        userId,
+        orderId: createdOrder.id,
+        type: LoyaltyType.REDEEM,
+        points: -10,
+      });
+    });
+
+    it('(c) điểm nhiều hơn mức cho phép: khách có 100 điểm, subtotal 30.000, không mã -> pointsUsed = 29, totalAmount = 1.000, điểm còn 71', async () => {
+      await prisma.user.update({
+        where: { id: userId },
+        data: { loyaltyPoints: 100 },
+      });
+
+      const res = await request(app.getHttpServer())
+        .post('/orders')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({
+          usePoints: true,
+          items: [{ productId: PRODUCT_CAKE_ID, quantity: 1 }],
+        })
+        .expect(201);
+
+      const createdOrder = res.body as { id: string };
+      expect(res.body).toMatchObject({
+        subtotalAmount: 30000,
+        discountAmount: 0,
+        promotionCode: null,
+        pointsUsed: 29,
+        pointsEarned: 0,
+        totalAmount: 1000,
+      });
+
+      const userInDb = await prisma.user.findUniqueOrThrow({
+        where: { id: userId },
+      });
+      expect(userInDb.loyaltyPoints).toBe(71);
+
+      const redeemTxs = await prisma.loyaltyTransaction.findMany({
+        where: { userId },
+      });
+      expect(redeemTxs).toHaveLength(1);
+      expect(redeemTxs[0]).toMatchObject({
+        userId,
+        orderId: createdOrder.id,
+        type: LoyaltyType.REDEEM,
+        points: -29,
+      });
+    });
+
+    it('(d) có cả mã và điểm: totalAmount không bao giờ dưới 1.000', async () => {
+      // 1. Subtotal 30.000 (1 bánh), mã FIXED 20.000 -> còn 10.000, khách có 50 điểm -> chỉ dùng 9 điểm, totalAmount = 1.000, điểm còn 41
+      await prisma.user.update({
+        where: { id: userId },
+        data: { loyaltyPoints: 50 },
+      });
+
+      const res1 = await request(app.getHttpServer())
+        .post('/orders')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({
+          promotionCode: codeFixed20k,
+          usePoints: true,
+          items: [{ productId: PRODUCT_CAKE_ID, quantity: 1 }],
+        })
+        .expect(201);
+
+      expect(res1.body).toMatchObject({
+        subtotalAmount: 30000,
+        discountAmount: 20000,
+        promotionCode: codeFixed20k,
+        pointsUsed: 9,
+        pointsEarned: 0,
+        totalAmount: 1000,
+      });
+
+      const userAfter1 = await prisma.user.findUniqueOrThrow({
+        where: { id: userId },
+      });
+      expect(userAfter1.loyaltyPoints).toBe(41);
+
+      // 2. Subtotal 15.000 (1 bánh quy nhỏ 15k), mã FIXED 20.000 -> discountAmount = 14.000, khách còn 41 điểm -> pointsUsed = 0, totalAmount = 1.000, điểm giữ nguyên 41, không tạo thêm dòng REDEEM
+      const res2 = await request(app.getHttpServer())
+        .post('/orders')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({
+          promotionCode: codeFixed20k,
+          usePoints: true,
+          items: [{ productId: PRODUCT_SMALL_ID, quantity: 1 }],
+        })
+        .expect(201);
+
+      expect(res2.body).toMatchObject({
+        subtotalAmount: 15000,
+        discountAmount: 14000,
+        promotionCode: codeFixed20k,
+        pointsUsed: 0,
+        pointsEarned: 0,
+        totalAmount: 1000,
+      });
+
+      const userAfter2 = await prisma.user.findUniqueOrThrow({
+        where: { id: userId },
+      });
+      expect(userAfter2.loyaltyPoints).toBe(41);
+
+      const txsForOrder2 = await prisma.loyaltyTransaction.findMany({
+        where: { orderId: (res2.body as { id: string }).id },
+      });
+      expect(txsForOrder2).toHaveLength(0);
+    });
+
+    it('(e) usePoints = true nhưng khách có 0 điểm: pointsUsed = 0, không có dòng REDEEM, đặt đơn thành công', async () => {
+      await prisma.user.update({
+        where: { id: userId },
+        data: { loyaltyPoints: 0 },
+      });
+
+      const res = await request(app.getHttpServer())
+        .post('/orders')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({
+          usePoints: true,
+          items: [{ productId: PRODUCT_CAKE_ID, quantity: 1 }],
+        })
+        .expect(201);
+
+      expect(res.body).toMatchObject({
+        subtotalAmount: 30000,
+        discountAmount: 0,
+        pointsUsed: 0,
+        pointsEarned: 0,
+        totalAmount: 30000,
+      });
+
+      const userInDb = await prisma.user.findUniqueOrThrow({
+        where: { id: userId },
+      });
+      expect(userInDb.loyaltyPoints).toBe(0);
+
+      const redeemTxs = await prisma.loyaltyTransaction.findMany({
+        where: { userId },
+      });
+      expect(redeemTxs).toHaveLength(0);
+    });
+
+    it('(f) tranh chấp điểm: mô phỏng câu cập nhật có điều kiện trả 0 dòng -> 409 "Số điểm không đủ, vui lòng thử lại", không có đơn, kho KHÔNG bị trừ, không có dòng REDEEM', async () => {
+      await prisma.user.update({
+        where: { id: userId },
+        data: { loyaltyPoints: 20 },
+      });
+
+      const originalTransaction = prisma.$transaction.bind(
+        prisma,
+      ) as typeof prisma.$transaction;
+      const txSpy = jest
+        .spyOn(prisma, '$transaction')
+        .mockImplementationOnce(
+          (
+            fn: (tx: PrismaService) => Promise<unknown>,
+            options?: { maxWait?: number; timeout?: number },
+          ) =>
+            originalTransaction(async (tx) => {
+              const txUser = (
+                tx as unknown as {
+                  user: {
+                    updateMany: () => Promise<{ count: number }>;
+                  };
+                }
+              ).user;
+              jest
+                .spyOn(txUser, 'updateMany')
+                .mockResolvedValueOnce({ count: 0 });
+              return fn(tx as unknown as PrismaService);
+            }, options),
+        );
+
+      try {
+        const res = await request(app.getHttpServer())
+          .post('/orders')
+          .set('Authorization', `Bearer ${accessToken}`)
+          .send({
+            usePoints: true,
+            items: [{ productId: PRODUCT_CAKE_ID, quantity: 1 }],
+          })
+          .expect(409);
+
+        expect(res.body).toMatchObject({
+          statusCode: 409,
+          message: 'Số điểm không đủ, vui lòng thử lại',
+        });
+      } finally {
+        txSpy.mockRestore();
+      }
+
+      // Chứng minh kho KHÔNG bị trừ (vẫn giữ nguyên 6)
+      const cakeInDb = await prisma.product.findUniqueOrThrow({
+        where: { id: PRODUCT_CAKE_ID },
+      });
+      expect(cakeInDb.stock).toBe(6);
+
+      // Chứng minh không có đơn nào được tạo
+      const orderCount = await prisma.order.count({ where: { userId } });
+      expect(orderCount).toBe(0);
+
+      // Chứng minh không có dòng REDEEM nào
+      const redeemTxs = await prisma.loyaltyTransaction.findMany({
+        where: { userId },
+      });
+      expect(redeemTxs).toHaveLength(0);
+    });
+
+    it('(g) thiếu hàng (409 kho) thì điểm KHÔNG bị trừ và không có dòng REDEEM', async () => {
+      await prisma.user.update({
+        where: { id: userId },
+        data: { loyaltyPoints: 25 },
+      });
+
+      await request(app.getHttpServer())
+        .post('/orders')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({
+          usePoints: true,
+          items: [
+            { productId: PRODUCT_CAKE_ID, quantity: 1 },
+            { productId: PRODUCT_OOS_ID, quantity: 1 },
+          ],
+        })
+        .expect(409);
+
+      const userInDb = await prisma.user.findUniqueOrThrow({
+        where: { id: userId },
+      });
+      expect(userInDb.loyaltyPoints).toBe(25);
+
+      const cakeInDb = await prisma.product.findUniqueOrThrow({
+        where: { id: PRODUCT_CAKE_ID },
+      });
+      expect(cakeInDb.stock).toBe(6);
+
+      const redeemTxs = await prisma.loyaltyTransaction.findMany({
+        where: { userId },
+      });
+      expect(redeemTxs).toHaveLength(0);
+    });
+
+    it('(h) usePoints không phải đúng/sai bị 400 với message là mảng chuỗi tiếng Anh', async () => {
+      for (const badUsePoints of ['true', 'false', 1, 0, null, {}, []]) {
+        const res = await request(app.getHttpServer())
+          .post('/orders')
+          .set('Authorization', `Bearer ${accessToken}`)
+          .send({
+            usePoints: badUsePoints,
+            items: [{ productId: PRODUCT_CAKE_ID, quantity: 1 }],
+          })
+          .expect(400);
+
+        expect(Array.isArray((res.body as { message: unknown }).message)).toBe(
+          true,
+        );
+      }
+    });
+
+    it('(i) GET /orders/me và GET /orders/:id trả pointsUsed đúng', async () => {
+      await prisma.user.update({
+        where: { id: userId },
+        data: { loyaltyPoints: 15 },
+      });
+
+      const createRes = await request(app.getHttpServer())
+        .post('/orders')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({
+          usePoints: true,
+          items: [{ productId: PRODUCT_CAKE_ID, quantity: 2 }],
+        })
+        .expect(201);
+
+      const orderId = (createRes.body as { id: string }).id;
+      expect(createRes.body).toMatchObject({
+        id: orderId,
+        subtotalAmount: 60000,
+        discountAmount: 0,
+        pointsUsed: 15,
+        pointsEarned: 0,
+        totalAmount: 45000,
+      });
+
+      const meRes = await request(app.getHttpServer())
+        .get('/orders/me')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .expect(200);
+      const myOrders = meRes.body as Array<{ id: string }>;
+      expect(myOrders.find((o) => o.id === orderId)).toMatchObject({
+        id: orderId,
+        subtotalAmount: 60000,
+        discountAmount: 0,
+        pointsUsed: 15,
+        pointsEarned: 0,
+        totalAmount: 45000,
+      });
+
+      const detailRes = await request(app.getHttpServer())
+        .get(`/orders/${orderId}`)
+        .set('Authorization', `Bearer ${accessToken}`)
+        .expect(200);
+      expect(detailRes.body).toMatchObject({
+        id: orderId,
+        subtotalAmount: 60000,
+        discountAmount: 0,
+        pointsUsed: 15,
+        pointsEarned: 0,
+        totalAmount: 45000,
+      });
+    });
   });
 });

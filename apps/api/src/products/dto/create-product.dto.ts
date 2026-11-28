@@ -42,4 +42,10 @@ export class CreateProductDto {
     message: 'imageUrl must start with http:// or https://',
   })
   imageUrl?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(9999)
+  stock?: number;
 }

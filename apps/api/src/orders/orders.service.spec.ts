@@ -13,9 +13,11 @@ import { Test, TestingModule } from '@nestjs/testing';
 import {
   Category,
   IceLevel,
+  LoyaltyType,
   OrderStatus,
   PaymentMethod,
   PaymentStatus,
+  PromotionType,
   ReceiveType,
   Role,
   Size,
@@ -28,10 +30,15 @@ import { RolesGuard } from '../auth/roles.guard';
 import { ORDER_NOT_FOUND_MESSAGE } from '../payments/payments.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { PRODUCT_NOT_FOUND_MESSAGE } from '../products/products.constants';
+import {
+  PROMOTION_CODE_NOT_FOUND_MESSAGE,
+  PROMOTION_INACTIVE_MESSAGE,
+} from '../promotions/promotions.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { UpdateOrderStatusDto } from './dto/update-order-status.dto';
 import { OrdersController } from './orders.controller';
 import {
+  INSUFFICIENT_POINTS_MESSAGE,
   INVALID_ORDER_STATUS_MESSAGE,
   ORDER_CANNOT_CANCEL_MESSAGE,
   ORDER_STATUS_CHANGED_MESSAGE,
@@ -44,9 +51,19 @@ describe('Orders (OrdersService & CreateOrderDto)', () => {
   let service: OrdersService;
   let controller: OrdersController;
   let txMock: {
+    promotion: {
+      findUnique: jest.Mock;
+    };
     product: {
       updateMany: jest.Mock;
       findMany: jest.Mock;
+    };
+    user: {
+      findUnique: jest.Mock;
+      updateMany: jest.Mock;
+    };
+    loyaltyTransaction: {
+      create: jest.Mock;
     };
     order: {
       create: jest.Mock;
@@ -120,9 +137,21 @@ describe('Orders (OrdersService & CreateOrderDto)', () => {
   beforeEach(async () => {
     let itemCounter = 0;
     txMock = {
+      promotion: {
+        findUnique: jest.fn().mockResolvedValue(null),
+      },
       product: {
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
         findMany: jest.fn().mockResolvedValue([]),
+      },
+      user: {
+        findUnique: jest.fn().mockResolvedValue({ loyaltyPoints: 50 }),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      },
+      loyaltyTransaction: {
+        create: jest.fn().mockResolvedValue({
+          id: '66666666-0000-0000-0000-000000000001',
+        }),
       },
       order: {
         create: jest
@@ -135,6 +164,11 @@ describe('Orders (OrdersService & CreateOrderDto)', () => {
               status: data.status,
               receiveType: data.receiveType,
               note: data.note,
+              subtotalAmount: data.subtotalAmount,
+              discountAmount: data.discountAmount,
+              promotionCode: data.promotionCode,
+              pointsUsed: data.pointsUsed,
+              pointsEarned: data.pointsEarned,
               totalAmount: data.totalAmount,
               createdAt: new Date('2026-11-05T03:00:00.000Z'),
               updatedAt: new Date('2026-11-05T03:00:00.000Z'),
@@ -379,6 +413,11 @@ describe('Orders (OrdersService & CreateOrderDto)', () => {
         status: OrderStatus.PENDING,
         receiveType: ReceiveType.TAKE_AWAY,
         note: 'Cho xin thêm quai xách giấy',
+        subtotalAmount: 136000,
+        discountAmount: 0,
+        promotionCode: null,
+        pointsUsed: 0,
+        pointsEarned: 0,
         totalAmount: 136000,
         createdAt: new Date('2026-11-05T03:00:00.000Z'),
         items: [
@@ -1019,6 +1058,11 @@ describe('Orders (OrdersService & CreateOrderDto)', () => {
         status: OrderStatus.PAID,
         receiveType: ReceiveType.TAKE_AWAY,
         note: 'Cho xin thêm quai xách giấy',
+        subtotalAmount: 136000,
+        discountAmount: 0,
+        promotionCode: null,
+        pointsUsed: 0,
+        pointsEarned: 0,
         totalAmount: 136000,
         createdAt: new Date('2026-11-05T03:00:00.000Z'),
         items: [
@@ -1691,6 +1735,11 @@ describe('Orders (OrdersService & CreateOrderDto)', () => {
           status: OrderStatus.CANCELLED,
           receiveType: ReceiveType.TAKE_AWAY,
           note: 'Cho xin thêm quai xách giấy',
+          subtotalAmount: 53000,
+          discountAmount: 0,
+          promotionCode: null,
+          pointsUsed: 0,
+          pointsEarned: 0,
           totalAmount: 53000,
           createdAt: new Date('2026-11-05T03:00:00.000Z'),
           items: [
@@ -1924,6 +1973,636 @@ describe('Orders (OrdersService & CreateOrderDto)', () => {
         ),
       );
       expect(prisma.order.findFirst).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('14. VIỆC 8 - POST /orders áp mã giảm giá & 5 trường mới trên mọi endpoint trả đơn', () => {
+    const pipe = new ValidationPipe({
+      whitelist: true,
+      transform: true,
+      forbidNonWhitelisted: false,
+    });
+
+    it('(a) & (j) không gửi mã & bỏ qua subtotalAmount/discountAmount/totalAmount/pointsUsed/pointsEarned từ client: subtotalAmount = totalAmount, discountAmount = 0, promotionCode = null, pointsUsed = 0, pointsEarned = 0', async () => {
+      const dto = (await pipe.transform(
+        {
+          subtotalAmount: 1,
+          discountAmount: 999999,
+          totalAmount: 1,
+          pointsUsed: 50,
+          pointsEarned: 999,
+          items: [{ productId: mockCake.id, quantity: 2 }],
+        },
+        { type: 'body', metatype: CreateOrderDto },
+      )) as CreateOrderDto;
+
+      const res = await service.create(USER_ID, dto);
+
+      expect(txMock.promotion.findUnique).not.toHaveBeenCalled();
+      expect(res).toMatchObject({
+        subtotalAmount: 60000,
+        discountAmount: 0,
+        promotionCode: null,
+        pointsUsed: 0,
+        pointsEarned: 0,
+        totalAmount: 60000,
+      });
+    });
+
+    it('validate promotionCode: gửi chuỗi rỗng/khoảng trắng, dài > 30 ký tự, số hoặc null -> 400 mảng chuỗi tiếng Anh, không gọi transaction', async () => {
+      const invalidCodes = ['', '   ', 'A'.repeat(31), 12345, null];
+
+      for (const badCode of invalidCodes) {
+        let caught: unknown;
+        try {
+          const transformed = (await pipe.transform(
+            {
+              promotionCode: badCode,
+              items: [{ productId: mockCake.id, quantity: 1 }],
+            },
+            { type: 'body', metatype: CreateOrderDto },
+          )) as CreateOrderDto;
+          await service.create(USER_ID, transformed);
+        } catch (err) {
+          caught = err;
+        }
+
+        expect(caught).toBeInstanceOf(BadRequestException);
+        const body = (caught as BadRequestException).getResponse() as {
+          message: unknown;
+        };
+        expect(Array.isArray(body.message)).toBe(true);
+      }
+
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('(b), (c), (d), (g) áp dụng mã PERCENT không trần, PERCENT có trần, FIXED, chuẩn hóa mã viết thường có khoảng trắng, và chặn không giảm dưới 1.000đ', async () => {
+      // (b) & (d) PERCENT không trần (10%) + mã viết thường có khoảng trắng trên đơn 2 bánh (60.000) -> giảm 6.000, total 54.000
+      txMock.promotion.findUnique.mockResolvedValueOnce({
+        code: 'BREW10',
+        type: PromotionType.PERCENT,
+        value: 10,
+        maxDiscount: null,
+        isActive: true,
+      });
+
+      const dtoNoCap = (await pipe.transform(
+        {
+          promotionCode: '  brew10  ',
+          items: [{ productId: mockCake.id, quantity: 2 }],
+        },
+        { type: 'body', metatype: CreateOrderDto },
+      )) as CreateOrderDto;
+
+      expect(dtoNoCap.promotionCode).toBe('BREW10');
+      const resNoCap = await service.create(USER_ID, dtoNoCap);
+      expect(txMock.promotion.findUnique).toHaveBeenCalledWith({
+        where: { code: 'BREW10' },
+        select: {
+          code: true,
+          type: true,
+          value: true,
+          maxDiscount: true,
+          isActive: true,
+        },
+      });
+      expect(resNoCap).toMatchObject({
+        subtotalAmount: 60000,
+        discountAmount: 6000,
+        promotionCode: 'BREW10',
+        pointsUsed: 0,
+        pointsEarned: 0,
+        totalAmount: 54000,
+      });
+
+      // (b) PERCENT có trần (20% trần 15.000 trên đơn 3 bánh 90.000 = 18.000 -> trần 15.000 -> total 75.000)
+      txMock.promotion.findUnique.mockResolvedValueOnce({
+        code: 'CAP15K',
+        type: PromotionType.PERCENT,
+        value: 20,
+        maxDiscount: 15000,
+        isActive: true,
+      });
+      const resCap = await service.create(USER_ID, {
+        promotionCode: 'CAP15K',
+        items: [{ productId: mockCake.id, quantity: 3 }],
+      });
+      expect(resCap).toMatchObject({
+        subtotalAmount: 90000,
+        discountAmount: 15000,
+        promotionCode: 'CAP15K',
+        pointsUsed: 0,
+        pointsEarned: 0,
+        totalAmount: 75000,
+      });
+
+      // (c) FIXED 20.000 trên đơn 2 bánh (60.000) -> giảm 20.000, total 40.000
+      txMock.promotion.findUnique.mockResolvedValueOnce({
+        code: 'GIAM20K',
+        type: PromotionType.FIXED,
+        value: 20000,
+        maxDiscount: null,
+        isActive: true,
+      });
+      const resFixed = await service.create(USER_ID, {
+        promotionCode: 'GIAM20K',
+        items: [{ productId: mockCake.id, quantity: 2 }],
+      });
+      expect(resFixed).toMatchObject({
+        subtotalAmount: 60000,
+        discountAmount: 20000,
+        promotionCode: 'GIAM20K',
+        pointsUsed: 0,
+        pointsEarned: 0,
+        totalAmount: 40000,
+      });
+
+      // (g) Mức giảm không làm totalAmount dưới 1.000đ: FIXED 50.000 trên đơn 1 bánh 30.000 -> discountAmount = 29.000, totalAmount = 1.000
+      txMock.promotion.findUnique.mockResolvedValueOnce({
+        code: 'GIAM50K',
+        type: PromotionType.FIXED,
+        value: 50000,
+        maxDiscount: null,
+        isActive: true,
+      });
+      const resFloor = await service.create(USER_ID, {
+        promotionCode: 'GIAM50K',
+        items: [{ productId: mockCake.id, quantity: 1 }],
+      });
+      expect(resFloor).toMatchObject({
+        subtotalAmount: 30000,
+        discountAmount: 29000,
+        promotionCode: 'GIAM50K',
+        pointsUsed: 0,
+        pointsEarned: 0,
+        totalAmount: 1000,
+      });
+    });
+
+    it('(e) & (f) kiểm tra mã TRƯỚC khi trừ kho: mã không tồn tại -> 404 "Mã giảm giá không tồn tại"; mã tắt -> 409 "Mã giảm giá đã ngừng áp dụng"; cả hai trường hợp KHÔNG gọi trừ kho và KHÔNG tạo đơn', async () => {
+      // (e) Mã không tồn tại -> 404
+      txMock.promotion.findUnique.mockResolvedValueOnce(null);
+      await expect(
+        service.create(USER_ID, {
+          promotionCode: 'MA_KHONG_TON_TAI',
+          items: [{ productId: mockCake.id, quantity: 1 }],
+        }),
+      ).rejects.toThrow(
+        new NotFoundException(PROMOTION_CODE_NOT_FOUND_MESSAGE),
+      );
+      expect(txMock.product.updateMany).not.toHaveBeenCalled();
+      expect(txMock.order.create).not.toHaveBeenCalled();
+
+      // (f) Mã isActive = false -> 409
+      txMock.promotion.findUnique.mockResolvedValueOnce({
+        code: 'TAMNGUNG',
+        type: PromotionType.PERCENT,
+        value: 15,
+        maxDiscount: null,
+        isActive: false,
+      });
+      await expect(
+        service.create(USER_ID, {
+          promotionCode: 'TAMNGUNG',
+          items: [{ productId: mockCake.id, quantity: 1 }],
+        }),
+      ).rejects.toThrow(new ConflictException(PROMOTION_INACTIVE_MESSAGE));
+      expect(txMock.product.updateMany).not.toHaveBeenCalled();
+      expect(txMock.order.create).not.toHaveBeenCalled();
+    });
+
+    it('(h) & (i) 5 trường mới có mặt ở cả 6 endpoint trả đơn và hủy đơn có dùng mã không làm đổi discountAmount hay promotionCode', async () => {
+      const orderWithPromo = {
+        id: '33333333-0000-0000-0000-000000000009',
+        orderNumber: 1009,
+        userId: USER_ID,
+        status: OrderStatus.PENDING,
+        receiveType: ReceiveType.TAKE_AWAY,
+        note: null,
+        subtotalAmount: 60000,
+        discountAmount: 6000,
+        promotionCode: 'BREW10',
+        pointsUsed: 0,
+        pointsEarned: 0,
+        totalAmount: 54000,
+        createdAt: new Date('2026-11-05T03:00:00.000Z'),
+        updatedAt: new Date('2026-11-05T03:00:00.000Z'),
+        items: [],
+        payments: [],
+        user: {
+          id: USER_ID,
+          displayName: 'Khách demo',
+          email: 'khach@example.com',
+        },
+      };
+
+      // GET /orders/me
+      prisma.order.findMany.mockResolvedValueOnce([orderWithPromo]);
+      const myOrders = await service.findMyOrders(USER_ID);
+      expect(myOrders[0]).toMatchObject({
+        subtotalAmount: 60000,
+        discountAmount: 6000,
+        promotionCode: 'BREW10',
+        pointsUsed: 0,
+        pointsEarned: 0,
+        totalAmount: 54000,
+      });
+
+      // GET /orders/:id
+      prisma.order.findFirst.mockResolvedValueOnce(orderWithPromo);
+      const oneOrder = await service.findOneForUser(USER_ID, orderWithPromo.id);
+      expect(oneOrder).toMatchObject({
+        subtotalAmount: 60000,
+        discountAmount: 6000,
+        promotionCode: 'BREW10',
+        pointsUsed: 0,
+        pointsEarned: 0,
+        totalAmount: 54000,
+      });
+
+      // GET /orders (STAFF/ADMIN)
+      prisma.order.findMany.mockResolvedValueOnce([orderWithPromo]);
+      const staffOrders = await service.findAllForStaff();
+      expect(staffOrders[0]).toMatchObject({
+        subtotalAmount: 60000,
+        discountAmount: 6000,
+        promotionCode: 'BREW10',
+        pointsUsed: 0,
+        pointsEarned: 0,
+        totalAmount: 54000,
+      });
+
+      // PATCH /orders/:id/status
+      prisma.order.findFirst.mockResolvedValueOnce({
+        ...orderWithPromo,
+        status: OrderStatus.PAID,
+      });
+      prisma.order.updateMany.mockResolvedValueOnce({ count: 1 });
+      const patchedOrder = await service.updateStatus(orderWithPromo.id, {
+        status: OrderStatus.PREPARING,
+      });
+      expect(patchedOrder).toMatchObject({
+        status: OrderStatus.PREPARING,
+        subtotalAmount: 60000,
+        discountAmount: 6000,
+        promotionCode: 'BREW10',
+        pointsUsed: 0,
+        pointsEarned: 0,
+        totalAmount: 54000,
+      });
+
+      // (i) POST /orders/:id/cancel: hủy đơn có dùng mã không làm đổi discountAmount và promotionCode
+      prisma.order.findFirst.mockResolvedValueOnce(orderWithPromo);
+      txMock.order.updateMany.mockResolvedValueOnce({ count: 1 });
+      const cancelledOrder = await service.cancelForUser(
+        USER_ID,
+        orderWithPromo.id,
+      );
+      expect(txMock.order.updateMany).toHaveBeenCalledWith({
+        where: {
+          id: orderWithPromo.id,
+          status: OrderStatus.PENDING,
+        },
+        data: {
+          status: OrderStatus.CANCELLED,
+        },
+      });
+      expect(cancelledOrder).toMatchObject({
+        status: OrderStatus.CANCELLED,
+        subtotalAmount: 60000,
+        discountAmount: 6000,
+        promotionCode: 'BREW10',
+        pointsUsed: 0,
+        pointsEarned: 0,
+        totalAmount: 54000,
+      });
+    });
+  });
+
+  describe('15. VIỆC 9 - POST /orders dùng điểm (hợp đồng mục 0.10, 5.2)', () => {
+    const pipe = new ValidationPipe({
+      whitelist: true,
+      transform: true,
+      forbidNonWhitelisted: false,
+    });
+
+    it('(a) không gửi usePoints hoặc usePoints = false: pointsUsed = 0, điểm không đổi, không có dòng REDEEM', async () => {
+      // Không gửi usePoints
+      const resOmitted = await service.create(USER_ID, {
+        items: [{ productId: mockCake.id, quantity: 2 }],
+      });
+      expect(resOmitted.pointsUsed).toBe(0);
+      expect(resOmitted.pointsEarned).toBe(0);
+      expect(resOmitted.totalAmount).toBe(60000);
+      expect(txMock.user.findUnique).not.toHaveBeenCalled();
+      expect(txMock.user.updateMany).not.toHaveBeenCalled();
+      expect(txMock.loyaltyTransaction.create).not.toHaveBeenCalled();
+
+      // usePoints = false
+      const resFalse = await service.create(USER_ID, {
+        usePoints: false,
+        items: [{ productId: mockCake.id, quantity: 2 }],
+      });
+      expect(resFalse.pointsUsed).toBe(0);
+      expect(resFalse.pointsEarned).toBe(0);
+      expect(resFalse.totalAmount).toBe(60000);
+      expect(txMock.user.findUnique).not.toHaveBeenCalled();
+      expect(txMock.user.updateMany).not.toHaveBeenCalled();
+      expect(txMock.loyaltyTransaction.create).not.toHaveBeenCalled();
+    });
+
+    it('(b) ví dụ hợp đồng: subtotal 80.000, mã FIXED 10.000, khách có 10 điểm, usePoints = true -> pointsUsed = 10, totalAmount = 60.000, trừ điểm có điều kiện, có đúng 1 dòng REDEEM points = -10 gắn đúng orderId', async () => {
+      // 1 ly Trà sữa size M có 1 topping 5.000 (35.000 + 6.000 + 5.000 = 46.000) -> ta dùng mock sản phẩm 80.000 cho gọn
+      const mockProduct80k = {
+        id: '11111111-0000-0000-0000-000000000080',
+        name: 'Combo Đặc Biệt 80k',
+        category: Category.COFFEE,
+        basePrice: 80000,
+        stock: 20,
+      };
+      prisma.product.findMany.mockResolvedValueOnce([mockProduct80k]);
+      txMock.promotion.findUnique.mockResolvedValueOnce({
+        code: 'GIAM10K',
+        type: PromotionType.FIXED,
+        value: 10000,
+        maxDiscount: null,
+        isActive: true,
+      });
+      txMock.user.findUnique.mockResolvedValueOnce({ loyaltyPoints: 10 });
+
+      const result = await service.create(USER_ID, {
+        promotionCode: 'GIAM10K',
+        usePoints: true,
+        items: [{ productId: mockProduct80k.id, quantity: 1 }],
+      });
+
+      expect(result).toMatchObject({
+        id: '33333333-0000-0000-0000-000000000001',
+        subtotalAmount: 80000,
+        discountAmount: 10000,
+        promotionCode: 'GIAM10K',
+        pointsUsed: 10,
+        pointsEarned: 0,
+        totalAmount: 60000,
+      });
+
+      expect(txMock.user.findUnique).toHaveBeenCalledWith({
+        where: { id: USER_ID },
+        select: { loyaltyPoints: true },
+      });
+      expect(txMock.user.updateMany).toHaveBeenCalledTimes(1);
+      expect(txMock.user.updateMany).toHaveBeenCalledWith({
+        where: {
+          id: USER_ID,
+          loyaltyPoints: { gte: 10 },
+        },
+        data: {
+          loyaltyPoints: { decrement: 10 },
+        },
+      });
+      expect(txMock.loyaltyTransaction.create).toHaveBeenCalledTimes(1);
+      expect(txMock.loyaltyTransaction.create).toHaveBeenCalledWith({
+        data: {
+          userId: USER_ID,
+          orderId: '33333333-0000-0000-0000-000000000001',
+          type: LoyaltyType.REDEEM,
+          points: -10,
+        },
+      });
+    });
+
+    it('(c) điểm nhiều hơn mức cho phép: khách có 100 điểm, subtotal 30.000, không mã -> pointsUsed = 29, totalAmount = 1.000, trừ đúng 29 điểm (còn 71)', async () => {
+      prisma.product.findMany.mockResolvedValueOnce([mockCake]);
+      txMock.user.findUnique.mockResolvedValueOnce({ loyaltyPoints: 100 });
+
+      const result = await service.create(USER_ID, {
+        usePoints: true,
+        items: [{ productId: mockCake.id, quantity: 1 }],
+      });
+
+      expect(result).toMatchObject({
+        subtotalAmount: 30000,
+        discountAmount: 0,
+        promotionCode: null,
+        pointsUsed: 29,
+        pointsEarned: 0,
+        totalAmount: 1000,
+      });
+      expect(txMock.user.updateMany).toHaveBeenCalledWith({
+        where: {
+          id: USER_ID,
+          loyaltyPoints: { gte: 29 },
+        },
+        data: {
+          loyaltyPoints: { decrement: 29 },
+        },
+      });
+      expect(txMock.loyaltyTransaction.create).toHaveBeenCalledWith({
+        data: {
+          userId: USER_ID,
+          orderId: result.id,
+          type: LoyaltyType.REDEEM,
+          points: -29,
+        },
+      });
+    });
+
+    it('(d) có cả mã và điểm: totalAmount không bao giờ dưới 1.000 (kể cả khi mã đã giảm sát 1.000đ hoặc kết hợp mã + điểm dư)', async () => {
+      // Trường hợp 1: subtotal 30.000, mã FIXED 20.000 -> còn 10.000, khách có 50 điểm -> chỉ dùng 9 điểm, totalAmount = 1.000
+      prisma.product.findMany.mockResolvedValueOnce([mockCake]);
+      txMock.promotion.findUnique.mockResolvedValueOnce({
+        code: 'GIAM20K',
+        type: PromotionType.FIXED,
+        value: 20000,
+        maxDiscount: null,
+        isActive: true,
+      });
+      txMock.user.findUnique.mockResolvedValueOnce({ loyaltyPoints: 50 });
+
+      const res1 = await service.create(USER_ID, {
+        promotionCode: 'GIAM20K',
+        usePoints: true,
+        items: [{ productId: mockCake.id, quantity: 1 }],
+      });
+
+      expect(res1).toMatchObject({
+        subtotalAmount: 30000,
+        discountAmount: 20000,
+        promotionCode: 'GIAM20K',
+        pointsUsed: 9,
+        pointsEarned: 0,
+        totalAmount: 1000,
+      });
+      expect(txMock.user.updateMany).toHaveBeenLastCalledWith({
+        where: { id: USER_ID, loyaltyPoints: { gte: 9 } },
+        data: { loyaltyPoints: { decrement: 9 } },
+      });
+
+      // Trường hợp 2: subtotal 30.000, mã FIXED 50.000 -> discountAmount = 29.000, khách có 50 điểm -> pointsUsed = 0, totalAmount = 1.000, không ghi REDEEM
+      prisma.product.findMany.mockResolvedValueOnce([mockCake]);
+      txMock.promotion.findUnique.mockResolvedValueOnce({
+        code: 'GIAM50K',
+        type: PromotionType.FIXED,
+        value: 50000,
+        maxDiscount: null,
+        isActive: true,
+      });
+      txMock.user.findUnique.mockResolvedValueOnce({ loyaltyPoints: 50 });
+      txMock.user.updateMany.mockClear();
+      txMock.loyaltyTransaction.create.mockClear();
+
+      const res2 = await service.create(USER_ID, {
+        promotionCode: 'GIAM50K',
+        usePoints: true,
+        items: [{ productId: mockCake.id, quantity: 1 }],
+      });
+
+      expect(res2).toMatchObject({
+        subtotalAmount: 30000,
+        discountAmount: 29000,
+        promotionCode: 'GIAM50K',
+        pointsUsed: 0,
+        pointsEarned: 0,
+        totalAmount: 1000,
+      });
+      expect(txMock.user.updateMany).not.toHaveBeenCalled();
+      expect(txMock.loyaltyTransaction.create).not.toHaveBeenCalled();
+    });
+
+    it('(e) usePoints = true nhưng khách có 0 điểm: pointsUsed = 0, không có dòng REDEEM, đặt đơn thành công', async () => {
+      prisma.product.findMany.mockResolvedValueOnce([mockCake]);
+      txMock.user.findUnique.mockResolvedValueOnce({ loyaltyPoints: 0 });
+
+      const result = await service.create(USER_ID, {
+        usePoints: true,
+        items: [{ productId: mockCake.id, quantity: 1 }],
+      });
+
+      expect(result).toMatchObject({
+        subtotalAmount: 30000,
+        discountAmount: 0,
+        pointsUsed: 0,
+        pointsEarned: 0,
+        totalAmount: 30000,
+      });
+      expect(txMock.user.findUnique).toHaveBeenCalledTimes(1);
+      expect(txMock.user.updateMany).not.toHaveBeenCalled();
+      expect(txMock.loyaltyTransaction.create).not.toHaveBeenCalled();
+      expect(txMock.order.create).toHaveBeenCalledTimes(1);
+    });
+
+    it('(f) tranh chấp điểm: câu cập nhật có điều kiện trả 0 dòng -> 409 "Số điểm không đủ, vui lòng thử lại", không có đơn, không có dòng REDEEM', async () => {
+      prisma.product.findMany.mockResolvedValueOnce([mockCake]);
+      txMock.user.findUnique.mockResolvedValueOnce({ loyaltyPoints: 15 });
+      txMock.user.updateMany.mockResolvedValueOnce({ count: 0 });
+
+      await expect(
+        service.create(USER_ID, {
+          usePoints: true,
+          items: [{ productId: mockCake.id, quantity: 1 }],
+        }),
+      ).rejects.toThrow(new ConflictException(INSUFFICIENT_POINTS_MESSAGE));
+
+      expect(txMock.user.updateMany).toHaveBeenCalledWith({
+        where: {
+          id: USER_ID,
+          loyaltyPoints: { gte: 15 },
+        },
+        data: {
+          loyaltyPoints: { decrement: 15 },
+        },
+      });
+      expect(txMock.order.create).not.toHaveBeenCalled();
+      expect(txMock.loyaltyTransaction.create).not.toHaveBeenCalled();
+    });
+
+    it('(g) thiếu hàng (409 kho) thì điểm KHÔNG bị trừ và không ghi dòng REDEEM', async () => {
+      prisma.product.findMany.mockResolvedValueOnce([mockCake]);
+      txMock.product.updateMany.mockResolvedValueOnce({ count: 0 });
+      txMock.product.findMany.mockResolvedValueOnce([
+        { id: mockCake.id, name: mockCake.name, stock: 0 },
+      ]);
+
+      await expect(
+        service.create(USER_ID, {
+          usePoints: true,
+          items: [{ productId: mockCake.id, quantity: 1 }],
+        }),
+      ).rejects.toThrow(ConflictException);
+
+      expect(txMock.user.findUnique).not.toHaveBeenCalled();
+      expect(txMock.user.updateMany).not.toHaveBeenCalled();
+      expect(txMock.loyaltyTransaction.create).not.toHaveBeenCalled();
+    });
+
+    it('(h) usePoints không phải đúng/sai bị 400 với message là mảng chuỗi tiếng Anh', async () => {
+      const invalidValues = ['true', 'false', 1, 0, null, {}, []];
+
+      for (const badVal of invalidValues) {
+        let caught: unknown;
+        try {
+          const transformed = (await pipe.transform(
+            {
+              usePoints: badVal,
+              items: [{ productId: mockCake.id, quantity: 1 }],
+            },
+            { type: 'body', metatype: CreateOrderDto },
+          )) as CreateOrderDto;
+          await service.create(USER_ID, transformed);
+        } catch (err) {
+          caught = err;
+        }
+
+        expect(caught).toBeInstanceOf(BadRequestException);
+        const body = (caught as BadRequestException).getResponse() as {
+          statusCode: number;
+          message: unknown;
+        };
+        expect(body.statusCode).toBe(400);
+        expect(Array.isArray(body.message)).toBe(true);
+      }
+
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('(i) GET /orders/me và GET /orders/:id trả pointsUsed đúng', async () => {
+      const orderWithPoints = {
+        id: '33333333-0000-0000-0000-000000000019',
+        orderNumber: 1019,
+        userId: USER_ID,
+        status: OrderStatus.PENDING,
+        receiveType: ReceiveType.AT_COUNTER,
+        note: null,
+        subtotalAmount: 80000,
+        discountAmount: 10000,
+        promotionCode: 'GIAM10K',
+        pointsUsed: 10,
+        pointsEarned: 0,
+        totalAmount: 60000,
+        createdAt: new Date('2026-11-05T03:00:00.000Z'),
+        updatedAt: new Date('2026-11-05T03:00:00.000Z'),
+        items: [],
+        payments: [],
+      };
+
+      prisma.order.findMany.mockResolvedValueOnce([orderWithPoints]);
+      const myOrders = await service.findMyOrders(USER_ID);
+      expect(myOrders[0]).toMatchObject({
+        id: orderWithPoints.id,
+        pointsUsed: 10,
+        pointsEarned: 0,
+        totalAmount: 60000,
+      });
+
+      prisma.order.findFirst.mockResolvedValueOnce(orderWithPoints);
+      const detail = await service.findOneForUser(USER_ID, orderWithPoints.id);
+      expect(detail).toMatchObject({
+        id: orderWithPoints.id,
+        pointsUsed: 10,
+        pointsEarned: 0,
+        totalAmount: 60000,
+      });
     });
   });
 });
