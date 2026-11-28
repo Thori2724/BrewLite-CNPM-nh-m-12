@@ -171,7 +171,7 @@ describe('Dòng 28 - Trang /staff/promotions (Quản lý mã giảm giá - chỉ
     expect(formatStaffPromotionMaxDiscount(null)).toBe('—');
   });
 
-  it('1. Hiển thị loading rồi tải bảng mã giảm giá đủ cột, đúng nhãn/định dạng, giữ nguyên thứ tự server và không có nút Thêm/Sửa', async () => {
+  it('1. Hiển thị loading rồi tải bảng mã giảm giá đủ cột, đúng nhãn/định dạng, giữ nguyên thứ tự server và có nút Thêm mã / Sửa (không có Xóa)', async () => {
     const promotions = cloneSamplePromotions();
     let resolveFetch!: (value: Response) => void;
     const pendingFetch = new Promise<Response>((resolve) => {
@@ -233,8 +233,10 @@ describe('Dòng 28 - Trang /staff/promotions (Quản lý mã giảm giá - chỉ
     expect(within(percentCapRow).getByText('10%')).toBeInTheDocument();
     expect(within(percentCapRow).getByText('15.000đ')).toBeInTheDocument();
 
-    // Không có nút Thêm mã, Sửa hay Xóa (dành cho dòng 29)
-    expect(screen.queryByRole('button', { name: /thêm|sửa|xóa/i })).not.toBeInTheDocument();
+    // Có nút Thêm mã, Sửa và không có nút Xóa
+    expect(screen.getByRole('button', { name: 'Thêm mã' })).toBeInTheDocument();
+    expect(within(noCapRow).getByRole('button', { name: 'Sửa' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /xóa/i })).not.toBeInTheDocument();
 
     expect(globalThis.fetch).toHaveBeenCalledTimes(1);
     const [calledUrl, calledInit] = vi.mocked(globalThis.fetch).mock.calls[0];

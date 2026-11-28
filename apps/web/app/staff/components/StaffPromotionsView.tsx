@@ -11,6 +11,7 @@ import {
   notifyAccountLocked,
 } from '../../../utils/auth';
 import ConfirmDialog from '../../components/ConfirmDialog';
+import StaffPromotionFormModal from './StaffPromotionFormModal';
 import {
   fetchStaffPromotions,
   formatStaffPromotionMaxDiscount,
@@ -49,6 +50,10 @@ export default function StaffPromotionsView() {
   const [updatingPromotionId, setUpdatingPromotionId] = useState<string | null>(null);
   const [updatingAction, setUpdatingAction] = useState<'enable' | 'disable' | null>(null);
   const [disableTarget, setDisableTarget] = useState<Promotion | null>(null);
+  const [formState, setFormState] = useState<{
+    mode: 'create' | 'edit';
+    promotion: Promotion | null;
+  } | null>(null);
   const [actionFeedback, setActionFeedback] = useState<ActionFeedback | null>(null);
   const [authBlocked, setAuthBlocked] = useState<boolean>(false);
 
@@ -277,6 +282,43 @@ export default function StaffPromotionsView() {
     void runTogglePromotion(promotion, true);
   };
 
+  const handleOpenCreateForm = () => {
+    if (!isAdmin || actionInFlightRef.current || updatingPromotionId !== null) return;
+    setActionFeedback(null);
+    setFormState({ mode: 'create', promotion: null });
+  };
+
+  const handleOpenEditForm = (promotion: Promotion) => {
+    if (!isAdmin || actionInFlightRef.current || updatingPromotionId !== null) return;
+    setActionFeedback(null);
+    setFormState({ mode: 'edit', promotion });
+  };
+
+  const handleCloseForm = () => {
+    setFormState(null);
+  };
+
+  const handleFormSaved = async (savedPromotion: Promotion, mode: 'create' | 'edit') => {
+    setFormState(null);
+    setActionFeedback({
+      type: 'success',
+      message:
+        mode === 'create'
+          ? `Đã thêm mã "${savedPromotion.code}" thành công.`
+          : `Đã cập nhật mã "${savedPromotion.code}" thành công.`,
+    });
+    await runReloadPromotions({ showFullLoading: false, keepFeedback: true });
+  };
+
+  const handleFormAuthFailure = useCallback((parsed: ParsedStaffPromotionError): boolean => {
+    if (handleAuthFailureRef.current(parsed)) {
+      setFormState(null);
+      setError(parsed.message);
+      return true;
+    }
+    return false;
+  }, []);
+
   if (isHydrated && accessRedirectTarget) {
     return (
       <div
@@ -312,6 +354,17 @@ export default function StaffPromotionsView() {
             <span>↻</span>
             <span>{isReloading ? 'Đang tải lại...' : 'Tải lại'}</span>
           </button>
+
+          {isAdmin && (
+            <button
+              type="button"
+              onClick={handleOpenCreateForm}
+              disabled={loading || isReloading || updatingPromotionId !== null}
+              className="min-h-10 inline-flex items-center gap-1.5 rounded-control bg-kombu hover:bg-noir px-4 py-2 text-sm font-semibold text-bone transition shadow-soft disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+            >
+              Thêm mã
+            </button>
+          )}
         </div>
       </div>
 
@@ -470,29 +523,40 @@ export default function StaffPromotionsView() {
                       </td>
 
                       <td className="px-5 py-4 whitespace-nowrap text-right">
-                        {promotion.isActive ? (
+                        <div className="inline-flex items-center justify-end gap-2">
                           <button
                             type="button"
                             disabled={isAnyUpdating}
-                            onClick={() => handleOpenDisableDialog(promotion)}
-                            className="px-3.5 py-1.5 rounded-control border border-error/45 bg-cream hover:bg-error/10 text-error text-xs font-semibold transition disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                            onClick={() => handleOpenEditForm(promotion)}
+                            className="px-3 py-1.5 rounded-control border border-tan bg-bone/70 hover:bg-tan/50 text-xs font-semibold text-noir transition disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
                           >
-                            {isThisRowUpdating && updatingAction === 'disable'
-                              ? 'Đang tắt...'
-                              : 'Tắt'}
+                            Sửa
                           </button>
-                        ) : (
-                          <button
-                            type="button"
-                            disabled={isAnyUpdating}
-                            onClick={() => handleEnablePromotion(promotion)}
-                            className="px-3.5 py-1.5 rounded-control bg-kombu hover:bg-noir text-bone text-xs font-semibold transition shadow-soft disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
-                          >
-                            {isThisRowUpdating && updatingAction === 'enable'
-                              ? 'Đang bật...'
-                              : 'Bật'}
-                          </button>
-                        )}
+
+                          {promotion.isActive ? (
+                            <button
+                              type="button"
+                              disabled={isAnyUpdating}
+                              onClick={() => handleOpenDisableDialog(promotion)}
+                              className="px-3.5 py-1.5 rounded-control border border-error/45 bg-cream hover:bg-error/10 text-error text-xs font-semibold transition disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                            >
+                              {isThisRowUpdating && updatingAction === 'disable'
+                                ? 'Đang tắt...'
+                                : 'Tắt'}
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              disabled={isAnyUpdating}
+                              onClick={() => handleEnablePromotion(promotion)}
+                              className="px-3.5 py-1.5 rounded-control bg-kombu hover:bg-noir text-bone text-xs font-semibold transition shadow-soft disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                            >
+                              {isThisRowUpdating && updatingAction === 'enable'
+                                ? 'Đang bật...'
+                                : 'Bật'}
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   );
@@ -519,6 +583,19 @@ export default function StaffPromotionsView() {
             void runTogglePromotion(disableTarget, false);
           }
         }}
+      />
+
+      {/* Hộp thoại Form Thêm/Sửa mã giảm giá (Dòng 29) */}
+      <StaffPromotionFormModal
+        isOpen={Boolean(isAdmin && formState)}
+        mode={formState?.mode ?? 'create'}
+        initialPromotion={formState?.promotion ?? null}
+        usingMockFallback={usingShellMockFallback}
+        onClose={handleCloseForm}
+        onSaved={(saved, mode) => {
+          void handleFormSaved(saved, mode);
+        }}
+        onAuthFailure={handleFormAuthFailure}
       />
     </section>
   );
