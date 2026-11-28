@@ -44,10 +44,12 @@ import {
   buildCreateOrderPayload,
   calculateUsablePoints,
   clearPendingOrder,
+  formatOutOfStockDetailMessage,
   generateIdempotencyKey,
   loadPendingOrder,
   PendingOrderRecord,
   POINT_VALUE_VND,
+  resolveCreateOrder409Error,
   savePendingOrder,
 } from '../../utils/checkout';
 import {
@@ -639,27 +641,24 @@ function CheckoutContent() {
           return;
         }
         if (err.statusCode === 409) {
-          const isPromoInactiveError =
-            err.message === PROMOTION_ERROR_MESSAGES.INACTIVE &&
-            (!err.details || err.details.length === 0);
+          const resolved409 = resolveCreateOrder409Error({
+            message: err.message,
+            details: err.details,
+          });
 
-          if (isPromoInactiveError) {
+          if (resolved409.kind === 'promotion_inactive') {
             setAppliedPromotion(null);
             setAppliedPromoSubtotal(null);
             setPromoCodeInput('');
             setPromoError(null);
             setPromoNotice(null);
-            setCreateOrderError(err.message);
+            setCreateOrderError(resolved409.message);
             return;
           }
 
-          const isPointsConflictError =
-            err.message === ORDER_ERROR_MESSAGES.POINTS_NOT_ENOUGH &&
-            (!err.details || err.details.length === 0);
-
-          if (isPointsConflictError) {
+          if (resolved409.kind === 'points_not_enough') {
             setUsePoints(false);
-            setCreateOrderError(err.message);
+            setCreateOrderError(resolved409.message);
             void getMyLoyaltyApi()
               .then((res) => {
                 if (typeof res?.loyaltyPoints === 'number' && Number.isFinite(res.loyaltyPoints)) {
@@ -670,17 +669,10 @@ function CheckoutContent() {
             return;
           }
 
-          // Lỗi món tạm hết 409 (chỉ nêu tên món từ message và details[], không hiện số lượng tồn kho)
-          const details = err.details || [];
-          const outOfStockNames = details.map((d) => d.name).filter(Boolean);
+          // Lỗi 409 thiếu/hết hàng kèm details: giữ nguyên giỏ, mã giảm giá và công tắc Dùng điểm
           setOutOfStockCartSignature(cartSignature);
-          setOutOfStockDetails(details);
-          setCreateOrderError(
-            err.message ||
-              (outOfStockNames.length > 0
-                ? `Món hiện đã tạm hết: ${outOfStockNames.join(', ')}`
-                : ORDER_ERROR_MESSAGES.OUT_OF_STOCK)
-          );
+          setOutOfStockDetails(resolved409.details);
+          setCreateOrderError(resolved409.message);
         } else if (err.statusCode === 404) {
           if (err.message === PROMOTION_ERROR_MESSAGES.NOT_FOUND) {
             setAppliedPromotion(null);
@@ -800,10 +792,15 @@ function CheckoutContent() {
                 )}
                 {visibleOutOfStockDetails.length > 0 && (
                   <div>
-                    <p className="text-xs text-noir/80 mb-1">Món hiện đã tạm hết:</p>
-                    <ul className="list-disc list-inside text-xs font-semibold text-noir space-y-0.5">
+                    <p className="text-xs text-noir/80 mb-1">Chi tiết món không đủ số lượng:</p>
+                    <ul
+                      data-testid="out-of-stock-details-list"
+                      className="list-disc list-inside text-xs font-semibold text-noir space-y-0.5"
+                    >
                       {visibleOutOfStockDetails.map((item, idx) => (
-                        <li key={item.productId || idx}>{item.name} — Tạm hết</li>
+                        <li key={item.productId || idx}>
+                          {formatOutOfStockDetailMessage(item)}
+                        </li>
                       ))}
                     </ul>
                     <div className="mt-3">
@@ -1010,13 +1007,19 @@ function CheckoutContent() {
                         {matchedOutOfStock && (
                           <div className="mt-1.5 flex flex-wrap items-center gap-2">
                             <span className="inline-block px-2 py-0.5 rounded-full bg-error/20 text-error font-semibold text-[11px]">
-                              Tạm hết
+                              {typeof matchedOutOfStock.available === 'number' &&
+                              matchedOutOfStock.available > 0
+                                ? `Chỉ còn ${Math.floor(matchedOutOfStock.available)}`
+                                : 'Tạm hết'}
                             </span>
                             <Link
                               href="/cart"
                               className="text-[11px] font-semibold text-error underline hover:opacity-80"
                             >
-                              Xóa khỏi giỏ hàng
+                              {typeof matchedOutOfStock.available === 'number' &&
+                              matchedOutOfStock.available > 0
+                                ? 'Sửa giỏ hàng'
+                                : 'Xóa khỏi giỏ hàng'}
                             </Link>
                           </div>
                         )}

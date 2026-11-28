@@ -2,6 +2,8 @@ import { CartItem } from './cart';
 import {
   CreateOrderDto,
   CreateOrderItemDto,
+  ORDER_ERROR_MESSAGES,
+  OutOfStockDetail,
   PaymentMethod,
   ReceiveType,
 } from '../services/order-contract';
@@ -314,5 +316,85 @@ export function resolveIdempotencyKey(params: ResolveKeyParams): {
   return {
     key: cleanCurrentKey,
     isNewKey: false,
+  };
+}
+
+export type CreateOrder409Kind =
+  | 'out_of_stock'
+  | 'promotion_inactive'
+  | 'points_not_enough'
+  | 'unknown';
+
+export interface ResolvedCreateOrder409Error {
+  kind: CreateOrder409Kind;
+  message: string;
+  details: OutOfStockDetail[];
+  detailMessages: string[];
+}
+
+/**
+ * Định dạng thông báo cho từng món trong mảng `details` khi POST /orders trả 409 thiếu hàng:
+ * - `available > 0`: "Sản phẩm 'X' chỉ còn N"
+ * - `available = 0`: "Sản phẩm 'X' đã tạm hết"
+ */
+export function formatOutOfStockDetailMessage(detail: OutOfStockDetail): string {
+  const name = typeof detail?.name === 'string' ? detail.name : '';
+  const available =
+    typeof detail?.available === 'number' && Number.isFinite(detail.available)
+      ? Math.floor(detail.available)
+      : 0;
+
+  if (available > 0) {
+    return `Sản phẩm '${name}' chỉ còn ${available}`;
+  }
+  return `Sản phẩm '${name}' đã tạm hết`;
+}
+
+/**
+ * Phân loại và dựng thông báo cho 3 trường hợp lỗi 409 khi đặt đơn (POST /orders):
+ * 1. Thiếu hàng (kèm mảng `details`)
+ * 2. "Mã giảm giá đã ngừng áp dụng"
+ * 3. "Số điểm không đủ, vui lòng thử lại"
+ */
+export function resolveCreateOrder409Error(params: {
+  message?: string;
+  details?: OutOfStockDetail[];
+}): ResolvedCreateOrder409Error {
+  const details = Array.isArray(params.details) ? params.details : [];
+  const rawMessage = typeof params.message === 'string' ? params.message.trim() : '';
+
+  if (details.length > 0) {
+    const detailMessages = details.map(formatOutOfStockDetailMessage);
+    return {
+      kind: 'out_of_stock',
+      message: rawMessage || detailMessages[0] || ORDER_ERROR_MESSAGES.OUT_OF_STOCK,
+      details,
+      detailMessages,
+    };
+  }
+
+  if (rawMessage === ORDER_ERROR_MESSAGES.PROMOTION_INACTIVE) {
+    return {
+      kind: 'promotion_inactive',
+      message: rawMessage,
+      details: [],
+      detailMessages: [],
+    };
+  }
+
+  if (rawMessage === ORDER_ERROR_MESSAGES.POINTS_NOT_ENOUGH) {
+    return {
+      kind: 'points_not_enough',
+      message: rawMessage,
+      details: [],
+      detailMessages: [],
+    };
+  }
+
+  return {
+    kind: 'unknown',
+    message: rawMessage || ORDER_ERROR_MESSAGES.OUT_OF_STOCK,
+    details: [],
+    detailMessages: [],
   };
 }

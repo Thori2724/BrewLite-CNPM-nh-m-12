@@ -1204,7 +1204,7 @@ describe('Dòng 20 — Kiểm thử Giỏ hàng và Luồng Thanh toán (A1–A1
       const noteInput = screen.getByLabelText(/ghi chú đơn hàng/i);
       await user.type(noteInput, 'Giữ nguyên ghi chú này');
 
-      // 1. 409 Món tạm hết kèm details (theo hợp đồng bản 2, không có available)
+      // 1. 409 Món tạm hết kèm details (theo hợp đồng bản 3, có available = 0)
       mockFetch.mockResolvedValueOnce(
         createJsonResponse(409, {
           statusCode: 409,
@@ -1214,6 +1214,7 @@ describe('Dòng 20 — Kiểm thử Giỏ hàng và Luồng Thanh toán (A1–A1
             {
               productId: '11111111-0000-0000-0000-000000000007',
               name: 'Trà sữa truyền thống',
+              available: 0,
             },
           ],
         })
@@ -1223,7 +1224,9 @@ describe('Dòng 20 — Kiểm thử Giỏ hàng và Luồng Thanh toán (A1–A1
         expect(
           screen.getByText("Sản phẩm 'Trà sữa truyền thống' hiện đã tạm hết")
         ).toBeInTheDocument();
-        expect(screen.getByText('Trà sữa truyền thống — Tạm hết')).toBeInTheDocument();
+        expect(
+          screen.getByText("Sản phẩm 'Trà sữa truyền thống' đã tạm hết")
+        ).toBeInTheDocument();
         expect(screen.getByText('Tạm hết')).toBeInTheDocument();
       });
       expect(screen.queryByText(/còn 0/i)).not.toBeInTheDocument();

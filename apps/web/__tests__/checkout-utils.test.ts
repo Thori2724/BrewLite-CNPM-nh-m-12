@@ -3,11 +3,13 @@ import {
   buildCreateOrderPayload,
   calculateUsablePoints,
   clearPendingOrder,
+  formatOutOfStockDetailMessage,
   generateIdempotencyKey,
   loadPendingOrder,
   maskAccountNumber,
   PendingOrderRecord,
   PENDING_ORDER_STORAGE_KEY,
+  resolveCreateOrder409Error,
   resolveIdempotencyKey,
   savePendingOrder,
   validateAccountNumber,
@@ -290,6 +292,62 @@ describe('Hàm thuần xử lý đơn hàng và thanh toán (utils/checkout.ts)'
       expect(calculateUsablePoints(0, 90000, 0)).toBe(0);
       expect(calculateUsablePoints(-5, 90000, 0)).toBe(0);
       expect(calculateUsablePoints(Number.NaN, 90000, 0)).toBe(0);
+    });
+  });
+
+  // 8. Xử lý và dựng thông báo lỗi 409 khi đặt đơn (Dòng 20)
+  describe('Xử lý thông báo lỗi 409 khi đặt đơn (resolveCreateOrder409Error)', () => {
+    it('8.1. Trường hợp 409 kèm details: dựng đủ thông báo cho tất cả món (available > 0 và available = 0)', () => {
+      expect(
+        formatOutOfStockDetailMessage({
+          productId: 'p1',
+          name: 'Bạc xỉu',
+          available: 2,
+        })
+      ).toBe("Sản phẩm 'Bạc xỉu' chỉ còn 2");
+
+      expect(
+        formatOutOfStockDetailMessage({
+          productId: 'p2',
+          name: 'Trà đào cam sả',
+          available: 0,
+        })
+      ).toBe("Sản phẩm 'Trà đào cam sả' đã tạm hết");
+
+      const resolved = resolveCreateOrder409Error({
+        message: "Sản phẩm 'Bạc xỉu' chỉ còn 2",
+        details: [
+          { productId: 'p1', name: 'Bạc xỉu', available: 2 },
+          { productId: 'p2', name: 'Trà đào cam sả', available: 0 },
+        ],
+      });
+
+      expect(resolved.kind).toBe('out_of_stock');
+      expect(resolved.message).toBe("Sản phẩm 'Bạc xỉu' chỉ còn 2");
+      expect(resolved.detailMessages).toEqual([
+        "Sản phẩm 'Bạc xỉu' chỉ còn 2",
+        "Sản phẩm 'Trà đào cam sả' đã tạm hết",
+      ]);
+    });
+
+    it('8.2. Trường hợp 409 "Mã giảm giá đã ngừng áp dụng": giữ nguyên thông báo server', () => {
+      const resolved = resolveCreateOrder409Error({
+        message: 'Mã giảm giá đã ngừng áp dụng',
+      });
+
+      expect(resolved.kind).toBe('promotion_inactive');
+      expect(resolved.message).toBe('Mã giảm giá đã ngừng áp dụng');
+      expect(resolved.detailMessages).toEqual([]);
+    });
+
+    it('8.3. Trường hợp 409 "Số điểm không đủ, vui lòng thử lại": giữ nguyên thông báo server', () => {
+      const resolved = resolveCreateOrder409Error({
+        message: 'Số điểm không đủ, vui lòng thử lại',
+      });
+
+      expect(resolved.kind).toBe('points_not_enough');
+      expect(resolved.message).toBe('Số điểm không đủ, vui lòng thử lại');
+      expect(resolved.detailMessages).toEqual([]);
     });
   });
 });
