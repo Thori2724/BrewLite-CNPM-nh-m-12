@@ -627,9 +627,22 @@ describe('Staff & Role Management Integration (10B)', () => {
     }
   });
 
-  it('3. Hủy đơn (POST /orders/:id/cancel): khách hủy được PENDING, PAYMENT_FAILED, PAID (Payment vẫn SUCCESS); đơn người khác/id lạ -> 404; đơn PREPARING, READY, COMPLETED, CANCELLED -> 409', async () => {
-    // 3.1 Hủy đơn PENDING
+  it('3. Hủy đơn (POST /orders/:id/cancel): khách hủy được PENDING, PAYMENT_FAILED, PAID (Payment vẫn SUCCESS, hoàn kho đúng kể cả gộp cùng món khác size); hủy lần 2 hoặc PREPARING/READY/COMPLETED -> 409 và kho không đổi; đơn người khác/id lạ -> 404', async () => {
+    // 3.1 (a) Khách hủy đơn PENDING -> hoàn đúng kho; (d) hủy lần thứ hai trả 409 và kho KHÔNG bị cộng thêm
+    const stockBeforePending = (
+      await prisma.product.findUniqueOrThrow({
+        where: { id: PRODUCT_DRINK_ID },
+      })
+    ).stock;
+
     const pendingOrder = await createOrderViaHttp(customerToken);
+    const stockAfterOrder = (
+      await prisma.product.findUniqueOrThrow({
+        where: { id: PRODUCT_DRINK_ID },
+      })
+    ).stock;
+    expect(stockAfterOrder).toBe(stockBeforePending - 1);
+
     const cancelPendingRes = await request(app.getHttpServer())
       .post(`/orders/${pendingOrder.id}/cancel`)
       .set('Authorization', `Bearer ${customerToken}`)
@@ -637,6 +650,62 @@ describe('Staff & Role Management Integration (10B)', () => {
     expect((cancelPendingRes.body as { status: OrderStatus }).status).toBe(
       OrderStatus.CANCELLED,
     );
+
+    const stockAfterCancelPending = (
+      await prisma.product.findUniqueOrThrow({
+        where: { id: PRODUCT_DRINK_ID },
+      })
+    ).stock;
+    expect(stockAfterCancelPending).toBe(stockBeforePending);
+
+    // (d) Hủy lần thứ hai cùng đơn đó -> 409 và kho giữ nguyên không bị cộng thêm
+    const cancelSecondTimeRes = await request(app.getHttpServer())
+      .post(`/orders/${pendingOrder.id}/cancel`)
+      .set('Authorization', `Bearer ${customerToken}`)
+      .expect(409);
+    expect(cancelSecondTimeRes.body).toMatchObject({
+      statusCode: 409,
+      message: 'Không thể hủy đơn ở trạng thái hiện tại',
+    });
+
+    const stockAfterSecondCancel = (
+      await prisma.product.findUniqueOrThrow({
+        where: { id: PRODUCT_DRINK_ID },
+      })
+    ).stock;
+    expect(stockAfterSecondCancel).toBe(stockBeforePending);
+
+    // 3.1b (c) Đơn có cùng món khác size ở 2 dòng (2 ly size S + 3 ly size L = 5) -> hủy đơn gộp hoàn đúng 5 vào kho
+    const multiSizeOrderRes = await request(app.getHttpServer())
+      .post('/orders')
+      .set('Authorization', `Bearer ${customerToken}`)
+      .send({
+        items: [
+          { productId: PRODUCT_DRINK_ID, quantity: 2, size: Size.S },
+          { productId: PRODUCT_DRINK_ID, quantity: 3, size: Size.L },
+        ],
+      })
+      .expect(201);
+    const multiSizeOrderId = (multiSizeOrderRes.body as { id: string }).id;
+
+    const stockAfterMultiOrder = (
+      await prisma.product.findUniqueOrThrow({
+        where: { id: PRODUCT_DRINK_ID },
+      })
+    ).stock;
+    expect(stockAfterMultiOrder).toBe(stockBeforePending - 5);
+
+    await request(app.getHttpServer())
+      .post(`/orders/${multiSizeOrderId}/cancel`)
+      .set('Authorization', `Bearer ${customerToken}`)
+      .expect(200);
+
+    const stockAfterMultiCancel = (
+      await prisma.product.findUniqueOrThrow({
+        where: { id: PRODUCT_DRINK_ID },
+      })
+    ).stock;
+    expect(stockAfterMultiCancel).toBe(stockBeforePending);
 
     // 3.2 Hủy đơn PAYMENT_FAILED
     const failedOrder = await createOrderViaHttp(customerToken);
@@ -693,7 +762,7 @@ describe('Staff & Role Management Integration (10B)', () => {
       });
     }
 
-    // 3.5 Đơn đang ở PREPARING, READY, COMPLETED, CANCELLED -> 409 "Không thể hủy đơn ở trạng thái hiện tại"
+    // 3.5 (e) Đơn đang ở PREPARING, READY, COMPLETED, CANCELLED -> 409 "Không thể hủy đơn ở trạng thái hiện tại" và kho không đổi
     const nonCancellableStatuses: OrderStatus[] = [
       OrderStatus.PREPARING,
       OrderStatus.READY,
@@ -708,6 +777,12 @@ describe('Staff & Role Management Integration (10B)', () => {
         data: { status: st },
       });
 
+      const stockBeforeAttempt = (
+        await prisma.product.findUniqueOrThrow({
+          where: { id: PRODUCT_DRINK_ID },
+        })
+      ).stock;
+
       const conflictRes = await request(app.getHttpServer())
         .post(`/orders/${ord.id}/cancel`)
         .set('Authorization', `Bearer ${customerToken}`)
@@ -717,6 +792,13 @@ describe('Staff & Role Management Integration (10B)', () => {
         statusCode: 409,
         message: 'Không thể hủy đơn ở trạng thái hiện tại',
       });
+
+      const stockAfterAttempt = (
+        await prisma.product.findUniqueOrThrow({
+          where: { id: PRODUCT_DRINK_ID },
+        })
+      ).stock;
+      expect(stockAfterAttempt).toBe(stockBeforeAttempt);
     }
   });
 
@@ -758,17 +840,30 @@ describe('Staff & Role Management Integration (10B)', () => {
       OrderStatus.COMPLETED,
     );
 
-    // 4.2 Nhân viên hủy đơn từ PENDING, PAYMENT_FAILED, PAID -> 200 CANCELLED
+    // 4.2 (b) Nhân viên hủy đơn từ PENDING, PAYMENT_FAILED, PAID qua PATCH -> 200 CANCELLED và hoàn đúng kho; (d) hủy lần 2 trả 409 và kho không cộng thêm
     for (const initialStatus of [
       OrderStatus.PENDING,
       OrderStatus.PAYMENT_FAILED,
       OrderStatus.PAID,
     ]) {
+      const stockBeforeOrd = (
+        await prisma.product.findUniqueOrThrow({
+          where: { id: PRODUCT_DRINK_ID },
+        })
+      ).stock;
+
       const ord = await createOrderViaHttp(customerToken);
       await prisma.order.update({
         where: { id: ord.id },
         data: { status: initialStatus },
       });
+
+      const stockAfterOrd = (
+        await prisma.product.findUniqueOrThrow({
+          where: { id: PRODUCT_DRINK_ID },
+        })
+      ).stock;
+      expect(stockAfterOrd).toBe(stockBeforeOrd - 1);
 
       const cancelByStaffRes = await request(app.getHttpServer())
         .patch(`/orders/${ord.id}/status`)
@@ -779,6 +874,27 @@ describe('Staff & Role Management Integration (10B)', () => {
       expect((cancelByStaffRes.body as { status: OrderStatus }).status).toBe(
         OrderStatus.CANCELLED,
       );
+
+      const stockAfterStaffCancel = (
+        await prisma.product.findUniqueOrThrow({
+          where: { id: PRODUCT_DRINK_ID },
+        })
+      ).stock;
+      expect(stockAfterStaffCancel).toBe(stockBeforeOrd);
+
+      // Hủy lần 2 qua PATCH -> 409 và kho giữ nguyên
+      await request(app.getHttpServer())
+        .patch(`/orders/${ord.id}/status`)
+        .set('Authorization', `Bearer ${staffToken}`)
+        .send({ status: OrderStatus.CANCELLED })
+        .expect(409);
+
+      const stockAfterStaffSecondCancel = (
+        await prisma.product.findUniqueOrThrow({
+          where: { id: PRODUCT_DRINK_ID },
+        })
+      ).stock;
+      expect(stockAfterStaffSecondCancel).toBe(stockBeforeOrd);
     }
 
     // 4.3 Lùi, bỏ bước, đi tiếp từ COMPLETED/CANCELLED, hủy từ PREPARING/READY -> 409
@@ -918,6 +1034,7 @@ describe('Staff & Role Management Integration (10B)', () => {
         {
           productId: PRODUCT_DRINK_ID,
           name: 'Trà đào cam sả 10B',
+          available: 0,
         },
       ],
     });
