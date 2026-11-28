@@ -329,7 +329,16 @@ export default function QrPaymentScreen({
           setUncertainRequest(null);
           setPaymentSuccessData(payment);
           setOrder((prev) =>
-            prev ? { ...prev, status: payment.order?.status || 'PAID' } : prev
+            prev
+              ? {
+                  ...prev,
+                  status: payment.order?.status || 'PAID',
+                  pointsEarned:
+                    typeof payment.order?.pointsEarned === 'number'
+                      ? payment.order.pointsEarned
+                      : prev.pointsEarned,
+                }
+              : prev
           );
           setSubView('success');
           return;
@@ -686,10 +695,15 @@ export default function QrPaymentScreen({
 
   const providerConfig = getQrProviderConfig(selectedMethod, selectedWallet, selectedBank);
 
-  // Màn xác nhận thành công (KHÔNG hiển thị "+N điểm" — thuộc Dòng 22)
+  // Màn xác nhận thành công (hiện "+N điểm" từ order.pointsEarned khi N > 0)
   if (subView === 'success' && paymentSuccessData) {
     const confirmedMethod = paymentSuccessData.method || selectedMethod;
     const confirmedProvider = getQrProviderConfig(confirmedMethod, selectedWallet, selectedBank);
+    const rawPointsEarned = paymentSuccessData.order?.pointsEarned ?? order.pointsEarned;
+    const pointsEarned =
+      typeof rawPointsEarned === 'number' && Number.isFinite(rawPointsEarned)
+        ? rawPointsEarned
+        : 0;
 
     return (
       <div className="rounded-card border border-moss/25 bg-cream p-8 text-center shadow-soft max-w-2xl mx-auto">
@@ -732,6 +746,17 @@ export default function QrPaymentScreen({
               {formatVnd(paymentSuccessData.amount || order.totalAmount)}
             </span>
           </div>
+          {pointsEarned > 0 && (
+            <div
+              data-testid="payment-points-earned"
+              className="flex justify-between items-center border-t border-noir/10 pt-2.5"
+            >
+              <span className="text-noir/65">Điểm thưởng tích lũy:</span>
+              <span className="inline-flex items-center rounded-full border border-moss/35 bg-moss/15 px-2.5 py-0.5 font-bold text-kombu">
+                +{pointsEarned} điểm
+              </span>
+            </div>
+          )}
         </div>
 
         <div className="mt-8 flex flex-col sm:flex-row gap-3 justify-center">

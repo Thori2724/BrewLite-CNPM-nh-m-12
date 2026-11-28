@@ -782,7 +782,7 @@ describe('Task 12 - Màn thanh toán QR giả (ZaloPay / MoMo)', () => {
     expect(screen.getByText(/thanh toán thành công!/i)).toBeInTheDocument();
     expect(screen.getAllByText('#4501').length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText('Đã thanh toán')).toBeInTheDocument();
-    expect(screen.queryByText(/\+9 điểm/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/\+9 điểm/i)).toBeInTheDocument();
     expect(localStorage.getItem(CART_STORAGE_KEY)).toBe('[]');
   });
 

@@ -481,8 +481,21 @@ function OrderDetailContent() {
   const isPayable = order.status === 'PENDING' || order.status === 'PAYMENT_FAILED';
   const canCancel = isOrderCancellable(order.status);
   const hasSuccessPayment = (order.payments || []).some((p) => p.status === 'SUCCESS');
+  const promoCode =
+    typeof order.promotionCode === 'string' && order.promotionCode.trim()
+      ? order.promotionCode.trim()
+      : null;
+  const discountAmount =
+    typeof order.discountAmount === 'number' && Number.isFinite(order.discountAmount)
+      ? order.discountAmount
+      : 0;
+  const pointsUsed =
+    typeof order.pointsUsed === 'number' && Number.isFinite(order.pointsUsed)
+      ? order.pointsUsed
+      : 0;
   const showRefundNotice =
     !isVerifyingRefundStatus && order.status === 'CANCELLED' && hasSuccessPayment;
+  const showPointsRefundNotice = order.status === 'CANCELLED' && pointsUsed > 0;
 
   return (
     <div className="max-w-5xl mx-auto space-y-6">
@@ -541,13 +554,25 @@ function OrderDetailContent() {
         <div className="space-y-1">
           <h1 className="font-display text-lg sm:text-xl font-bold">{bannerConfig.title}</h1>
           <p className="text-xs sm:text-sm opacity-90">{bannerConfig.description}</p>
-          {showRefundNotice && (
-            <p
-              data-testid="order-refund-notice"
-              className="mt-1.5 inline-block rounded-control border border-tan/70 bg-bone/80 px-3 py-1.5 text-xs sm:text-sm font-semibold text-kombu"
-            >
-              Tiền sẽ được hoàn lại (mô phỏng)
-            </p>
+          {(showRefundNotice || showPointsRefundNotice) && (
+            <div className="mt-1.5 flex flex-wrap gap-2">
+              {showRefundNotice && (
+                <p
+                  data-testid="order-refund-notice"
+                  className="inline-block rounded-control border border-tan/70 bg-bone/80 px-3 py-1.5 text-xs sm:text-sm font-semibold text-kombu"
+                >
+                  Tiền sẽ được hoàn lại (mô phỏng)
+                </p>
+              )}
+              {showPointsRefundNotice && (
+                <p
+                  data-testid="order-points-refund-notice"
+                  className="inline-block rounded-control border border-moss/45 bg-moss/15 px-3 py-1.5 text-xs sm:text-sm font-semibold text-kombu"
+                >
+                  Đã hoàn lại {pointsUsed} điểm
+                </p>
+              )}
+            </div>
           )}
           {order.status === 'PAYMENT_FAILED' && latestFailureReason && (
             <p
@@ -823,8 +848,35 @@ function OrderDetailContent() {
               )}
             </div>
 
-            {/* 7. Tổng tiền: totalAmount lấy nguyên giá trị server trả về */}
-            <div className="pt-3 border-t border-tan/60">
+            {/* 7. Mã đã dùng, tiền giảm, điểm đã dùng & Tổng tiền: lấy nguyên giá trị server trả về */}
+            <div className="pt-3 border-t border-tan/60 space-y-2">
+              {(promoCode || discountAmount > 0 || pointsUsed > 0) && (
+                <div
+                  data-testid="order-discount-summary"
+                  className="space-y-1.5 text-sm pb-2 border-b border-tan/40"
+                >
+                  {promoCode && (
+                    <div className="flex justify-between items-center">
+                      <span className="text-noir/65">Mã đã dùng:</span>
+                      <span className="font-semibold text-kombu">{promoCode}</span>
+                    </div>
+                  )}
+                  {discountAmount > 0 && (
+                    <div className="flex justify-between items-center">
+                      <span className="text-noir/65">Tiền giảm:</span>
+                      <span className="font-semibold text-kombu">
+                        -{formatVndPrice(discountAmount)}
+                      </span>
+                    </div>
+                  )}
+                  {pointsUsed > 0 && (
+                    <div className="flex justify-between items-center">
+                      <span className="text-noir/65">Điểm đã dùng:</span>
+                      <span className="font-semibold text-kombu">{pointsUsed} điểm</span>
+                    </div>
+                  )}
+                </div>
+              )}
               <div className="flex justify-between items-baseline">
                 <span className="text-sm font-bold text-noir">Tổng tiền đơn hàng:</span>
                 <span
