@@ -29,6 +29,7 @@ import {
 } from '../utils/checkout';
 import { resetRedirectFlag } from '../services/auth';
 import { ProductDetail } from '../services/api';
+import * as loyaltyService from '../services/loyalty';
 import * as navigation from 'next/navigation';
 
 // Mock next/navigation
@@ -36,6 +37,14 @@ const mockPush = vi.fn();
 const mockReplace = vi.fn();
 let mockSearchParams = new URLSearchParams();
 let mockParams: Record<string, string> = { id: '11111111-0000-0000-0000-000000000007' };
+
+vi.mock('../services/loyalty', async () => {
+  const actual = await vi.importActual<typeof import('../services/loyalty')>('../services/loyalty');
+  return {
+    ...actual,
+    getMyLoyaltyApi: vi.fn(),
+  };
+});
 
 vi.mock('next/navigation', () => ({
   useRouter: vi.fn(() => ({
@@ -162,6 +171,11 @@ describe('Dòng 20 — Kiểm thử Giỏ hàng và Luồng Thanh toán (A1–A1
 
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(loyaltyService.getMyLoyaltyApi).mockReset();
+    vi.mocked(loyaltyService.getMyLoyaltyApi).mockResolvedValue({
+      loyaltyPoints: 0,
+      transactions: [],
+    });
     localStorage.clear();
     sessionStorage.clear();
     resetRedirectFlag();
@@ -859,7 +873,13 @@ describe('Dòng 20 — Kiểm thử Giỏ hàng và Luồng Thanh toán (A1–A1
       // Kiểm tra request POST /orders và POST /payments không mang thông tin ví hiển thị
       expect(mockFetch).toHaveBeenCalledTimes(2);
       const orderBody = JSON.parse(mockFetch.mock.calls[0][1].body);
-      expect(Object.keys(orderBody).sort()).toEqual(['items', 'note', 'receiveType']);
+      expect(Object.keys(orderBody).sort()).toEqual([
+        'items',
+        'note',
+        'receiveType',
+        'usePoints',
+      ]);
+      expect(orderBody.usePoints).toBe(false);
 
       const [payUrl, payInit] = mockFetch.mock.calls[1];
       expect(payUrl).toBe('http://localhost:3001/payments');
@@ -1184,7 +1204,7 @@ describe('Dòng 20 — Kiểm thử Giỏ hàng và Luồng Thanh toán (A1–A1
       const noteInput = screen.getByLabelText(/ghi chú đơn hàng/i);
       await user.type(noteInput, 'Giữ nguyên ghi chú này');
 
-      // 1. 409 Món tạm hết kèm details (theo hợp đồng bản 2, không có available)
+      // 1. 409 Món tạm hết kèm details (theo hợp đồng bản 3, có available = 0)
       mockFetch.mockResolvedValueOnce(
         createJsonResponse(409, {
           statusCode: 409,
@@ -1194,6 +1214,7 @@ describe('Dòng 20 — Kiểm thử Giỏ hàng và Luồng Thanh toán (A1–A1
             {
               productId: '11111111-0000-0000-0000-000000000007',
               name: 'Trà sữa truyền thống',
+              available: 0,
             },
           ],
         })
@@ -1203,7 +1224,9 @@ describe('Dòng 20 — Kiểm thử Giỏ hàng và Luồng Thanh toán (A1–A1
         expect(
           screen.getByText("Sản phẩm 'Trà sữa truyền thống' hiện đã tạm hết")
         ).toBeInTheDocument();
-        expect(screen.getByText('Trà sữa truyền thống — Tạm hết')).toBeInTheDocument();
+        expect(
+          screen.getByText("Sản phẩm 'Trà sữa truyền thống' đã tạm hết")
+        ).toBeInTheDocument();
         expect(screen.getByText('Tạm hết')).toBeInTheDocument();
       });
       expect(screen.queryByText(/còn 0/i)).not.toBeInTheDocument();
@@ -1434,9 +1457,9 @@ describe('Dòng 20 — Kiểm thử Giỏ hàng và Luồng Thanh toán (A1–A1
 
     it('B10. Bảo mật hằng số tài khoản mô phỏng và token: không lộ 0900000001 / 0900000000 / •••• ra giao diện, console, storage, URL và không lộ token ra console/URL', async () => {
       vi.useFakeTimers();
-      const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
-      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const logSpy = vi.spyOn(console, 'log').mockImplementation(() => { });
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => { });
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => { });
 
       localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(MOCK_AUTH_SESSION));
       localStorage.setItem(CART_STORAGE_KEY, JSON.stringify([CONTRACT_CART_DRINK]));
@@ -1545,7 +1568,7 @@ describe('Dòng 20 — Kiểm thử Giỏ hàng và Luồng Thanh toán (A1–A1
 
       // 2. Trạng thái loading khi đang tra cứu đơn hàng từ ?orderId=...
       mockSearchParams = new URLSearchParams('orderId=33333333-0000-0000-0000-000000000099');
-      globalThis.fetch = vi.fn().mockImplementation(() => new Promise(() => {}));
+      globalThis.fetch = vi.fn().mockImplementation(() => new Promise(() => { }));
       const { unmount: unmountLoading } = renderCheckoutWithProviders();
       await waitFor(() => {
         expect(screen.getByText(/đang tải thông tin đơn hàng\.\.\./i)).toBeInTheDocument();

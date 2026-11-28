@@ -1,12 +1,15 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
   buildCreateOrderPayload,
+  calculateUsablePoints,
   clearPendingOrder,
+  formatOutOfStockDetailMessage,
   generateIdempotencyKey,
   loadPendingOrder,
   maskAccountNumber,
   PendingOrderRecord,
   PENDING_ORDER_STORAGE_KEY,
+  resolveCreateOrder409Error,
   resolveIdempotencyKey,
   savePendingOrder,
   validateAccountNumber,
@@ -250,6 +253,101 @@ describe('Hàm thuần xử lý đơn hàng và thanh toán (utils/checkout.ts)'
       const result = resolveIdempotencyKey({ currentKey: existingKey });
       expect(result.key).toBe(existingKey);
       expect(result.isNewKey).toBe(false);
+    });
+  });
+
+  // 7. Tính số điểm tối đa có thể dùng (calculateUsablePoints) - Dòng 19
+  describe('Hàm tính số điểm dùng tối đa (calculateUsablePoints)', () => {
+    it('7.1. Số điểm đang có ít hơn mức tối đa của đơn -> dùng hết số điểm đang có', () => {
+      // Tạm tính 80.000, giảm giá 10.000 -> tối đa floor((80.000 - 10.000 - 1.000)/1.000) = 69 điểm; có 10 -> dùng 10
+      expect(calculateUsablePoints(10, 80000, 10000)).toBe(10);
+      expect(calculateUsablePoints(50, 90000, 0)).toBe(50);
+    });
+
+    it('7.2. Số điểm đang có nhiều hơn mức tối đa của đơn -> giới hạn để thực trả tối thiểu 1.000đ', () => {
+      // Tạm tính 50.000, chưa giảm -> tối đa 49 điểm (còn 1.000đ); có 80 -> dùng 49
+      expect(calculateUsablePoints(80, 50000, 0)).toBe(49);
+      // Tạm tính 78.000, giảm 7.800 -> (78.000 - 7.800 - 1.000)/1000 = 69.2 -> làm tròn xuống 69
+      expect(calculateUsablePoints(100, 78000, 7800)).toBe(69);
+    });
+
+    it('7.3. Tạm tính - Giảm giá <= 1.000đ thì X = 0 (không bao giờ âm)', () => {
+      expect(calculateUsablePoints(50, 1000, 0)).toBe(0);
+      expect(calculateUsablePoints(50, 500, 0)).toBe(0);
+      expect(calculateUsablePoints(50, 20000, 19000)).toBe(0);
+      expect(calculateUsablePoints(50, 20000, 20000)).toBe(0);
+      expect(calculateUsablePoints(50, 20000, 25000)).toBe(0);
+    });
+
+    it('7.4. Có mã giảm giá làm mức X giảm xuống (và làm tròn xuống)', () => {
+      // Không mã: min(50, floor((50.000 - 1.000)/1000)) = 49
+      expect(calculateUsablePoints(50, 50000, 0)).toBe(49);
+      // Có mã giảm 20.000: min(50, floor((50.000 - 20.000 - 1.000)/1000)) = 29
+      expect(calculateUsablePoints(50, 50000, 20000)).toBe(29);
+      // Có mã giảm lẻ 9.500 trên 50.000: floor((50.000 - 9.500 - 1.000)/1000) = floor(39.5) = 39
+      expect(calculateUsablePoints(50, 50000, 9500)).toBe(39);
+    });
+
+    it('7.5. N = 0 (hoặc giá trị âm/không hợp lệ) thì X = 0', () => {
+      expect(calculateUsablePoints(0, 90000, 0)).toBe(0);
+      expect(calculateUsablePoints(-5, 90000, 0)).toBe(0);
+      expect(calculateUsablePoints(Number.NaN, 90000, 0)).toBe(0);
+    });
+  });
+
+  // 8. Xử lý và dựng thông báo lỗi 409 khi đặt đơn (Dòng 20)
+  describe('Xử lý thông báo lỗi 409 khi đặt đơn (resolveCreateOrder409Error)', () => {
+    it('8.1. Trường hợp 409 kèm details: dựng đủ thông báo cho tất cả món (available > 0 và available = 0)', () => {
+      expect(
+        formatOutOfStockDetailMessage({
+          productId: 'p1',
+          name: 'Bạc xỉu',
+          available: 2,
+        })
+      ).toBe("Sản phẩm 'Bạc xỉu' chỉ còn 2");
+
+      expect(
+        formatOutOfStockDetailMessage({
+          productId: 'p2',
+          name: 'Trà đào cam sả',
+          available: 0,
+        })
+      ).toBe("Sản phẩm 'Trà đào cam sả' đã tạm hết");
+
+      const resolved = resolveCreateOrder409Error({
+        message: "Sản phẩm 'Bạc xỉu' chỉ còn 2",
+        details: [
+          { productId: 'p1', name: 'Bạc xỉu', available: 2 },
+          { productId: 'p2', name: 'Trà đào cam sả', available: 0 },
+        ],
+      });
+
+      expect(resolved.kind).toBe('out_of_stock');
+      expect(resolved.message).toBe("Sản phẩm 'Bạc xỉu' chỉ còn 2");
+      expect(resolved.detailMessages).toEqual([
+        "Sản phẩm 'Bạc xỉu' chỉ còn 2",
+        "Sản phẩm 'Trà đào cam sả' đã tạm hết",
+      ]);
+    });
+
+    it('8.2. Trường hợp 409 "Mã giảm giá đã ngừng áp dụng": giữ nguyên thông báo server', () => {
+      const resolved = resolveCreateOrder409Error({
+        message: 'Mã giảm giá đã ngừng áp dụng',
+      });
+
+      expect(resolved.kind).toBe('promotion_inactive');
+      expect(resolved.message).toBe('Mã giảm giá đã ngừng áp dụng');
+      expect(resolved.detailMessages).toEqual([]);
+    });
+
+    it('8.3. Trường hợp 409 "Số điểm không đủ, vui lòng thử lại": giữ nguyên thông báo server', () => {
+      const resolved = resolveCreateOrder409Error({
+        message: 'Số điểm không đủ, vui lòng thử lại',
+      });
+
+      expect(resolved.kind).toBe('points_not_enough');
+      expect(resolved.message).toBe('Số điểm không đủ, vui lòng thử lại');
+      expect(resolved.detailMessages).toEqual([]);
     });
   });
 });

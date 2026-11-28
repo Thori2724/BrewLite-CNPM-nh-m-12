@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import ProductDetailPage from '../app/menu/[id]/page';
 import * as api from '../services/api';
-import { ProductDetail } from '../services/api';
+import { notifyProductsInvalidated, ProductDetail } from '../services/api';
 import * as navigation from 'next/navigation';
 import { CartProvider } from '../context/CartContext';
 
@@ -346,5 +346,54 @@ describe('Trang chi tiết món (ProductDetailPage)', () => {
       vi.advanceTimersByTime(2100);
     });
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  });
+
+  // 12. Trang chi tiết tải lại GET /products/:id sau đặt đơn / hủy đơn và xử lý stock <= 0
+  it('12. Trang chi tiết tải lại số liệu mới khi quay lại hoặc sau đặt/hủy đơn; stock <= 0 khóa nút "Tạm hết"', async () => {
+    const lowStockItem: ProductDetail = { ...mockItem, stock: 1 };
+    const soldOutItem: ProductDetail = { ...mockItem, stock: 0 };
+    const restoredItem: ProductDetail = { ...mockItem, stock: 1 };
+
+    vi.mocked(api.getProductById)
+      .mockResolvedValueOnce(lowStockItem)
+      .mockResolvedValueOnce(soldOutItem)
+      .mockResolvedValueOnce(restoredItem);
+
+    render(<ProductDetailPage />);
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /\+ Thêm vào giỏ/ })).toBeEnabled();
+    });
+
+    // Chuyển tab không tự tải lại
+    act(() => {
+      window.dispatchEvent(new Event('focus'));
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+    expect(api.getProductById).toHaveBeenCalledTimes(1);
+
+    // Sau khi đặt hết món cuối -> phát tín hiệu tải lại -> món chuyển sang xám, nhãn "Hết hàng", nút "Tạm hết"
+    act(() => {
+      notifyProductsInvalidated();
+    });
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Tạm hết' })).toBeDisabled();
+    });
+    expect(screen.getByText('Hết hàng')).toBeInTheDocument();
+    expect(screen.getByAltText('Cà phê sữa đá').className).toContain('grayscale');
+
+    // Quay lại từ bfcache (pageshow persisted = true) sau khi hủy đơn -> gọi lại GET /products/:id -> bán lại
+    act(() => {
+      const pageShowEvent = new Event('pageshow') as PageTransitionEvent;
+      Object.defineProperty(pageShowEvent, 'persisted', { value: true });
+      window.dispatchEvent(pageShowEvent);
+    });
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /\+ Thêm vào giỏ/ })).toBeEnabled();
+    });
+    expect(screen.queryByText('Hết hàng')).not.toBeInTheDocument();
+    expect(api.getProductById).toHaveBeenCalledTimes(3);
   });
 });

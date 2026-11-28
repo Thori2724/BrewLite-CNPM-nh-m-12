@@ -1,4 +1,5 @@
 import { apiFetch, apiRequest, AuthApiError } from './auth';
+import { notifyProductsInvalidated } from './api';
 import { AUTH_ERROR_MESSAGES } from './auth-contract';
 import {
   CreateOrderDto,
@@ -105,14 +106,18 @@ export async function createOrderApi(dto: CreateOrderDto): Promise<OrderResponse
   const sanitizedDto = sanitizeCreateOrderDto(dto);
 
   if (isMockOrdersActive()) {
-    return mockCreateOrder(sanitizedDto);
+    const created = await mockCreateOrder(sanitizedDto);
+    notifyProductsInvalidated();
+    return created;
   }
 
   try {
-    return await apiFetch<OrderResponse>(ORDER_ENDPOINTS.CREATE, {
+    const created = await apiFetch<OrderResponse>(ORDER_ENDPOINTS.CREATE, {
       method: 'POST',
       body: JSON.stringify(sanitizedDto),
     });
+    notifyProductsInvalidated();
+    return created;
   } catch (err: unknown) {
     if (err instanceof AuthApiError) {
       const errorData = err.errorData as Record<string, unknown> | undefined;
@@ -294,10 +299,14 @@ export async function updateOrderStatusApi(
  */
 export async function cancelOrderApi(orderId: string): Promise<OrderResponse> {
   if (isMockOrdersActive()) {
-    return mockCancelOrder(orderId);
+    const cancelled = await mockCancelOrder(orderId);
+    notifyProductsInvalidated();
+    return cancelled;
   }
 
-  return apiRequest<OrderResponse>(ORDER_ENDPOINTS.CANCEL(orderId), {
+  const cancelled = await apiRequest<OrderResponse>(ORDER_ENDPOINTS.CANCEL(orderId), {
     method: 'POST',
   });
+  notifyProductsInvalidated();
+  return cancelled;
 }

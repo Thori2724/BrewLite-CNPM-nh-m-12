@@ -2,6 +2,8 @@ import { CartItem } from './cart';
 import {
   CreateOrderDto,
   CreateOrderItemDto,
+  ORDER_ERROR_MESSAGES,
+  OutOfStockDetail,
   PaymentMethod,
   ReceiveType,
 } from '../services/order-contract';
@@ -9,6 +11,37 @@ import { validateAccountNumber } from './validation';
 
 export const PENDING_ORDER_STORAGE_KEY = 'brewlite_pending_order_v2';
 const LEGACY_PENDING_ORDER_STORAGE_KEY = 'brewlite_pending_order_v1';
+export const POINT_VALUE_VND = 1000;
+export const MIN_PAYABLE_AMOUNT_VND = 1000;
+
+/**
+ * Tính số điểm tối đa có thể dùng (X) theo công thức mục 5.2 hợp đồng API bản 3:
+ * X = min(N, floor((Tạm tính - Giảm giá - 1000) / 1000)), nếu < 0 thì trả về 0.
+ */
+export function calculateUsablePoints(
+  loyaltyPoints: number,
+  subtotalAmount: number,
+  discountAmount: number = 0
+): number {
+  const safePoints = Number.isFinite(loyaltyPoints)
+    ? Math.max(0, Math.floor(loyaltyPoints))
+    : 0;
+  const safeSubtotal = Number.isFinite(subtotalAmount)
+    ? Math.max(0, Math.floor(subtotalAmount))
+    : 0;
+  const safeDiscount = Number.isFinite(discountAmount)
+    ? Math.max(0, Math.floor(discountAmount))
+    : 0;
+
+  const maxPointsByOrder = Math.floor(
+    (safeSubtotal - safeDiscount - MIN_PAYABLE_AMOUNT_VND) / POINT_VALUE_VND
+  );
+  if (maxPointsByOrder <= 0 || safePoints <= 0) {
+    return 0;
+  }
+
+  return Math.min(safePoints, maxPointsByOrder);
+}
 
 /**
  * Bản ghi đơn hàng đang chờ thanh toán được lưu trữ trong localStorage.
@@ -283,5 +316,85 @@ export function resolveIdempotencyKey(params: ResolveKeyParams): {
   return {
     key: cleanCurrentKey,
     isNewKey: false,
+  };
+}
+
+export type CreateOrder409Kind =
+  | 'out_of_stock'
+  | 'promotion_inactive'
+  | 'points_not_enough'
+  | 'unknown';
+
+export interface ResolvedCreateOrder409Error {
+  kind: CreateOrder409Kind;
+  message: string;
+  details: OutOfStockDetail[];
+  detailMessages: string[];
+}
+
+/**
+ * Định dạng thông báo cho từng món trong mảng `details` khi POST /orders trả 409 thiếu hàng:
+ * - `available > 0`: "Sản phẩm 'X' chỉ còn N"
+ * - `available = 0`: "Sản phẩm 'X' đã tạm hết"
+ */
+export function formatOutOfStockDetailMessage(detail: OutOfStockDetail): string {
+  const name = typeof detail?.name === 'string' ? detail.name : '';
+  const available =
+    typeof detail?.available === 'number' && Number.isFinite(detail.available)
+      ? Math.floor(detail.available)
+      : 0;
+
+  if (available > 0) {
+    return `Sản phẩm '${name}' chỉ còn ${available}`;
+  }
+  return `Sản phẩm '${name}' đã tạm hết`;
+}
+
+/**
+ * Phân loại và dựng thông báo cho 3 trường hợp lỗi 409 khi đặt đơn (POST /orders):
+ * 1. Thiếu hàng (kèm mảng `details`)
+ * 2. "Mã giảm giá đã ngừng áp dụng"
+ * 3. "Số điểm không đủ, vui lòng thử lại"
+ */
+export function resolveCreateOrder409Error(params: {
+  message?: string;
+  details?: OutOfStockDetail[];
+}): ResolvedCreateOrder409Error {
+  const details = Array.isArray(params.details) ? params.details : [];
+  const rawMessage = typeof params.message === 'string' ? params.message.trim() : '';
+
+  if (details.length > 0) {
+    const detailMessages = details.map(formatOutOfStockDetailMessage);
+    return {
+      kind: 'out_of_stock',
+      message: rawMessage || detailMessages[0] || ORDER_ERROR_MESSAGES.OUT_OF_STOCK,
+      details,
+      detailMessages,
+    };
+  }
+
+  if (rawMessage === ORDER_ERROR_MESSAGES.PROMOTION_INACTIVE) {
+    return {
+      kind: 'promotion_inactive',
+      message: rawMessage,
+      details: [],
+      detailMessages: [],
+    };
+  }
+
+  if (rawMessage === ORDER_ERROR_MESSAGES.POINTS_NOT_ENOUGH) {
+    return {
+      kind: 'points_not_enough',
+      message: rawMessage,
+      details: [],
+      detailMessages: [],
+    };
+  }
+
+  return {
+    kind: 'unknown',
+    message: rawMessage || ORDER_ERROR_MESSAGES.OUT_OF_STOCK,
+    details: [],
+    detailMessages: [],
   };
 }

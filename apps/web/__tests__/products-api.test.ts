@@ -1,5 +1,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { getProducts, getProductById } from '../services/api';
+import {
+  getProducts,
+  getProductById,
+  isSoldOut,
+  notifyProductsInvalidated,
+  PRODUCTS_INVALIDATED_EVENT,
+} from '../services/api';
+import { cancelOrderApi, createOrderApi } from '../services/orders';
 
 describe('Lớp gọi API Sản phẩm thực tế (services/api.ts)', () => {
   const originalEnv = process.env;
@@ -40,7 +47,9 @@ describe('Lớp gọi API Sản phẩm thực tế (services/api.ts)', () => {
 
     const result = await getProducts();
 
-    expect(fetchMock).toHaveBeenCalledWith('http://localhost:3001/products');
+    expect(fetchMock).toHaveBeenCalledWith('http://localhost:3001/products', {
+      cache: 'no-store',
+    });
     expect(result).toEqual(mockData);
   });
 
@@ -56,7 +65,8 @@ describe('Lớp gọi API Sản phẩm thực tế (services/api.ts)', () => {
     await getProducts({ category: 'TEA', q: 'trà đào' });
 
     expect(fetchMock).toHaveBeenCalledWith(
-      'http://localhost:3001/products?category=TEA&q=tr%C3%A0+%C4%91%C3%A0o'
+      'http://localhost:3001/products?category=TEA&q=tr%C3%A0+%C4%91%C3%A0o',
+      { cache: 'no-store' }
     );
   });
 
@@ -105,7 +115,8 @@ describe('Lớp gọi API Sản phẩm thực tế (services/api.ts)', () => {
     const result = await getProductById('11111111-0000-0000-0000-000000000001');
 
     expect(fetchMock).toHaveBeenCalledWith(
-      'http://localhost:3001/products/11111111-0000-0000-0000-000000000001'
+      'http://localhost:3001/products/11111111-0000-0000-0000-000000000001',
+      { cache: 'no-store' }
     );
     expect(result).toEqual(mockDetail);
   });
@@ -135,5 +146,49 @@ describe('Lớp gọi API Sản phẩm thực tế (services/api.ts)', () => {
 
     // Đảm bảo getProducts ném Error thông thường, không can thiệp window.location
     await expect(getProducts()).rejects.toThrow('Unauthorized');
+  });
+
+  // 7. Hàm isSoldOut chỉ dựa vào stock <= 0
+  it('7. isSoldOut(stock) trả đúng với stock = 0 và stock âm, sai với stock >= 1', () => {
+    expect(isSoldOut(0)).toBe(true);
+    expect(isSoldOut(-1)).toBe(true);
+    expect(isSoldOut(-99)).toBe(true);
+    expect(isSoldOut(1)).toBe(false);
+    expect(isSoldOut(50)).toBe(false);
+  });
+
+  // 8. Đặt đơn và hủy đơn thành công phát tín hiệu PRODUCTS_INVALIDATED_EVENT
+  it('8. createOrderApi và cancelOrderApi thành công phát tín hiệu tải lại menu', async () => {
+    process.env.NEXT_PUBLIC_USE_MOCK_ORDERS = 'false';
+    const listener = vi.fn();
+    window.addEventListener(PRODUCTS_INVALIDATED_EVENT, listener);
+
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 201,
+        json: async () => ({ id: 'order-1', orderNumber: 1001, status: 'PENDING' }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({ id: 'order-1', orderNumber: 1001, status: 'CANCELLED' }),
+      });
+    global.fetch = fetchMock;
+
+    notifyProductsInvalidated();
+    expect(listener).toHaveBeenCalledTimes(1);
+
+    await createOrderApi({
+      receiveType: 'AT_COUNTER',
+      items: [{ productId: '11111111-0000-0000-0000-000000000001', quantity: 1 }],
+    });
+    expect(listener).toHaveBeenCalledTimes(2);
+
+    await cancelOrderApi('order-1');
+    expect(listener).toHaveBeenCalledTimes(3);
+
+    window.removeEventListener(PRODUCTS_INVALIDATED_EVENT, listener);
   });
 });
