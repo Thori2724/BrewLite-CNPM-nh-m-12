@@ -16,9 +16,13 @@ import { RolesGuard } from '../auth/roles.guard';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreatePromotionDto } from './dto/create-promotion.dto';
 import { UpdatePromotionDto } from './dto/update-promotion.dto';
+import { ValidatePromotionDto } from './dto/validate-promotion.dto';
+import { calculatePromotionDiscount } from './promotion-discount.util';
 import { PromotionsController } from './promotions.controller';
 import {
   PROMOTION_CODE_EXISTS_MESSAGE,
+  PROMOTION_CODE_NOT_FOUND_MESSAGE,
+  PROMOTION_INACTIVE_MESSAGE,
   PROMOTION_NOT_FOUND_MESSAGE,
   PromotionsService,
 } from './promotions.service';
@@ -455,7 +459,7 @@ describe('PromotionsService & PromotionsController', () => {
     let rolesGuard: RolesGuard;
 
     const createContext = (
-      methodName: 'findAll' | 'create' | 'update',
+      methodName: 'findAll' | 'create' | 'update' | 'validate',
       authHeader?: string,
     ): ExecutionContext => {
       const req: Record<string, unknown> = {
@@ -548,6 +552,291 @@ describe('PromotionsService & PromotionsController', () => {
         expect(await jwtGuard.canActivate(activeAdminCtx)).toBe(true);
         expect(await rolesGuard.canActivate(activeAdminCtx)).toBe(true);
       }
+    });
+
+    it('(h) & (i) POST /promotions/validate ghi đè @Roles(CUSTOMER): chưa đăng nhập -> 401; STAFF và ADMIN gọi validate -> 403 "Bạn không có quyền thực hiện thao tác này"; CUSTOMER đang hoạt động gọi validate -> qua được; 3 endpoint ADMIN cũ vẫn chặn CUSTOMER bằng 403', async () => {
+      // 1. Chưa đăng nhập -> 401
+      const unauthCtx = createContext('validate', undefined);
+      await expect(jwtGuard.canActivate(unauthCtx)).rejects.toThrow(
+        new UnauthorizedException(
+          'Chưa đăng nhập hoặc phiên đăng nhập đã hết hạn',
+        ),
+      );
+
+      // 2. STAFF gọi validate -> 403
+      jwtService.verifyAsync.mockResolvedValueOnce({
+        sub: '55555555-0000-0000-0000-000000000001',
+        email: 'nhanvien1@example.com',
+        role: Role.STAFF,
+      });
+      const staffCtx = createContext('validate', 'Bearer staff-token');
+      await jwtGuard.canActivate(staffCtx);
+      await expect(rolesGuard.canActivate(staffCtx)).rejects.toThrow(
+        new ForbiddenException('Bạn không có quyền thực hiện thao tác này'),
+      );
+
+      // 3. ADMIN gọi validate -> 403 (ghi đè, không gộp với @Roles(ADMIN) ở mức lớp)
+      jwtService.verifyAsync.mockResolvedValueOnce({
+        sub: '66666666-0000-0000-0000-000000000001',
+        email: 'quanly@example.com',
+        role: Role.ADMIN,
+      });
+      const adminCtx = createContext('validate', 'Bearer admin-token');
+      await jwtGuard.canActivate(adminCtx);
+      await expect(rolesGuard.canActivate(adminCtx)).rejects.toThrow(
+        new ForbiddenException('Bạn không có quyền thực hiện thao tác này'),
+      );
+
+      // 4. CUSTOMER đang hoạt động gọi validate -> qua được
+      jwtService.verifyAsync.mockResolvedValueOnce({
+        sub: '44444444-0000-0000-0000-000000000001',
+        email: 'khach@example.com',
+        role: Role.CUSTOMER,
+      });
+      prisma.user.findUnique.mockResolvedValueOnce({ isActive: true });
+      const customerCtx = createContext('validate', 'Bearer customer-token');
+      expect(await jwtGuard.canActivate(customerCtx)).toBe(true);
+      expect(await rolesGuard.canActivate(customerCtx)).toBe(true);
+
+      // 5. (i) 3 endpoint ADMIN cũ vẫn chặn CUSTOMER bằng 403
+      for (const adminMethod of ['findAll', 'create', 'update'] as const) {
+        jwtService.verifyAsync.mockResolvedValueOnce({
+          sub: '44444444-0000-0000-0000-000000000001',
+          email: 'khach@example.com',
+          role: Role.CUSTOMER,
+        });
+        const custOnAdminCtx = createContext(
+          adminMethod,
+          'Bearer customer-token',
+        );
+        await jwtGuard.canActivate(custOnAdminCtx);
+        await expect(rolesGuard.canActivate(custOnAdminCtx)).rejects.toThrow(
+          new ForbiddenException('Bạn không có quyền thực hiện thao tác này'),
+        );
+      }
+    });
+  });
+
+  describe('calculatePromotionDiscount (hàm thuần mục 5.2)', () => {
+    it('(a) PERCENT không trần: subtotal 80.000, 10% -> 8.000', () => {
+      expect(
+        calculatePromotionDiscount(PromotionType.PERCENT, 10, null, 80000),
+      ).toBe(8000);
+    });
+
+    it('(b) PERCENT có trần: 10% của 200.000 = 20.000 nhưng trần 15.000 -> 15.000', () => {
+      expect(
+        calculatePromotionDiscount(PromotionType.PERCENT, 10, 15000, 200000),
+      ).toBe(15000);
+    });
+
+    it('(c) giá trị lẻ làm tròn xuống: subtotal 33.333 giảm 10% -> 3.333 (không phải 3.334)', () => {
+      expect(
+        calculatePromotionDiscount(PromotionType.PERCENT, 10, null, 33333),
+      ).toBe(3333);
+    });
+
+    it('(d) FIXED 20.000 trên subtotal 80.000 -> 20.000', () => {
+      expect(
+        calculatePromotionDiscount(PromotionType.FIXED, 20000, null, 80000),
+      ).toBe(20000);
+    });
+
+    it('(e) mức giảm không làm tổng dưới 1.000đ: FIXED 20.000 trên 15.000 -> 14.000; PERCENT 100% trên 50.000 -> 49.000; subtotal 1.000 -> 0', () => {
+      expect(
+        calculatePromotionDiscount(PromotionType.FIXED, 20000, null, 15000),
+      ).toBe(14000);
+      expect(
+        calculatePromotionDiscount(PromotionType.PERCENT, 100, null, 50000),
+      ).toBe(49000);
+      expect(
+        calculatePromotionDiscount(PromotionType.FIXED, 20000, null, 1000),
+      ).toBe(0);
+      expect(
+        calculatePromotionDiscount(PromotionType.PERCENT, 50, null, 1000),
+      ).toBe(0);
+    });
+  });
+
+  describe('validate (POST /promotions/validate - VIỆC 7)', () => {
+    it('(a)-(f) tính đúng discountAmount qua hàm thuần và tra được mã viết thường có khoảng trắng hai đầu', async () => {
+      // (a) & (f) PERCENT không trần + code viết thường có khoảng trắng
+      prisma.promotion.findUnique.mockResolvedValueOnce({
+        code: 'NO_CAP_10',
+        type: PromotionType.PERCENT,
+        value: 10,
+        maxDiscount: null,
+        isActive: true,
+      });
+
+      const dtoA = (await pipe.transform(
+        { code: '  no_cap_10  ', subtotal: 80000 },
+        { type: 'body', metatype: ValidatePromotionDto },
+      )) as ValidatePromotionDto;
+
+      expect(dtoA.code).toBe('NO_CAP_10');
+      const resA = await controller.validate(dtoA);
+      expect(prisma.promotion.findUnique).toHaveBeenCalledWith({
+        where: { code: 'NO_CAP_10' },
+        select: {
+          code: true,
+          type: true,
+          value: true,
+          maxDiscount: true,
+          isActive: true,
+        },
+      });
+      expect(resA).toEqual({
+        code: 'NO_CAP_10',
+        type: PromotionType.PERCENT,
+        value: 10,
+        maxDiscount: null,
+        discountAmount: 8000,
+      });
+
+      // (b) PERCENT có trần 15.000 trên subtotal 200.000 -> 15.000
+      prisma.promotion.findUnique.mockResolvedValueOnce({
+        code: 'CAP15K',
+        type: PromotionType.PERCENT,
+        value: 10,
+        maxDiscount: 15000,
+        isActive: true,
+      });
+      const resB = await controller.validate({
+        code: 'CAP15K',
+        subtotal: 200000,
+      });
+      expect(resB.discountAmount).toBe(15000);
+
+      // (c) subtotal 33.333 giảm 10% -> 3.333
+      prisma.promotion.findUnique.mockResolvedValueOnce({
+        code: 'NO_CAP_10',
+        type: PromotionType.PERCENT,
+        value: 10,
+        maxDiscount: null,
+        isActive: true,
+      });
+      const resC = await controller.validate({
+        code: 'NO_CAP_10',
+        subtotal: 33333,
+      });
+      expect(resC.discountAmount).toBe(3333);
+
+      // (d) FIXED 20.000 trên subtotal 80.000 -> 20.000
+      prisma.promotion.findUnique.mockResolvedValueOnce({
+        code: 'GIAM20K',
+        type: PromotionType.FIXED,
+        value: 20000,
+        maxDiscount: null,
+        isActive: true,
+      });
+      const resD = await controller.validate({
+        code: 'GIAM20K',
+        subtotal: 80000,
+      });
+      expect(resD).toEqual({
+        code: 'GIAM20K',
+        type: PromotionType.FIXED,
+        value: 20000,
+        maxDiscount: null,
+        discountAmount: 20000,
+      });
+
+      // (e) FIXED 20.000 trên 15.000 -> 14.000; PERCENT 100% trên 50.000 -> 49.000; subtotal 1.000 -> 0
+      prisma.promotion.findUnique.mockResolvedValueOnce({
+        code: 'GIAM20K',
+        type: PromotionType.FIXED,
+        value: 20000,
+        maxDiscount: null,
+        isActive: true,
+      });
+      const resE1 = await controller.validate({
+        code: 'GIAM20K',
+        subtotal: 15000,
+      });
+      expect(resE1.discountAmount).toBe(14000);
+
+      prisma.promotion.findUnique.mockResolvedValueOnce({
+        code: 'FREE100',
+        type: PromotionType.PERCENT,
+        value: 100,
+        maxDiscount: null,
+        isActive: true,
+      });
+      const resE2 = await controller.validate({
+        code: 'FREE100',
+        subtotal: 50000,
+      });
+      expect(resE2.discountAmount).toBe(49000);
+
+      prisma.promotion.findUnique.mockResolvedValueOnce({
+        code: 'GIAM20K',
+        type: PromotionType.FIXED,
+        value: 20000,
+        maxDiscount: null,
+        isActive: true,
+      });
+      const resE3 = await controller.validate({
+        code: 'GIAM20K',
+        subtotal: 1000,
+      });
+      expect(resE3.discountAmount).toBe(0);
+    });
+
+    it('(g) mã sai -> 404 "Mã giảm giá không tồn tại"; mã đang tắt (isActive = false) -> 409 "Mã giảm giá đã ngừng áp dụng"', async () => {
+      prisma.promotion.findUnique.mockResolvedValueOnce(null);
+      await expect(
+        controller.validate({ code: 'KHONG_CO', subtotal: 80000 }),
+      ).rejects.toThrow(
+        new NotFoundException(PROMOTION_CODE_NOT_FOUND_MESSAGE),
+      );
+
+      prisma.promotion.findUnique.mockResolvedValueOnce({
+        code: 'TAMNGUNG',
+        type: PromotionType.PERCENT,
+        value: 15,
+        maxDiscount: null,
+        isActive: false,
+      });
+      await expect(
+        controller.validate({ code: '  tamngung ', subtotal: 80000 }),
+      ).rejects.toThrow(new ConflictException(PROMOTION_INACTIVE_MESSAGE));
+    });
+
+    it('body sai (code rỗng, code > 30 ký tự, subtotal < 1000 hoặc không nguyên) -> 400 với message là mảng chuỗi tiếng Anh và không truy vấn DB', async () => {
+      const invalidPayloads = [
+        { code: '', subtotal: 80000 },
+        { code: '   ', subtotal: 80000 },
+        { code: 'A'.repeat(31), subtotal: 80000 },
+        { code: 123, subtotal: 80000 },
+        { code: 'BREW10', subtotal: 999 },
+        { code: 'BREW10', subtotal: 80000.5 },
+        { code: 'BREW10', subtotal: '80000' },
+      ];
+
+      for (const payload of invalidPayloads) {
+        await expect(
+          pipe.transform(payload, {
+            type: 'body',
+            metatype: ValidatePromotionDto,
+          }),
+        ).rejects.toThrow(BadRequestException);
+
+        try {
+          await pipe.transform(payload, {
+            type: 'body',
+            metatype: ValidatePromotionDto,
+          });
+        } catch (err) {
+          expect(err).toBeInstanceOf(BadRequestException);
+          const res = (err as BadRequestException).getResponse() as {
+            message: unknown;
+          };
+          expect(Array.isArray(res.message)).toBe(true);
+        }
+      }
+
+      expect(prisma.promotion.findUnique).not.toHaveBeenCalled();
     });
   });
 });

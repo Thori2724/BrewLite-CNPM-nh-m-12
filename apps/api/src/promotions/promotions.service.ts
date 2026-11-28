@@ -8,9 +8,13 @@ import { Prisma, PromotionType } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreatePromotionDto } from './dto/create-promotion.dto';
 import { UpdatePromotionDto } from './dto/update-promotion.dto';
+import { ValidatePromotionDto } from './dto/validate-promotion.dto';
+import { calculatePromotionDiscount } from './promotion-discount.util';
 
 export const PROMOTION_CODE_EXISTS_MESSAGE = 'Mã giảm giá đã tồn tại';
 export const PROMOTION_NOT_FOUND_MESSAGE = 'Không tìm thấy mã giảm giá';
+export const PROMOTION_CODE_NOT_FOUND_MESSAGE = 'Mã giảm giá không tồn tại';
+export const PROMOTION_INACTIVE_MESSAGE = 'Mã giảm giá đã ngừng áp dụng';
 
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -192,5 +196,61 @@ export class PromotionsService {
       data,
       select: PROMOTION_SELECT,
     });
+  }
+
+  async validate(dto: ValidatePromotionDto) {
+    const errors: string[] = [];
+    const normalizedCode =
+      typeof dto.code === 'string' ? dto.code.trim().toUpperCase() : '';
+
+    if (
+      typeof dto.code !== 'string' ||
+      normalizedCode.length < 1 ||
+      normalizedCode.length > 30
+    ) {
+      errors.push('code must be a string between 1 and 30 characters');
+    }
+
+    if (!Number.isInteger(dto.subtotal) || dto.subtotal < 1000) {
+      errors.push('subtotal must be an integer not less than 1000');
+    }
+
+    if (errors.length > 0) {
+      throw new BadRequestException(errors);
+    }
+
+    const promotion = await this.prisma.promotion.findUnique({
+      where: { code: normalizedCode },
+      select: {
+        code: true,
+        type: true,
+        value: true,
+        maxDiscount: true,
+        isActive: true,
+      },
+    });
+
+    if (!promotion) {
+      throw new NotFoundException(PROMOTION_CODE_NOT_FOUND_MESSAGE);
+    }
+
+    if (!promotion.isActive) {
+      throw new ConflictException(PROMOTION_INACTIVE_MESSAGE);
+    }
+
+    const discountAmount = calculatePromotionDiscount(
+      promotion.type,
+      promotion.value,
+      promotion.maxDiscount,
+      dto.subtotal,
+    );
+
+    return {
+      code: promotion.code,
+      type: promotion.type,
+      value: promotion.value,
+      maxDiscount: promotion.maxDiscount,
+      discountAmount,
+    };
   }
 }
