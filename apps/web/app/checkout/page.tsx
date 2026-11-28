@@ -732,7 +732,7 @@ function CheckoutContent() {
   return (
     <div className="max-w-5xl mx-auto space-y-6">
       {/* Tiêu đề & Nút quay lại */}
-      <div className="flex items-center justify-between border-b border-tan/60 pb-4">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-tan/60 pb-4">
         <Link
           href="/cart"
           className="inline-flex items-center text-xs sm:text-sm font-semibold text-noir/65 hover:text-kombu transition"
@@ -1090,9 +1090,9 @@ function CheckoutContent() {
                 </div>
 
                 {appliedPromotion && (
-                  <div className="flex items-center justify-between gap-2 rounded-control border border-moss/50 bg-moss/15 px-3 py-2 text-xs">
-                    <div className="min-w-0">
-                      <span className="font-bold text-kombu">
+                  <div className="flex flex-wrap items-center justify-between gap-2 rounded-control border border-moss/50 bg-moss/15 px-3 py-2 text-xs">
+                    <div className="min-w-0 break-words">
+                      <span className="font-bold text-kombu break-all">
                         Đã áp dụng mã {appliedPromotion.code}
                       </span>
                       <span className="text-noir/75 ml-1.5">
@@ -1255,12 +1255,12 @@ function CheckoutContent() {
                   <span>Tạm tính:</span>
                   <span>{formatVnd(createdOrder.subtotalAmount)}</span>
                 </div>
-                <div className="flex justify-between text-noir/70">
-                  <span>
+                <div className="flex flex-wrap justify-between gap-2 text-noir/70">
+                  <span className="min-w-0 break-all">
                     Giảm giá
                     {createdOrder.promotionCode ? ` (${createdOrder.promotionCode})` : ''}:
                   </span>
-                  <span className={createdOrder.discountAmount > 0 ? 'font-semibold text-kombu' : ''}>
+                  <span className={`shrink-0 ${createdOrder.discountAmount > 0 ? 'font-semibold text-kombu' : ''}`}>
                     {createdOrder.discountAmount > 0
                       ? `-${formatVnd(createdOrder.discountAmount)}`
                       : formatVnd(0)}

@@ -293,6 +293,16 @@ describe('Hàm thuần xử lý đơn hàng và thanh toán (utils/checkout.ts)'
       expect(calculateUsablePoints(-5, 90000, 0)).toBe(0);
       expect(calculateUsablePoints(Number.NaN, 90000, 0)).toBe(0);
     });
+
+    it('7.6. Mã giảm giá làm phần còn lại sát 1.000đ (1.001đ..1.999đ -> X = 0; đúng 2.000đ -> X = 1)', () => {
+      // Còn 1.500đ -> (1500 - 1000) / 1000 = 0.5 -> làm tròn xuống 0
+      expect(calculateUsablePoints(50, 20000, 18500)).toBe(0);
+      // Còn 1.999đ -> (1999 - 1000) / 1000 = 0.999 -> làm tròn xuống 0
+      expect(calculateUsablePoints(50, 20000, 18001)).toBe(0);
+      expect(calculateUsablePoints(50, 1999, 0)).toBe(0);
+      // Còn đúng 2.000đ -> dùng 1 điểm (-1.000đ) để thực trả còn đúng 1.000đ
+      expect(calculateUsablePoints(50, 20000, 18000)).toBe(1);
+    });
   });
 
   // 8. Xử lý và dựng thông báo lỗi 409 khi đặt đơn (Dòng 20)

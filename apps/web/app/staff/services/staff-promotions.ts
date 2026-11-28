@@ -146,12 +146,22 @@ export function validatePromotionValue(
   return { isValid: true };
 }
 
+export const PROMOTION_MAX_DISCOUNT_REQUIRED_ON_EDIT_ERROR =
+  'Mã đang có trần giảm nên không thể để trống. Muốn bỏ trần, hãy đổi loại sang giảm số tiền hoặc tạo mã mới.';
+
 export function validatePromotionMaxDiscount(
   maxDiscountInput: string | number | null | undefined,
-  type: PromotionType
+  type: PromotionType,
+  options?: { disallowEmpty?: boolean }
 ): FieldValidationResult {
-  if (type === 'FIXED' || maxDiscountInput === null || maxDiscountInput === undefined) {
+  if (type === 'FIXED') {
     return { isValid: true };
+  }
+
+  if (maxDiscountInput === null || maxDiscountInput === undefined) {
+    return options?.disallowEmpty
+      ? { isValid: false, error: PROMOTION_MAX_DISCOUNT_REQUIRED_ON_EDIT_ERROR }
+      : { isValid: true };
   }
 
   const rangeError = 'Trần giảm phải là số nguyên từ 1.000 đến 1.000.000đ.';
@@ -169,7 +179,9 @@ export function validatePromotionMaxDiscount(
 
   const trimmed = (maxDiscountInput ?? '').trim();
   if (!trimmed) {
-    return { isValid: true };
+    return options?.disallowEmpty
+      ? { isValid: false, error: PROMOTION_MAX_DISCOUNT_REQUIRED_ON_EDIT_ERROR }
+      : { isValid: true };
   }
   if (!/^-?\d+$/.test(trimmed)) {
     return { isValid: false, error: rangeError };
@@ -189,7 +201,7 @@ export function validatePromotionMaxDiscount(
 
 export function validatePromotionForm(
   values: PromotionFormValues,
-  options?: { mode?: 'create' | 'edit' }
+  options?: { mode?: 'create' | 'edit'; initialPromotion?: Promotion | null }
 ): {
   isValid: boolean;
   errors: PromotionFormFieldErrors;
@@ -208,7 +220,14 @@ export function validatePromotionForm(
     const valueCheck = validatePromotionValue(values.value, values.type);
     if (!valueCheck.isValid) errors.value = valueCheck.error;
 
-    const maxDiscountCheck = validatePromotionMaxDiscount(values.maxDiscount, values.type);
+    const hasInitialMaxDiscount =
+      options?.mode === 'edit' &&
+      options?.initialPromotion?.maxDiscount !== null &&
+      options?.initialPromotion?.maxDiscount !== undefined;
+
+    const maxDiscountCheck = validatePromotionMaxDiscount(values.maxDiscount, values.type, {
+      disallowEmpty: hasInitialMaxDiscount,
+    });
     if (!maxDiscountCheck.isValid) errors.maxDiscount = maxDiscountCheck.error;
   }
 
@@ -253,10 +272,11 @@ export function buildUpdatePromotionPayload(
 
   if (values.type === 'PERCENT') {
     const trimmedMax = values.maxDiscount.trim();
-    const nextMaxDiscount = trimmedMax ? Number(trimmedMax) : null;
-    if (nextMaxDiscount !== initialPromotion.maxDiscount) {
-      // Chờ BE xác nhận null: gửi maxDiscount: null để xóa trần giảm khi giữ loại PERCENT
-      payload.maxDiscount = nextMaxDiscount;
+    if (trimmedMax) {
+      const nextMaxDiscount = Number(trimmedMax);
+      if (nextMaxDiscount !== initialPromotion.maxDiscount) {
+        payload.maxDiscount = nextMaxDiscount;
+      }
     }
   }
 
@@ -355,7 +375,9 @@ export async function updateStaffPromotion(
   const sanitizedDto: UpdatePromotionDto = {
     ...(dto.type !== undefined ? { type: dto.type } : {}),
     ...(dto.value !== undefined ? { value: dto.value } : {}),
-    ...(dto.type !== 'FIXED' && dto.maxDiscount !== undefined
+    ...(dto.type !== 'FIXED' &&
+    dto.maxDiscount !== undefined &&
+    dto.maxDiscount !== null
       ? { maxDiscount: dto.maxDiscount }
       : {}),
     ...(dto.isActive !== undefined ? { isActive: dto.isActive } : {}),

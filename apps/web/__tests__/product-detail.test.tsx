@@ -396,4 +396,27 @@ describe('Trang chi tiết món (ProductDetailPage)', () => {
     expect(screen.queryByText('Hết hàng')).not.toBeInTheDocument();
     expect(api.getProductById).toHaveBeenCalledTimes(3);
   });
+
+  // 13. Ô ghi chú cho quán vượt 200 ký tự thì báo lỗi và không thêm vào giỏ
+  it('13. Ghi chú vượt quá 200 ký tự trên chi tiết món: báo lỗi tiếng Việt và không thêm vào giỏ', async () => {
+    vi.mocked(api.getProductById).mockResolvedValue(mockItem);
+    localStorage.clear();
+
+    render(
+      <CartProvider>
+        <ProductDetailPage />
+      </CartProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { level: 1, name: 'Cà phê sữa đá' })).toBeInTheDocument();
+    });
+
+    const noteInput = screen.getByLabelText(/ghi chú cho quán/i);
+    fireEvent.change(noteInput, { target: { value: 'a'.repeat(201) } });
+    fireEvent.click(screen.getByRole('button', { name: /\+ Thêm vào giỏ/i }));
+
+    expect(screen.getByRole('alert')).toHaveTextContent(/ghi chú không được vượt quá 200 ký tự/i);
+    expect(localStorage.getItem('brewlite_cart_v2')).toBeNull();
+  });
 });

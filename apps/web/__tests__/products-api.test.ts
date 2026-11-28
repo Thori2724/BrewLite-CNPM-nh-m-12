@@ -191,4 +191,26 @@ describe('Lớp gọi API Sản phẩm thực tế (services/api.ts)', () => {
 
     window.removeEventListener(PRODUCTS_INVALIDATED_EVENT, listener);
   });
+
+  // 9. Lỗi 500 từ server trả về thông báo tiếng Việt, không lộ "Internal Server Error"
+  it('9. GET /products và GET /products/:id gặp lỗi 500 từ server: báo lỗi tiếng Việt rõ ràng', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        json: async () => ({ statusCode: 500, message: 'Internal Server Error' }),
+      })
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        json: async () => ({ statusCode: 500, message: 'Internal Server Error' }),
+      });
+    global.fetch = fetchMock;
+
+    await expect(getProducts()).rejects.toThrow('Không kết nối được máy chủ, vui lòng thử lại');
+    await expect(getProductById('11111111-0000-0000-0000-000000000001')).rejects.toThrow(
+      'Không kết nối được máy chủ, vui lòng thử lại'
+    );
+  });
 });

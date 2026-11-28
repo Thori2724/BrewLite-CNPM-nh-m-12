@@ -218,6 +218,7 @@ describe('Dòng 29 - Form thêm/sửa mã giảm giá cho ADMIN tại /staff/pro
       });
 
       const initialPercent = SAMPLE_PROMOTIONS[3]; // BREW10: PERCENT, 10, max 15000, active true
+      const initialNoCapPercent = SAMPLE_PROMOTIONS[0]; // BREW5: PERCENT, 5, max null, active true
       expect(
         buildUpdatePromotionPayload(
           {
@@ -231,33 +232,60 @@ describe('Dòng 29 - Form thêm/sửa mã giảm giá cho ADMIN tại /staff/pro
         )
       ).toEqual({});
 
-      // Xóa trần giảm khi giữ PERCENT -> gửi maxDiscount: null
-      expect(
-        buildUpdatePromotionPayload(
-          {
-            code: 'BREW10',
-            type: 'PERCENT',
-            value: '10',
-            maxDiscount: '',
-            isActive: true,
-          },
-          initialPercent
-        )
-      ).toEqual({ maxDiscount: null });
+      // Xóa trần giảm trên mã ĐANG có trần khi giữ PERCENT -> bị chặn ở client validation
+      const clearCapValidation = validatePromotionForm(
+        {
+          code: 'BREW10',
+          type: 'PERCENT',
+          value: '10',
+          maxDiscount: '',
+          isActive: true,
+        },
+        { mode: 'edit', initialPromotion: initialPercent }
+      );
+      expect(clearCapValidation.isValid).toBe(false);
+      expect(clearCapValidation.errors.maxDiscount).toBe(
+        'Mã đang có trần giảm nên không thể để trống. Muốn bỏ trần, hãy đổi loại sang giảm số tiền hoặc tạo mã mới.'
+      );
+
+      // Mã KHÔNG có trần mà để trống -> hợp lệ, KHÔNG gửi trường maxDiscount
+      const noCapValidation = validatePromotionForm(
+        {
+          code: 'BREW5',
+          type: 'PERCENT',
+          value: '12',
+          maxDiscount: '',
+          isActive: true,
+        },
+        { mode: 'edit', initialPromotion: initialNoCapPercent }
+      );
+      expect(noCapValidation.isValid).toBe(true);
+      const noCapPayload = buildUpdatePromotionPayload(
+        {
+          code: 'BREW5',
+          type: 'PERCENT',
+          value: '12',
+          maxDiscount: '',
+          isActive: true,
+        },
+        initialNoCapPercent
+      );
+      expect(noCapPayload).toEqual({ value: 12 });
+      expect('maxDiscount' in noCapPayload).toBe(false);
 
       // Đổi sang FIXED -> không gửi maxDiscount và không gửi code
-      expect(
-        buildUpdatePromotionPayload(
-          {
-            code: 'BREW10',
-            type: 'FIXED',
-            value: '25000',
-            maxDiscount: '15000',
-            isActive: true,
-          },
-          initialPercent
-        )
-      ).toEqual({ type: 'FIXED', value: 25000 });
+      const fixedPayload = buildUpdatePromotionPayload(
+        {
+          code: 'BREW10',
+          type: 'FIXED',
+          value: '25000',
+          maxDiscount: '15000',
+          isActive: true,
+        },
+        initialPercent
+      );
+      expect(fixedPayload).toEqual({ type: 'FIXED', value: 25000 });
+      expect('maxDiscount' in fixedPayload).toBe(false);
     });
   });
 
@@ -496,6 +524,115 @@ describe('Dòng 29 - Form thêm/sửa mã giảm giá cho ADMIN tại /staff/pro
       });
       expect(sentBody.code).toBeUndefined();
       expect(sentBody.maxDiscount).toBeUndefined();
+      expect('maxDiscount' in sentBody).toBe(false);
+    });
+
+    it('Sửa mã % đang có trần: xóa trống ô Trần giảm bị FE chặn tại client, không gọi API, không đóng form và hiện đúng lỗi; đổi sang FIXED vẫn lưu không gửi maxDiscount', async () => {
+      const user = userEvent.setup();
+      const initialList = cloneSamplePromotions();
+      const target = initialList[3]; // BREW10: PERCENT, 10, max 15000, isActive: true
+      const updatedFixed: Promotion = {
+        ...target,
+        type: 'FIXED',
+        value: 20000,
+        maxDiscount: null,
+      };
+      const reloadedList = initialList.map((item) =>
+        item.id === target.id ? updatedFixed : item
+      );
+
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValueOnce(mockJsonResponse(200, initialList))
+        .mockResolvedValueOnce(mockJsonResponse(200, updatedFixed))
+        .mockResolvedValueOnce(mockJsonResponse(200, reloadedList));
+      globalThis.fetch = fetchMock;
+
+      renderStaffPromotionsPage();
+      const brew10Row = await screen.findByTestId(`staff-promotion-row-${target.id}`);
+
+      await user.click(within(brew10Row).getByRole('button', { name: 'Sửa' }));
+      const dialog = await screen.findByTestId('promotion-form-dialog');
+
+      // 1. Xóa trống ô Trần giảm rồi bấm Lưu -> chặn ngay ở client, KHÔNG gọi PATCH, form vẫn mở
+      await user.clear(within(dialog).getByLabelText(/Trần giảm/i));
+      await user.click(within(dialog).getByRole('button', { name: 'Lưu thay đổi' }));
+
+      const maxDiscountError = await within(dialog).findByTestId(
+        'promotion-form-error-maxDiscount'
+      );
+      expect(maxDiscountError).toHaveTextContent(
+        'Mã đang có trần giảm nên không thể để trống. Muốn bỏ trần, hãy đổi loại sang giảm số tiền hoặc tạo mã mới.'
+      );
+      expect(screen.queryByTestId('promotion-form-server-error')).not.toBeInTheDocument();
+      expect(screen.getByTestId('promotion-form-dialog')).toBeInTheDocument();
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+
+      // 4. Đổi sang FIXED và lưu -> body KHÔNG chứa maxDiscount
+      await user.selectOptions(within(dialog).getByLabelText(/Loại mã/i), 'FIXED');
+      const valueInput = within(dialog).getByLabelText(/Giá trị/i);
+      await user.clear(valueInput);
+      await user.type(valueInput, '20000');
+      await user.click(within(dialog).getByRole('button', { name: 'Lưu thay đổi' }));
+
+      await waitFor(() => {
+        expect(screen.queryByTestId('promotion-form-dialog')).not.toBeInTheDocument();
+      });
+
+      const [patchUrl, patchInit] = fetchMock.mock.calls[1];
+      expect(String(patchUrl)).toBe(`http://localhost:3001/promotions/${target.id}`);
+      expect(patchInit?.method).toBe('PATCH');
+      const sentBody = JSON.parse(String(patchInit?.body));
+      expect(sentBody).toEqual({
+        type: 'FIXED',
+        value: 20000,
+      });
+      expect('maxDiscount' in sentBody).toBe(false);
+    });
+
+    it('Sửa mã % KHÔNG có trần: để trống ô Trần giảm vẫn lưu bình thường và KHÔNG gửi maxDiscount', async () => {
+      const user = userEvent.setup();
+      const initialList = cloneSamplePromotions();
+      const target = initialList[0]; // BREW5: PERCENT, 5, maxDiscount: null, isActive: true
+      const updatedTarget: Promotion = {
+        ...target,
+        value: 12,
+      };
+      const reloadedList = initialList.map((item) =>
+        item.id === target.id ? updatedTarget : item
+      );
+
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValueOnce(mockJsonResponse(200, initialList))
+        .mockResolvedValueOnce(mockJsonResponse(200, updatedTarget))
+        .mockResolvedValueOnce(mockJsonResponse(200, reloadedList));
+      globalThis.fetch = fetchMock;
+
+      renderStaffPromotionsPage();
+      const brew5Row = await screen.findByTestId(`staff-promotion-row-${target.id}`);
+
+      await user.click(within(brew5Row).getByRole('button', { name: 'Sửa' }));
+      const dialog = await screen.findByTestId('promotion-form-dialog');
+
+      expect(within(dialog).getByLabelText(/Trần giảm/i)).toHaveValue('');
+
+      const valueInput = within(dialog).getByLabelText(/Giá trị/i);
+      await user.clear(valueInput);
+      await user.type(valueInput, '12');
+      await user.click(within(dialog).getByRole('button', { name: 'Lưu thay đổi' }));
+
+      await waitFor(() => {
+        expect(screen.queryByTestId('promotion-form-dialog')).not.toBeInTheDocument();
+        expect(within(brew5Row).getByText('12%')).toBeInTheDocument();
+      });
+
+      const [patchUrl, patchInit] = fetchMock.mock.calls[1];
+      expect(String(patchUrl)).toBe(`http://localhost:3001/promotions/${target.id}`);
+      expect(patchInit?.method).toBe('PATCH');
+      const sentBody = JSON.parse(String(patchInit?.body));
+      expect(sentBody).toEqual({ value: 12 });
+      expect('maxDiscount' in sentBody).toBe(false);
     });
 
     it('Lỗi 404 khi sửa mã: đóng hộp xác nhận (nếu có), giữ form mở và báo "Không tìm thấy mã giảm giá"', async () => {
@@ -592,7 +729,7 @@ describe('Dòng 29 - Form thêm/sửa mã giảm giá cho ADMIN tại /staff/pro
       expect(within(mock30Row).getByText('30%')).toBeInTheDocument();
       expect(within(mock30Row).getByText('30.000đ')).toBeInTheDocument();
 
-      // 3. Sửa BREW10 xóa trần giảm -> lưu thành công, trần giảm thành "—"
+      // 3. Sửa BREW10 xóa trần giảm -> bị FE chặn, giữ form mở; đổi sang FIXED thì lưu thành công với trần giảm "—"
       const brew10Row = screen.getByTestId(
         'staff-promotion-row-77777777-0000-0000-0000-000000000001'
       );
@@ -601,8 +738,22 @@ describe('Dòng 29 - Form thêm/sửa mã giảm giá cho ADMIN tại /staff/pro
       await user.clear(within(editDialog).getByLabelText(/Trần giảm/i));
       await user.click(within(editDialog).getByRole('button', { name: 'Lưu thay đổi' }));
 
+      expect(
+        await within(editDialog).findByTestId('promotion-form-error-maxDiscount')
+      ).toHaveTextContent(
+        'Mã đang có trần giảm nên không thể để trống. Muốn bỏ trần, hãy đổi loại sang giảm số tiền hoặc tạo mã mới.'
+      );
+      expect(screen.getByTestId('promotion-form-dialog')).toBeInTheDocument();
+
+      await user.selectOptions(within(editDialog).getByLabelText(/Loại mã/i), 'FIXED');
+      const editValueInput = within(editDialog).getByLabelText(/Giá trị/i);
+      await user.clear(editValueInput);
+      await user.type(editValueInput, '20000');
+      await user.click(within(editDialog).getByRole('button', { name: 'Lưu thay đổi' }));
+
       await waitFor(() => {
         expect(screen.queryByTestId('promotion-form-dialog')).not.toBeInTheDocument();
+        expect(within(brew10Row).getByText('Giảm số tiền')).toBeInTheDocument();
         expect(within(brew10Row).getByText('—')).toBeInTheDocument();
       });
       expect(globalThis.fetch).not.toHaveBeenCalled();

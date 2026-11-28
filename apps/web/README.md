@@ -65,15 +65,17 @@ File cấu hình môi trường đặt tại `apps/web/.env.local` (file này kh
 NEXT_PUBLIC_API_URL=http://localhost:3001
 
 # Công tắc Mock dùng chung (mặc định tắt / false)
-# - true: dùng dữ liệu giả trong mocks/ cho Auth, Products, Orders, Staff
+# - true: dùng dữ liệu giả trong mocks/ cho Auth, Products, Orders, Promotions, Loyalty, Staff
 # - false (hoặc không đặt): gọi API thật tới NEXT_PUBLIC_API_URL
 NEXT_PUBLIC_USE_MOCK=false
 ```
 
 > **Lưu ý:**
-> - `NEXT_PUBLIC_USE_MOCK` là công tắc chính duy nhất (mặc định **tắt**). Khi đặt `NEXT_PUBLIC_USE_MOCK=true`, tất cả nhóm API (Xác thực, Sản phẩm, Đơn hàng/Thanh toán, Nhân viên) đều dùng dữ liệu giả.
-> - Nếu `NEXT_PUBLIC_USE_MOCK` chưa được đặt (hoặc rỗng), ứng dụng giữ tương thích ngược bằng cách đọc các biến cũ (`NEXT_PUBLIC_USE_MOCK_AUTH`, `NEXT_PUBLIC_USE_MOCK_PRODUCTS`, `NEXT_PUBLIC_USE_MOCK_ORDERS`).
-> - Để tắt hoàn toàn mock và gọi API thật, đặt `NEXT_PUBLIC_USE_MOCK=false` (và xóa hoặc đặt `false` các biến cũ nếu có). Khi sửa `.env.local`, nhớ khởi động lại `npm run dev` để Next.js nạp lại biến môi trường.
+> - `NEXT_PUBLIC_USE_MOCK` là công tắc chính (mặc định **tắt**). Khi đặt `NEXT_PUBLIC_USE_MOCK=true`, các nhóm API chính (Xác thực, Sản phẩm, Đơn hàng/Thanh toán, Nhân viên, Khuyến mãi, Điểm thưởng) đều dùng dữ liệu giả trong `apps/web/mocks/`.
+> - Nếu `NEXT_PUBLIC_USE_MOCK` chưa được đặt (hoặc rỗng), ứng dụng giữ tương thích ngược bằng cách đọc các biến cũ (`NEXT_PUBLIC_USE_MOCK_AUTH`, `NEXT_PUBLIC_USE_MOCK_PRODUCTS`, `NEXT_PUBLIC_USE_MOCK_ORDERS`, `NEXT_PUBLIC_USE_MOCK_PROMOTIONS`, `NEXT_PUBLIC_USE_MOCK_LOYALTY`).
+> - Riêng các file mock trong `apps/web/app/staff/mocks/` kiểm tra thêm các biến riêng (`NEXT_PUBLIC_USE_MOCK_STAFF_ORDERS`, `NEXT_PUBLIC_USE_MOCK_STAFF_PRODUCTS`, `NEXT_PUBLIC_USE_MOCK_STAFF_EMPLOYEES`, `NEXT_PUBLIC_USE_MOCK_STAFF_SHELL`) trước biến chung.
+> - **Để nối API thật hoàn toàn:** đặt `NEXT_PUBLIC_USE_MOCK=false` trong `apps/web/.env.local` và **xóa hoặc đặt `false`** toàn bộ các biến cũ/riêng (`NEXT_PUBLIC_USE_MOCK_AUTH`, `NEXT_PUBLIC_USE_MOCK_PRODUCTS`, `NEXT_PUBLIC_USE_MOCK_ORDERS`, `NEXT_PUBLIC_USE_MOCK_PROMOTIONS`, `NEXT_PUBLIC_USE_MOCK_LOYALTY`, `NEXT_PUBLIC_USE_MOCK_STAFF_*`), rồi khởi động lại `npm.cmd run dev`.
+> - **Để bật lại chế độ dữ liệu giả (mock):** đặt `NEXT_PUBLIC_USE_MOCK=true` (và đặt `NEXT_PUBLIC_USE_MOCK_STAFF_ORDERS=true` nếu cần giả lập thêm danh sách đơn trong `/staff`), rồi khởi động lại `npm.cmd run dev`.
 
 ### Cơ chế kết nối API Xác thực (`POST /auth/register`, `POST /auth/login`) & Nhân viên (`GET /staff`, `PATCH /staff/:id/status`):
 - Khi bật mock (`NEXT_PUBLIC_USE_MOCK=true`):
@@ -101,11 +103,17 @@ NEXT_PUBLIC_USE_MOCK=false
     * Ghi chú đơn chứa `hethang`: Giả lập lỗi hết hàng `409 Conflict` (trả về mảng `details` gồm `{ productId, name }`).
 - Khi tắt mock (`NEXT_PUBLIC_USE_MOCK=false`):
   - Gọi fetch thật tới `NEXT_PUBLIC_API_URL` (kèm `Authorization: Bearer <accessToken>`):
-    * `POST /orders` với body `{ receiveType, note, items }` (tuyệt đối không gửi giá, không gửi thông tin người nhận).
-    * `POST /payments` kèm header `Idempotency-Key` (8..100 ký tự) và body `{ orderId, method, accountNumber }`.
+    * `POST /orders` với body `{ receiveType, note, items, promotionCode?, usePoints? }` (tuyệt đối không gửi giá, không gửi thông tin người nhận); nhận đầy đủ `subtotalAmount`, `discountAmount`, `promotionCode`, `pointsUsed`, `pointsEarned`, `totalAmount`.
+    * `POST /payments` kèm header `Idempotency-Key` (8..100 ký tự) và body `{ orderId, method, accountNumber }`; đọc `order.pointsEarned` khi thanh toán thành công.
     * `GET /orders/me` lấy danh sách lịch sử đơn hàng của người dùng đang đăng nhập.
     * `GET /orders/:id` tra cứu chi tiết đơn hàng và lịch sử thanh toán.
     * `GET /orders`, `PATCH /orders/:id/status`, `POST /orders/:id/cancel` cho luồng quản lý và hủy đơn.
+
+### Cơ chế kết nối API Khuyến mãi & Điểm thưởng (`POST /promotions/validate`, `GET/POST/PATCH /promotions`, `GET /loyalty/me`):
+- Khi bật mock (`NEXT_PUBLIC_USE_MOCK=true`, hoặc `NEXT_PUBLIC_USE_MOCK_PROMOTIONS=true` / `NEXT_PUBLIC_USE_MOCK_LOYALTY=true` khi bỏ trống `NEXT_PUBLIC_USE_MOCK`):
+  - Khuyến mãi dùng dữ liệu giả trong `apps/web/mocks/mock-promotions.ts` (gồm `BREW10`, `GIAM20K`, `TAMNGUNG`, `BREW5`).
+  - Điểm thưởng dùng dữ liệu giả trong `apps/web/mocks/mock-loyalty.ts` (khởi đầu 50 điểm chào mừng và các giao dịch mẫu).
+- Khi tắt mock (`NEXT_PUBLIC_USE_MOCK=false` hoặc bỏ trống): gọi trực tiếp API thật tới `NEXT_PUBLIC_API_URL` kèm `Authorization: Bearer <accessToken>`.
 
 ---
 

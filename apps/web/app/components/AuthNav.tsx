@@ -43,7 +43,7 @@ export default function AuthNav() {
       : 'U';
 
     return (
-      <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+      <div className="flex flex-wrap sm:flex-nowrap items-center justify-end gap-1.5 sm:gap-3 min-w-0">
         <Link
           href="/orders"
           className="shrink-0 text-xs sm:text-sm font-semibold px-2.5 py-1.5 rounded-control text-bone hover:text-tan hover:bg-moss/25 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-moss whitespace-nowrap"
@@ -76,7 +76,7 @@ export default function AuthNav() {
   }
 
   return (
-    <div className="flex items-center gap-1.5 sm:gap-2">
+    <div className="flex flex-wrap sm:flex-nowrap items-center justify-end gap-1.5 sm:gap-2">
       <Link
         href="/login"
         aria-label="Đăng nhập tài khoản"

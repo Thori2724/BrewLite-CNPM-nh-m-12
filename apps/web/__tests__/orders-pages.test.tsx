@@ -1118,5 +1118,170 @@ describe('Task 14 - Hủy đơn hàng phía khách hàng (/orders và /orders/[i
     await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Xác nhận hủy' }));
     expect(await screen.findByText('Đã hủy đơn #1002.')).toBeInTheDocument();
   });
+
+  it('26. Đơn có pointsUsed > 0 khi hủy hoặc xem lại ở trạng thái CANCELLED hiện "Đã hoàn lại N điểm" trên cả /orders và /orders/[id]', async () => {
+    const user = userEvent.setup();
+    const paidWithPoints = cloneOrder(MOCK_SEED_ORDERS[0], {
+      id: 'order-paid-with-points',
+      orderNumber: 2099,
+      status: 'PAID',
+      pointsUsed: 12,
+      totalAmount: 124000,
+    });
+    const cancelledWithPoints = cloneOrder(paidWithPoints, { status: 'CANCELLED' });
+
+    // 1. Hủy trên /orders/[id] -> hiện cả "Tiền sẽ được hoàn lại (mô phỏng)" và "Đã hoàn lại 12 điểm"
+    mockParams = { id: paidWithPoints.id };
+    vi.mocked(ordersService.getOrderByIdApi)
+      .mockResolvedValueOnce(paidWithPoints)
+      .mockResolvedValueOnce(cancelledWithPoints);
+    vi.mocked(ordersService.cancelOrderApi).mockResolvedValueOnce(cancelledWithPoints);
+
+    const detailView = renderOrderDetailPage();
+    await user.click(await screen.findByRole('button', { name: 'Hủy đơn' }));
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Xác nhận hủy' }));
+
+    expect(await screen.findByTestId('order-refund-notice')).toHaveTextContent(
+      'Tiền sẽ được hoàn lại (mô phỏng)'
+    );
+    expect(screen.getByTestId('order-points-refund-notice')).toHaveTextContent(
+      'Đã hoàn lại 12 điểm'
+    );
+    detailView.unmount();
+
+    // 2. Trên /orders -> hủy đơn có pointsUsed > 0 hiện "Đã hoàn lại 12 điểm"; đơn pointsUsed = 0 không hiện
+    const pendingZeroPoints = cloneOrder(MOCK_SEED_ORDERS[1], {
+      id: 'order-cancelled-no-points',
+      orderNumber: 2098,
+      status: 'CANCELLED',
+      pointsUsed: 0,
+    });
+    vi.mocked(ordersService.getMyOrdersApi).mockResolvedValueOnce([
+      paidWithPoints,
+      pendingZeroPoints,
+    ]);
+    vi.mocked(ordersService.cancelOrderApi).mockResolvedValueOnce(cancelledWithPoints);
+
+    renderOrdersListPage();
+    const card2099 = await screen.findByTestId('order-card-2099');
+    await user.click(within(card2099).getByRole('button', { name: 'Hủy đơn' }));
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Xác nhận hủy' }));
+
+    expect(await screen.findByTestId('order-card-points-refund-2099')).toHaveTextContent(
+      'Đã hoàn lại 12 điểm'
+    );
+    expect(screen.queryByTestId('order-card-points-refund-2098')).not.toBeInTheDocument();
+  });
+
+  it('27. Trang /orders và /orders/[id] hiển thị đủ trạng thái loading và error kèm nút Thử lại', async () => {
+    const user = userEvent.setup();
+
+    // 1. /orders: loading -> error -> Thử lại thành công
+    let resolvePendingList!: (val: OrderResponse[]) => void;
+    vi.mocked(ordersService.getMyOrdersApi).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolvePendingList = resolve;
+        })
+    );
+
+    const listView = renderOrdersListPage();
+    expect(await screen.findByTestId('orders-history-loading')).toHaveTextContent(
+      'Đang tải danh sách đơn hàng...'
+    );
+    await waitFor(() => {
+      expect(ordersService.getMyOrdersApi).toHaveBeenCalledTimes(1);
+    });
+
+    resolvePendingList([]);
+    await screen.findByTestId('orders-history-empty');
+    listView.unmount();
+
+    vi.mocked(ordersService.getMyOrdersApi)
+      .mockRejectedValueOnce(
+        new ordersService.OrderApiError(0, 'Không thể kết nối đến máy chủ. Vui lòng thử lại.')
+      )
+      .mockResolvedValueOnce([cloneOrder(MOCK_SEED_ORDERS[0])]);
+
+    const listErrView = renderOrdersListPage();
+    const errBox = await screen.findByTestId('orders-history-error');
+    expect(errBox).toHaveTextContent(/không thể kết nối đến máy chủ/i);
+
+    await user.click(within(errBox).getByRole('button', { name: 'Thử lại' }));
+    expect(await screen.findByText('#1001')).toBeInTheDocument();
+    listErrView.unmount();
+
+    // 2. /orders/[id]: loading -> error -> Thử lại thành công
+    mockParams = { id: MOCK_SEED_ORDERS[0].id };
+    let resolvePendingDetail!: (val: OrderResponse) => void;
+    vi.mocked(ordersService.getOrderByIdApi).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolvePendingDetail = resolve;
+        })
+    );
+
+    const detailLoadView = renderOrderDetailPage();
+    expect(await screen.findByTestId('order-detail-loading')).toHaveTextContent(
+      'Đang tải thông tin đơn hàng...'
+    );
+    await waitFor(() => {
+      expect(ordersService.getOrderByIdApi).toHaveBeenCalledTimes(1);
+    });
+    resolvePendingDetail(cloneOrder(MOCK_SEED_ORDERS[0]));
+    expect(await screen.findByTestId('order-number-heading')).toHaveTextContent('#1001');
+    detailLoadView.unmount();
+
+    vi.mocked(ordersService.getOrderByIdApi)
+      .mockRejectedValueOnce(
+        new ordersService.OrderApiError(0, 'Không thể kết nối đến máy chủ. Vui lòng thử lại.')
+      )
+      .mockResolvedValueOnce(cloneOrder(MOCK_SEED_ORDERS[0]));
+
+    renderOrderDetailPage();
+    const detailErrBox = await screen.findByTestId('order-detail-error');
+    expect(detailErrBox).toHaveTextContent(/không thể kết nối đến máy chủ/i);
+
+    await user.click(within(detailErrBox).getByRole('button', { name: 'Thử lại' }));
+    expect(await screen.findByTestId('order-number-heading')).toHaveTextContent('#1001');
+  });
+
+  it('28. Lỗi 500 "Internal Server Error" khi mở /orders và /orders/[id] hiển thị câu tiếng Việt; lỗi 401 giữ nguyên ?expired=true không bị ghi đè', async () => {
+    // 1. /orders lỗi 500 -> không lộ chữ Internal Server Error
+    vi.mocked(ordersService.getMyOrdersApi).mockRejectedValueOnce(
+      new ordersService.OrderApiError(500, 'Internal Server Error')
+    );
+    const list500 = renderOrdersListPage();
+    const listErr = await screen.findByTestId('orders-history-error');
+    expect(listErr).toHaveTextContent('Máy chủ đang gặp sự cố tạm thời. Vui lòng thử lại.');
+    expect(screen.queryByText(/Internal Server Error/i)).not.toBeInTheDocument();
+    list500.unmount();
+
+    // 2. /orders/[id] lỗi 500 -> không lộ chữ Internal Server Error
+    mockParams = { id: MOCK_SEED_ORDERS[0].id };
+    vi.mocked(ordersService.getOrderByIdApi).mockRejectedValueOnce(
+      new ordersService.OrderApiError(500, 'Internal Server Error')
+    );
+    const detail500 = renderOrderDetailPage();
+    const detailErr = await screen.findByTestId('order-detail-error');
+    expect(detailErr).toHaveTextContent('Máy chủ đang gặp sự cố tạm thời. Vui lòng thử lại.');
+    expect(screen.queryByText(/Internal Server Error/i)).not.toBeInTheDocument();
+    detail500.unmount();
+
+    // 3. /orders gặp 401 lúc mới mở trang -> chuyển về /login?redirect=%2Forders&expired=true, không bị useRequireAuth ghi đè
+    vi.clearAllMocks();
+    window.history.pushState({}, '', '/orders');
+    localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(loggedInSession));
+    vi.mocked(ordersService.getMyOrdersApi).mockRejectedValueOnce(
+      new ordersService.OrderApiError(401, 'Phiên đăng nhập đã hết hạn')
+    );
+    renderOrdersListPage();
+    await waitFor(() => {
+      expect(mockPush).toHaveBeenCalledWith(
+        `/login?redirect=${encodeURIComponent('/orders')}&expired=true`
+      );
+    });
+    expect(mockReplace).not.toHaveBeenCalled();
+  });
 });
 

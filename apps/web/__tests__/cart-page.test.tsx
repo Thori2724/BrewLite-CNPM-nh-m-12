@@ -303,4 +303,20 @@ describe('Trang Giỏ hàng (CartPage)', () => {
       screen.queryByText(/chức năng đặt đơn và thanh toán sẽ có ở task 17/i)
     ).not.toBeInTheDocument();
   });
+
+  it('8. Hiển thị trạng thái đang tải trước khi nạp xong giỏ hàng từ localStorage', async () => {
+    render(
+      <CartProvider>
+        <CartPage />
+      </CartProvider>
+    );
+
+    expect(screen.getByText('Đang tải giỏ hàng...')).toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole('heading', { level: 1, name: 'Giỏ hàng của bạn đang trống' })
+      ).toBeInTheDocument();
+    });
+  });
 });

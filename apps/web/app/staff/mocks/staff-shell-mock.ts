@@ -4,7 +4,7 @@ export type StaffMockRole = 'STAFF' | 'ADMIN';
 
 /**
  * Công tắc dữ liệu giả riêng cho khung /staff khi web chưa có trạng thái đăng nhập.
- * Đặt enabled = false (hoặc NEXT_PUBLIC_USE_MOCK_STAFF_SHELL=false) để tắt nhanh.
+ * Đặt `NEXT_PUBLIC_USE_MOCK=false` (hoặc `NEXT_PUBLIC_USE_MOCK_STAFF_SHELL=false` / `enabled = false`) để tắt.
  */
 export const STAFF_SHELL_MOCK_CONFIG = {
   enabled: true,
@@ -15,6 +15,10 @@ export function isStaffShellMockEnabled(): boolean {
   const envFlag = process.env.NEXT_PUBLIC_USE_MOCK_STAFF_SHELL;
   if (envFlag !== undefined && envFlag.trim() !== '') {
     return envFlag.trim() === 'true';
+  }
+  const unifiedFlag = process.env.NEXT_PUBLIC_USE_MOCK;
+  if (unifiedFlag !== undefined && unifiedFlag.trim() !== '') {
+    return unifiedFlag.trim() === 'true';
   }
   return STAFF_SHELL_MOCK_CONFIG.enabled;
 }
